@@ -714,8 +714,7 @@ struct CompactView: View {
             CompactContent(snapshot: source.snapshot, link: source.link, expand: expand,
                            flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil,
                            pendingCall: alerts.popup,
-                           join: { call in alerts.join(call, source: source) },
-                           openGame: { if let pid = source.snapshot?.pid, source.link.isLive { GameFocus.bringForward(pid: pid) } })
+                           join: { call in alerts.join(call, source: source) })
         }
     }
 }
@@ -729,8 +728,6 @@ struct CompactContent: View {
     /// A call waiting for a Join click: the strip shows a Join button in place of the potion count.
     var pendingCall: PartyCall? = nil
     var join: (PartyCall) -> Void = { _ in }
-    /// Clicking the strip anywhere else switches to the game.
-    var openGame: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 10) {
@@ -777,8 +774,6 @@ struct CompactContent: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .frame(width: 340, height: 52)
         .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92))
-        .contentShape(Rectangle())
-        .onTapGesture { openGame() }
         .overlay {
             if let flash {
                 RoundedRectangle(cornerRadius: 10).strokeBorder(amber, lineWidth: 3)
