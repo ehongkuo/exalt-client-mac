@@ -262,10 +262,14 @@ struct JoinPopupContent: View {
 }
 
 final class WindowState: ObservableObject {
-    @Published var floating = false
+    /// Keep on top: on unless the user turned it off, remembered between launches.
+    @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
-    func setFloating(_ value: Bool) { floating = value; window?.level = value ? .floating : .normal }
+    func setFloating(_ value: Bool) {
+        floating = value; window?.level = value ? .floating : .normal
+        UserDefaults.standard.set(value, forKey: "keepOnTop")
+    }
 }
 
 struct Card<Content: View>: View {
@@ -866,6 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
+        state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
         compact = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 52),
                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
