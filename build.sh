@@ -2,7 +2,9 @@
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
 # Usage: work/exalt-guard/build.sh            (tests + build)
-#        work/exalt-guard/build.sh --test-only
+#        ./build.sh --test-only
+#        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
+#                                  until it is restarted from the app)
 set -eu
 src="${0:A:h}"
 out="$src/build"
@@ -57,7 +59,14 @@ print 'Compact and expand UI test passed'
 [[ "${1:-}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
 
 # Never overwrite a dylib the game has loaded, or a running app executable.
-if pgrep -x RotMGExalt >/dev/null || pgrep -x ExaltClientMac >/dev/null || pgrep -xf '.*RotMG Exalt Launcher' >/dev/null; then
+# A running game has the installed guard loaded. Replacing the app bundle is still safe: the
+# old files are unlinked, not overwritten, so the game keeps its mapped copy. --app-only allows
+# that; the new guard then takes effect the next time the game starts.
+if pgrep -x ExaltClientMac >/dev/null; then
+    print 'Quit Exalt Client Mac first, then run this again.'
+    exit 1
+fi
+if [[ "${1:-}" != --app-only ]] && { pgrep -x RotMGExalt >/dev/null || pgrep -xf '.*RotMG Exalt Launcher' >/dev/null; }; then
     print 'Quit the game, DECA'"'"'s launcher and Exalt Client Mac first, then run this again.'
     exit 1
 fi
@@ -121,3 +130,6 @@ rm -rf "$installed"
 ditto "$app" "$installed"
 codesign --verify --strict "$installed"
 print "Built and verified in $out; installed $installed"
+if pgrep -x RotMGExalt >/dev/null; then
+    print 'The running game keeps its current guard. Start the game from the app again to use the new one.'
+fi
