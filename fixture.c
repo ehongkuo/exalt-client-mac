@@ -23,7 +23,11 @@ static FakeMethod find_method, potion_method, nexus_method;
 static unsigned finds, potion_calls, nexus_calls;
 static int potion_arg = -1, class_initialized;
 static char fake_exception;
-static double started, last_drink = -10;  /* the game's quickslot cooldown: 300 ms after a drink */
+static double started;
+/* Like the real game: no client-side potion cooldown. With HEALING, each potion adds 100 HP once
+ * the "server" reports it, 200 ms after the drink. */
+static double drink_times[64];
+static unsigned drinks;
 #ifdef ALL_EMPTY
 static int stacks[3]={0,0,0};
 #else
@@ -33,7 +37,12 @@ static struct { void *klass, *monitor, *bounds; uintptr_t length; void *items[3]
 static FakeString beach={5,{'B','e','a','c','h'}}, beach_display={7,{'{','s','.','b','e','a','c'}},
                   nexus={5,{'N','e','x','u','s'}}, nexus_display={9,{'{','s','.','n','e','x','u','s','}'}};
 static double elapsed(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return t.tv_sec+t.tv_nsec/1e9-started; }
-#ifdef CEILING_SCRIPT
+#if defined(HEALING)
+static int healed(double t) { int n=0; for(unsigned i=0;i<drinks;++i) if(t-drink_times[i]>=0.2) n+=100; return n; }
+/* Player 40 drops to 40% at 1.3 s and stays there except for potion heals. */
+static int base_hp_at(double t) { return t<1.3?1000:t<2.2?400:t<2.3?180:1000; }
+static int hp_at(double t) { int hp=base_hp_at(t)+(t<2.2?healed(t):0); return hp>1000?1000:hp; }
+#elif defined(CEILING_SCRIPT)
 /* Player 40 recovers in steps: 40% (drink), 70% (still under an 80% ceiling), 90% (over it). */
 static int hp_at(double t) { return t<1.3?1000:t<1.6?400:t<1.9?700:t<2.2?900:t<2.3?180:1000; }
 #else
@@ -97,8 +106,9 @@ void *il2cpp_runtime_invoke(const void *m,void *o,void **p,void **e) {
   i=-1;
 #endif
   if(i<0||i>=3){*e=&fake_exception;return NULL;}
-  assert(stacks[i]>0);assert(elapsed()-last_drink>=0.3);  /* the guard must respect the game's cooldown */
-  last_drink=elapsed();++potion_calls;--stacks[i];return NULL;}
+  assert(stacks[i]>0);
+  if(drinks<64) drink_times[drinks++]=elapsed();
+  ++potion_calls;--stacks[i];return NULL;}
  if(m==&nexus_method){assert(o==(void*)70);++nexus_calls;return NULL;}
  abort();
 }
@@ -144,7 +154,7 @@ void il2cpp_field_get_value(void *o,void *f,void *v) {
  case 17:assert(o==(void*)100);*(void**)v=in_nexus_map(t)?(void*)111:(void*)110;return;
  case 18:*(void**)v=o==(void*)111?&nexus:&beach;return;
  case 19:*(void**)v=o==(void*)111?&nexus_display:&beach_display;return;
- case 20:assert((uintptr_t)o>=90&&(uintptr_t)o<=92);*(uint8_t*)v=elapsed()-last_drink<0.3;return;
+ case 20:assert((uintptr_t)o>=90&&(uintptr_t)o<=92);*(uint8_t*)v=0;return;   /* never set in the real game */
  }
  abort();
 }

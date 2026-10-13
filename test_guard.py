@@ -64,21 +64,36 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture()
   self.assertEqual(calls['potion_calls'],0);self.assertEqual(calls['nexus_calls'],0)
   acts=self.actions(rows)
-  # Dry run has no game cooldown, so it decides every 50 ms (the safety floor) while drinking.
+  # Dry run drinks nothing, so no heal shows: one decision, then it waits for the 1 s heal window.
   potions=[a for a in acts if a[0]==POTION]
-  self.assertGreater(len(potions),3);self.assertTrue(all(res=='0' for _,res in potions))
+  self.assertEqual(potions,[(POTION,'0')])
   self.assertEqual([a for a in acts if a[0]==NEXUS],[(NEXUS,'0')])
   self.assertEqual({r[SLOT] for r in rows if r[ACTION]==POTION},{'1'})
   self.assertIn('guard_config\tarmed=0\tpotion=50\tceiling=0\tnexus=25\tquickslots=sequential',log)
   self.assertIn('guard_ready\n',log)
   self.assertIn('guard_quickslot_base\t1000001',log)
- def test_armed_drinks_at_game_pace_then_nexus(self):
-  # 400 HP from 1.3 s to 1.8 s with a 300 ms game cooldown: two drinks, both from slot 1
-  # (slot 0 is empty). The fixture asserts the guard never drinks during the cooldown.
+ def test_armed_drinks_once_without_heal_then_nexus(self):
+  # 400 HP from 1.3 s; this script's potions never heal, so after one drink the guard waits for
+  # a heal that never shows. HP drops to 20% at 1.8 s, before the 1 s heal window ends: Nexus.
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25')
-  self.assertEqual(calls,{'potion_calls':2,'potion_arg':1000002,'nexus_calls':1})
+  self.assertEqual(calls,{'potion_calls':1,'potion_arg':1000002,'nexus_calls':1})
   self.assertNotIn('guard_disarmed',log)
-  self.assertEqual(self.actions(rows),[(POTION,'1'),(POTION,'1'),(NEXUS,'1')])
+  self.assertEqual(self.actions(rows),[(POTION,'1'),(NEXUS,'1')])
+ def drink_times(self,rows):
+  return [float(r[2]) for r in rows if r[ACTION]==POTION]
+ def test_one_potion_per_heal_up_to_ceiling(self):
+  # The live bug: 7 potions in 316 ms because HP only updates every ~200 ms. Here each potion
+  # heals 100 HP 200 ms after the drink. Expected: drink, wait for the heal, drink again, at
+  # least 250 ms apart: 1.3, 1.55, 1.8, 2.05 s (40% -> 70%; player changes at 2.2 s).
+  log,rows,calls=self.run_fixture('armed=1,potion=50,ceiling=80,nexus=25','HEALING')
+  self.assertEqual(calls['potion_calls'],4)
+  times=self.drink_times(rows)
+  self.assertTrue(all(b-a>=0.249 for a,b in zip(times,times[1:])),times)
+  self.assertEqual([r[15] for r in rows if r[ACTION]==POTION],['400','500','600','700'])
+ def test_one_potion_per_heal_without_ceiling(self):
+  # Without a ceiling it stops once HP is back above 50%: 400 -> 500 (still 50%) -> 600.
+  log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25','HEALING')
+  self.assertEqual(calls['potion_calls'],2)
  def test_ceiling_keeps_drinking_until_over_it(self):
   log,rows,calls=self.run_fixture('armed=1,potion=50,ceiling=80,nexus=25','CEILING_SCRIPT')
   self.assertEqual(calls['potion_calls'],2)        # at 40% and again at 70%
@@ -127,7 +142,7 @@ class GuardTests(unittest.TestCase):
  def test_lagging_hud_does_not_delay_actions(self):
   # The HUD matches once at full HP and then lags; the guard must still act on time.
   log,rows,calls=self.run_fixture('armed=1','HUD_FROZEN')
-  self.assertEqual(calls,{'potion_calls':2,'potion_arg':1000002,'nexus_calls':1})
+  self.assertEqual(calls,{'potion_calls':1,'potion_arg':1000002,'nexus_calls':1})
  def test_game_exception_is_logged_and_disarms_potions_only(self):
   log,rows,calls=self.run_fixture('armed=1','BAD_INDEX')
   self.assertEqual(calls['potion_calls'],0);self.assertEqual(calls['nexus_calls'],1)
@@ -149,16 +164,16 @@ class GuardTests(unittest.TestCase):
   self.assertEqual((live['armed'],live['potion'],live['ceiling'],live['nexus']),('1','50','80','25'))
   self.assertEqual((live['map'],live['in_nexus'],live['map_known']),('Nexus','1','1'))
   self.assertEqual((live['hp'],live['max_hp'],live['slot_count']),('100','1000','3'))
-  self.assertEqual((live['slot0'],live['slot1'],live['slot2']),('0/0','0/0','5/0'))
-  self.assertEqual(live['next_slot'],'2')
+  self.assertEqual((live['slot0'],live['slot1'],live['slot2']),('0/0','1/0','5/0'))
+  self.assertEqual(live['next_slot'],'1')
   self.assertGreater(int(live['ticks']),2500)      # 1 ms checks for 3.5 s
   events=[(e[1],e[2],e[3],e[4]) for e in live['event']]
-  self.assertEqual(events,[(POTION,'1','1','400'),(POTION,'1','1','400'),(NEXUS,'1','-1','200')])
+  self.assertEqual(events,[(POTION,'1','1','400'),(NEXUS,'1','-1','200')])
  def test_settings_from_app_apply_live(self):
   # Starts in dry run; the app arms it at 0.8 s, before the 1.3 s potion window.
   log,rows,calls=self.run_fixture('armed=0,potion=50,nexus=25',
    during=(0.8,lambda f:live_control(f,1,1,50,0,25)))
-  self.assertEqual(calls,{'potion_calls':2,'potion_arg':1000002,'nexus_calls':1})
+  self.assertEqual(calls,{'potion_calls':1,'potion_arg':1000002,'nexus_calls':1})
   self.assertIn('guard_config\tarmed=1\tpotion=50\tceiling=0\tnexus=25\tsource=app\trequest=1',log)
   self.assertEqual((self.live['control_request'],self.live['control_result'],self.live['armed']),('1','1','1'))
  def test_invalid_settings_from_app_are_rejected(self):
@@ -176,12 +191,11 @@ class GuardTests(unittest.TestCase):
  def test_quickslot_changes_are_logged(self):
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25')
   slot1=[l for l in log.splitlines() if l.startswith('guard_slot\t1\t')]
-  self.assertEqual([l.split('\t')[2:4] for l in slot1],
-   [['stack=2','cooldown=0'],['stack=1','cooldown=1'],['stack=1','cooldown=0'],['stack=0','cooldown=1'],['stack=0','cooldown=0']])
+  self.assertEqual([l.split('\t')[2:4] for l in slot1],[['stack=2','cooldown=0'],['stack=1','cooldown=0']])
  def test_session_summary(self):
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25')
   live=self.live
-  self.assertEqual((live['potions_sent'],live['nexus_sent'],live['potions_dry'],live['nexus_dry']),('2','1','0','0'))
+  self.assertEqual((live['potions_sent'],live['nexus_sent'],live['potions_dry'],live['nexus_dry']),('1','1','0','0'))
   # Closest call outside the Nexus: 200/1000 on the beach (the 100/1000 later is in the Nexus).
   self.assertEqual((live['lowest_hp'],live['lowest_max_hp']),('200','1000'))
   self.assertTrue(live['log_name'].startswith('guard-') and live['log_name'].endswith('.tsv'))
@@ -189,8 +203,7 @@ class GuardTests(unittest.TestCase):
  def test_session_summary_dry_run(self):
   log,rows,calls=self.run_fixture()
   live=self.live
-  self.assertEqual((live['potions_sent'],live['nexus_sent'],live['nexus_dry']),('0','0','1'))
-  self.assertGreater(int(live['potions_dry']),3)
+  self.assertEqual((live['potions_sent'],live['nexus_sent'],live['potions_dry'],live['nexus_dry']),('0','0','1','1'))
  def test_data_folder_from_app(self):
   # Launched by the app: logs and the live file go to EXALT_GUARD_DIR/logs.
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25',data_dir=True)

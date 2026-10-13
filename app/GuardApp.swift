@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import SwiftUI
 
 private let mint = Color(red: 0.35, green: 0.88, blue: 0.72)
@@ -238,6 +239,7 @@ struct GuardPanel {
                 Spacer()
                 Toggle("Keep on top", isOn: Binding(get: { window.floating }, set: { window.setFloating($0) }))
                     .toggleStyle(.checkbox).font(.system(size: 11)).fixedSize()
+                Button("Export logs...") { exportLogs() }.font(.system(size: 11)).fixedSize()
                 Button("Compact view") { window.showCompact() }.font(.system(size: 11)).fixedSize()
             }
         }
@@ -321,6 +323,21 @@ struct GuardPanel {
                 Spacer()
                 Button("Show log") { showLog(summary.logName) }.font(.system(size: 11)).disabled(summary.logName.isEmpty)
             }
+        }
+    }
+    /// Saves every session log plus the settings as one zip, then shows it in Finder.
+    private func exportLogs() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = LogExport.defaultName()
+        panel.allowedContentTypes = [.zip]
+        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try LogExport.export(data: dataURL, to: url)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            let alert = NSAlert(); alert.messageText = "Could not export the logs"
+            alert.informativeText = error.localizedDescription; alert.runModal()
         }
     }
     private func showLog(_ name: String) {

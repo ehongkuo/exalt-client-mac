@@ -67,6 +67,25 @@ enum LaunchTests {
         d.lowest_max_hp = 0
         check(GuardSnapshot(d).summary.closestText == "None yet", "no closest call yet")
         check(Format.duration(3725) == "1:02:05" && Format.duration(65) == "1:05", "durations")
+        // Log export: session logs and settings in one zip; the live file stays out.
+        let exportData = FileManager.default.temporaryDirectory.appendingPathComponent("export-data-\(getpid())")
+        let exportLogs = GuardPaths.logs(data: exportData)
+        try! FileManager.default.createDirectory(at: exportLogs, withIntermediateDirectories: true)
+        try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-1.tsv"))
+        try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-2.tsv"))
+        try! Data(count: 4096).write(to: exportLogs.appendingPathComponent("guard-live.bin"))
+        try! SettingsFile.save(GuardSettings(armed: true, potion: 50, ceiling: 80, nexus: 25), to: GuardPaths.settingsFile(data: exportData))
+        let zip = exportData.appendingPathComponent("export.zip")
+        check((try? LogExport.export(data: exportData, to: zip)) == 2, "two session logs exported")
+        let list = Process(); let pipe = Pipe()
+        list.executableURL = URL(fileURLWithPath: "/usr/bin/unzip"); list.arguments = ["-Z1", zip.path]; list.standardOutput = pipe
+        try! list.run(); list.waitUntilExit()
+        let entries = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").map(String.init)
+        check(entries.contains("export/guard-1.tsv") && entries.contains("export/guard-2.tsv"), "logs in zip \(entries)")
+        check(entries.contains("export/guard-settings.conf"), "settings in zip")
+        check(!entries.contains { $0.hasSuffix("guard-live.bin") }, "live file left out")
+        check(LogExport.defaultName(date: Date(timeIntervalSince1970: 0)).hasPrefix("Exalt Client Mac logs 19"), "default name")
+        try? FileManager.default.removeItem(at: exportData)
         print("Guard launch and summary tests passed")
     }
 }

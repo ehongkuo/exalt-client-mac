@@ -6,9 +6,10 @@ A macOS companion for Realm of the Mad God Exalt. It watches your HP from inside
 
 ## What it does
 
-- **Auto-potion.** Starts drinking when HP drops to the potion trigger (default 50%) and keeps going, as fast as the game's own quickslot cooldown allows, until HP is over a ceiling (default 80%). Quickslots are used in order: the first until it's empty, then the next.
+- **Auto-potion.** Starts drinking when HP drops to the potion trigger (default 50%) and keeps going until HP is over a ceiling (default 80%). After each potion it waits for the heal to show up in HP before drinking again (details under Potion pacing). Quickslots are used in order: the first until it's empty, then the next.
 - **Auto-Nexus.** Returns to the Nexus once when HP is at or below the Nexus threshold (default 25%).
 - **Live view.** HP and thresholds, quickslot counts and cooldowns, the last 16 actions with millisecond timestamps, a session summary (potions used, Nexus count, closest call) and latency numbers. There's also a compact always-on-top strip that floats over the game without taking focus.
+- **Log export.** **Export logs...** saves every session log plus your settings as one zip.
 - **Settings while you play.** Thresholds and armed/dry-run change live from the app and are saved for the next launch.
 - **One-click start.** The app checks the install and the game build, then opens DECA's launcher with the guard loaded for that launch only.
 
@@ -50,6 +51,18 @@ The parts worth walking through:
 Checks have to run on the game's main thread, between frames, since that's where Unity's objects are safe to touch. HP is applied during a frame, so the first check after a hit is as early as anything outside the game's own code can see it.
 
 One investigation finding shaped the design: the client reports each bullet hit to the server before applying any damage locally, and the HUD follows the server's HP. So no reader of client HP can step in between bullets of a single volley. Percentage thresholds were the right scope for this tool.
+
+## Potion pacing
+
+The game has no client-side potion cooldown, and HP only updates when the server reports it, about every 200 ms. An early version drank whenever HP was under the target, so it kept drinking on the old HP before the first heal arrived and emptied 7 potions in 316 ms.
+
+Now each potion has to show its effect first:
+
+1. **Drink one potion** and remember the HP at that moment.
+2. **Wait for the heal.** The next potion is allowed once HP rises above that value, or after 1 s if it never does (for example when a hit lands at the same time).
+3. **Never closer than 250 ms**, even when heals show up fast.
+
+A new drop to the trigger starts a fresh run immediately. The integration tests model this with potions that heal 100 HP 200 ms after the drink.
 
 ## Safety checks
 

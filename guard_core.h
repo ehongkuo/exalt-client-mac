@@ -10,7 +10,8 @@ typedef struct {
     int armed;             /* 0 = dry run: decide and log, never call the game */
     int potion, nexus;     /* thresholds in percent of max HP; 0 disables */
     int ceiling;           /* once drinking, keep going until HP is over this percent; 0 = stop above potion */
-    uint64_t min_interval_ns;  /* safety floor between potion calls; the game's cooldown is the real pace */
+    uint64_t min_interval_ns;  /* never two potions closer than this */
+    uint64_t heal_timeout_ns;  /* after a potion, wait this long for the heal to show before another */
     uint64_t settle_ns;    /* max HP must be unchanged this long before acting */
 } GuardConfig;
 
@@ -19,12 +20,13 @@ typedef enum { GUARD_NONE, GUARD_POTION, GUARD_NEXUS } GuardAction;
 typedef struct {
     uintptr_t identity;
     uint64_t last_potion, max_since;
-    float max_seen;
-    int potion_used, nexus_sent, drinking;
+    float max_seen, last_potion_hp;  /* HP when the last potion was drunk */
+    int potion_used, nexus_sent, drinking, heal_pending;
 } GuardState;
 
 static inline void guard_defaults(GuardConfig *c) {
-    *c = (GuardConfig){.armed = 0, .potion = 50, .nexus = 25, .ceiling = 0, .min_interval_ns = 50000000ULL,
+    *c = (GuardConfig){.armed = 0, .potion = 50, .nexus = 25, .ceiling = 0, .min_interval_ns = 250000000ULL,
+                        .heal_timeout_ns = 1000000000ULL,
                         .settle_ns = 500000000ULL};
 }
 
@@ -96,11 +98,15 @@ static inline int guard_apply(GuardConfig *c, GuardState *s, int armed, int poti
 }
 
 /* in_nexus: the current map is known to be the Nexus, where the guard never acts.
- * potion_ready: a quickslot has potions and the game's quickslot cooldown is clear.
+ * potion_ready: a quickslot has potions and its cooldown flag is clear.
  * A new player object, or a change in max HP (new map, equipment swap), starts a settle
  * period: brand-new player objects briefly carry stale HP and a placeholder max HP.
  * Drinking starts when HP is at or below `potion` and continues, as fast as the game allows,
- * until HP is over `ceiling` (or over `potion` when no ceiling is set). */
+ * until HP is over `ceiling` (or over `potion` when no ceiling is set).
+ * Pacing: HP only updates when the server reports it (about every 200 ms), and the game has no
+ * client-side potion cooldown, so after each potion the guard waits until HP rises above the
+ * drink-time HP (the heal has shown) or heal_timeout passes, and never drinks twice within
+ * min_interval. Without this it drinks again on stale HP and empties the quickslots. */
 static inline GuardAction guard_decide(GuardState *s, const GuardConfig *c, uintptr_t identity,
                                        float hp, float max, uint64_t now, int valid, int in_nexus,
                                        int potion_ready) {
@@ -116,14 +122,20 @@ static inline GuardAction guard_decide(GuardState *s, const GuardConfig *c, uint
         s->drinking = 0;
         return GUARD_NEXUS;
     }
-    if (c->potion && percent <= (float)c->potion) s->drinking = 1;
-    if (s->drinking && percent > (float)(c->ceiling ? c->ceiling : c->potion)) s->drinking = 0;
-    if (s->drinking && potion_ready &&
-        (!s->potion_used || now - s->last_potion >= c->min_interval_ns)) {
-        s->potion_used = 1;
-        s->last_potion = now;
-        return GUARD_POTION;
+    if (c->potion && percent <= (float)c->potion && !s->drinking) {
+        s->drinking = 1;
+        s->heal_pending = 0;   /* a new run does not wait on the previous run's potion */
     }
+    if (s->drinking && percent > (float)(c->ceiling ? c->ceiling : c->potion)) s->drinking = 0;
+    if (!s->drinking || !potion_ready) return GUARD_NONE;
+    uint64_t since = now - s->last_potion;
+    if (s->potion_used && since < c->min_interval_ns) return GUARD_NONE;
+    if (s->heal_pending && !(hp > s->last_potion_hp) && since < c->heal_timeout_ns) return GUARD_NONE;
+    s->potion_used = 1;
+    s->heal_pending = 1;
+    s->last_potion = now;
+    s->last_potion_hp = hp;
+    return GUARD_POTION;
     return GUARD_NONE;
 }
 #endif

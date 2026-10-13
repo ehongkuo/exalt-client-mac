@@ -23,7 +23,7 @@ cross="$(mktemp -d)/live.bin"
 until [[ -s "$cross" ]]; do :; done
 "$src/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
-    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardModelTests.swift" \
+    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$src/model-tests" && "$src/model-tests"
 python3 "$src/test_guard.py"
@@ -33,7 +33,7 @@ ui="$(mktemp -d)"
 mkdir -p "$ui/UITest.app/Contents/MacOS"
 clang -O2 -Wall -Wextra -Werror "$src/ui_fixture.c" -o "$ui/ui-fixture"
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors -D GUARD_UI_TEST \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" \
     "$src/app/GuardApp.swift" -o "$ui/UITest.app/Contents/MacOS/UITest"
 "$ui/ui-fixture" "$ui/live.bin" 8 &
 writer=$!   # pids get their own names: $app is the app bundle path
@@ -65,7 +65,7 @@ cp "$src/Start Guard.command" "$out/Start Guard.command"
 
 print '== Build Exalt Client Mac.app (Apple silicon)'
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardApp.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
 # Icon: DECA's launcher icon with the red lettering turned yellow (drawn fallback if missing).
 icons="$(mktemp -d)"
