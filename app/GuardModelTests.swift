@@ -79,6 +79,25 @@ private func sample() -> LiveData {
         check(tracker.update(calls(1, pid: 5000), live: true, now: 31)?.count == 1, "first call of the new session")
         check(tracker.update(nil, live: true, now: 40) == nil, "no data")
 
+        // Calls alert only on waiting maps.
+        func at(_ map: String, known: Bool = true, _ n: UInt32) -> GuardSnapshot {
+            var s = calls(n, pid: 6000); s.map = map; s.mapKnown = known; return s
+        }
+        for name in ["Nexus", "Vault", "Realm of the Mad God", "Guild Hall 3", "Pet Yard", "Daily Quest Room", "nexus"] {
+            check(WaitingMaps.contains(at(name, 0)), "waiting map \(name)")
+        }
+        for name in ["Fungal Cavern", "Ice Citadel", "Crystal Cavern", "Oryx's Castle"] {
+            check(!WaitingMaps.contains(at(name, 0)), "dungeon \(name)")
+        }
+        check(WaitingMaps.contains(at("", 0)) && WaitingMaps.contains(at("Fungal Cavern", known: false, 0)), "unknown map still alerts")
+        var trip = PartyAlertTracker()
+        _ = trip.update(at("Nexus", 0), live: true, now: 50)
+        check(trip.update(at("Nexus", 1), live: true, now: 51)?.count == 1, "call while waiting alerts")
+        check(trip.update(at("Fungal Cavern", 2), live: true, now: 60) == nil, "joined: calls in the dungeon are quiet")
+        check(trip.update(at("Fungal Cavern", 3), live: true, now: 70) == nil, "still quiet")
+        check(trip.update(at("Nexus", 3), live: true, now: 80) == nil, "leaving the dungeon does not replay its calls")
+        check(trip.update(at("Nexus", 4), live: true, now: 81)?.count == 4, "next dungeon's call alerts")
+
         // Outcome text.
         let texts = [0: "dry run", 1: "sent", -1: "game error, disarmed", -2: "target unavailable", -3: "no potions"]
         for (code, text) in texts {

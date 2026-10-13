@@ -195,10 +195,22 @@ struct PartyAlertSettings: Equatable {
     var sound = true
 }
 
+/// Maps where you wait for a dungeon. Calls alert only here: once you are in the dungeon, more
+/// "j" calls for it are noise. Matched by how the game's map name starts ("Guild Hall 3").
+enum WaitingMaps {
+    static let prefixes = ["Nexus", "Vault", "Realm of the Mad God", "Guild Hall", "Pet Yard", "Daily Quest Room"]
+    /// An unknown map counts as waiting, so a map-reading problem never hides a call.
+    static func contains(_ snapshot: GuardSnapshot) -> Bool {
+        guard snapshot.mapKnown, !snapshot.map.isEmpty else { return true }
+        let name = snapshot.map.lowercased()
+        return prefixes.contains { name.hasPrefix($0.lowercased()) }
+    }
+}
+
 /// Decides when a party call should alert. The first snapshot of each guard session sets a
 /// baseline, so calls counted before the app was watching are not replayed. After that, each
 /// new call alerts, except that a burst (one player spamming "jjjj" ten times) alerts once per
-/// `quiet` seconds.
+/// `quiet` seconds, and calls made while you are in a dungeon (not a WaitingMaps map) are skipped.
 struct PartyAlertTracker {
     var quiet: Double = 5
     private var pid: Int32 = 0
@@ -211,7 +223,7 @@ struct PartyAlertTracker {
         if s.pid != pid { pid = s.pid; seen = s.partyCalls; return nil }
         guard s.partyCalls > seen, let call = s.lastCall else { seen = s.partyCalls; return nil }
         seen = s.partyCalls
-        guard now - lastAlert >= quiet else { return nil }
+        guard WaitingMaps.contains(s), now - lastAlert >= quiet else { return nil }
         lastAlert = now
         return call
     }

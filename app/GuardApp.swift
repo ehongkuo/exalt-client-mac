@@ -496,12 +496,13 @@ struct GuardPanel {
                 }
                 .font(.system(size: 11)).disabled(!alerts.settings.enabled)
             }
-            Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" as the first word, from other players in party chat only. A burst alerts once every 5 s.")
+            Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" as the first word, from other players in party chat only, while you wait in the Nexus, Vault, Realm, Guild Hall, Pet Yard or Daily Quest Room. Quiet once you are in a dungeon. A burst alerts once every 5 s.")
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let s {
                 HStack(spacing: 8) {
                     switch s.chatStatus {
-                    case Int32(CHAT_READING): Pill(text: "READING PARTY CHAT", color: mint)
+                    case Int32(CHAT_READING) where !WaitingMaps.contains(s): Pill(text: "IN DUNGEON: QUIET", color: .gray)
+                    case Int32(CHAT_READING): Pill(text: "WAITING FOR CALLS", color: mint)
                     case Int32(CHAT_UNAVAILABLE): Pill(text: "CHAT NOT SUPPORTED IN THIS BUILD", color: coral)
                     default: Pill(text: "LOOKING FOR CHAT", color: .gray)
                     }
