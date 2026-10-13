@@ -182,12 +182,24 @@ struct GuardView: View {
         TimelineView(.animation) { _ in
             let _ = source.refresh()
             let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
-            GuardPanel(window: window, settings: settings, launch: launch, source: source).content(source.snapshot, source.link, source.rate)
+            MainLayout {
+                GuardPanel(window: window, settings: settings, launch: launch, source: source).content(source.snapshot, source.link, source.rate)
+            }
         }
-        .padding(16)
-        .frame(minWidth: 420, minHeight: 900)
-        .background(Color(red: 0.07, green: 0.08, blue: 0.10))
+        .frame(minWidth: 420, minHeight: 360)
         .preferredColorScheme(.dark)
+    }
+}
+
+/// Window body: scrolls when the window is shorter than the content (the live layout is
+/// taller than most laptop screens), always starting at the top so the header stays reachable.
+struct MainLayout<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        ScrollView(.vertical) {
+            content.padding(16).frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(Color(red: 0.07, green: 0.08, blue: 0.10))
     }
 }
 
@@ -573,7 +585,7 @@ struct CompactContent: View {
         while launch.state == .checking && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
     let view = GuardPanel(window: WindowState(), settings: settings, launch: launch, source: source).content(source.snapshot, source.link, source.rate)
-        .padding(16).frame(width: 460, height: 1180, alignment: .top)
+        .padding(16).frame(width: 460, alignment: .top)
         .background(Color(red: 0.07, green: 0.08, blue: 0.10))
         .environment(\.colorScheme, .dark)
     let renderer = ImageRenderer(content: view); renderer.scale = 2
@@ -583,7 +595,7 @@ struct CompactContent: View {
 }
 #endif
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var compact: NSPanel!
     let source = LiveSource()
@@ -599,6 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu; NSApp.mainMenu = menu
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 1000), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Exalt Client Mac"
+        window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
         // Compact strip: floats over the game (also in full screen) and never takes focus.
@@ -616,18 +629,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         state.showCompact = { [weak self] in self?.showCompact() }
         #if GUARD_UI_TEST
-        // Test hook: switch to compact (and back) automatically to reproduce issues without clicks.
-        if ProcessInfo.processInfo.environment["GUARD_AUTO_COMPACT"] != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.showCompact() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.showFull() }
+        // Test hook: drive compact and full screen automatically and report what is visible.
+        let env = ProcessInfo.processInfo.environment
+        if env["GUARD_AUTO_COMPACT"] != nil {
+            var steps: [(Double, String, () -> Void)] = [
+                (1.5, "compact", { [weak self] in self?.showCompact() }),
+                (3.0, "full", { [weak self] in self?.showFull() }),
+                (4.5, "compact again", { [weak self] in self?.showCompact() }),
+                (6.0, "full again", { [weak self] in self?.showFull() }),
+            ]
+            if env["GUARD_AUTO_FULLSCREEN"] != nil {
+                steps = [(1.0, "enter full screen", { [weak self] in self?.window.toggleFullScreen(nil) }),
+                         (3.5, "compact from full screen", { [weak self] in self?.showCompact() }),
+                         (6.5, "full", { [weak self] in self?.showFull() })]
+            }
+            for (delay, name, action) in steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    action()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        guard let self else { return }
+                        print("step=\(name) main=\(self.window.isVisible) compact=\(self.compact.isVisible) fullscreen=\(self.window.styleMask.contains(.fullScreen))")
+                        fflush(stdout)
+                    }
+                }
+            }
         }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     private var compactMode = false
+    private var compactAfterFullScreen = false
     /// Show the strip before hiding the main window: hiding the last regular window counts as
-    /// "last window closed", which would otherwise quit the app.
-    func showCompact() { compactMode = true; compact.orderFrontRegardless(); window.orderOut(nil) }
+    /// "last window closed", which would otherwise quit the app. A full-screen window has to
+    /// leave full screen first, or hiding it leaves an empty full-screen space behind.
+    func showCompact() {
+        if window.styleMask.contains(.fullScreen) {
+            compactAfterFullScreen = true
+            window.toggleFullScreen(nil)
+            return
+        }
+        compactMode = true; compact.orderFrontRegardless(); window.orderOut(nil)
+    }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard compactAfterFullScreen else { return }
+        compactAfterFullScreen = false
+        showCompact()
+    }
     func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }

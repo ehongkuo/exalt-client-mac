@@ -27,8 +27,9 @@ xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$src/model-tests" && "$src/model-tests"
 python3 "$src/test_guard.py"
-# UI regression: switching to the compact strip and back must not quit the app (it briefly
-# shows its window, fed by a synthetic writer; never touches the game).
+# UI regression: compact, back, compact again and back must each show the right window and
+# never quit the app (it briefly shows its window, fed by a synthetic writer; never touches
+# the game).
 ui="$(mktemp -d)"
 mkdir -p "$ui/UITest.app/Contents/MacOS"
 clang -O2 -Wall -Wextra -Werror "$src/ui_fixture.c" -o "$ui/ui-fixture"
@@ -39,13 +40,20 @@ xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warni
 writer=$!   # pids get their own names: $app is the app bundle path
 sleep 0.5
 GUARD_LIVE_FILE="$ui/live.bin" GUARD_SETTINGS_FILE="$ui/settings.conf" GUARD_AUTO_COMPACT=1 \
-    "$ui/UITest.app/Contents/MacOS/UITest" >/dev/null 2>&1 &
+    "$ui/UITest.app/Contents/MacOS/UITest" >"$ui/steps.txt" 2>&1 &
 ui_pid=$!
-sleep 6
+sleep 8
 if ! kill -0 $ui_pid 2>/dev/null; then print 'FAIL: the app quit when switching to compact'; kill $writer; exit 1; fi
 kill $ui_pid; wait $ui_pid 2>/dev/null || true; kill $writer 2>/dev/null || true; wait 2>/dev/null || true
+expected='step=compact main=false compact=true fullscreen=false
+step=full main=true compact=false fullscreen=false
+step=compact again main=false compact=true fullscreen=false
+step=full again main=true compact=false fullscreen=false'
+if [[ "$(grep '^step=' "$ui/steps.txt")" != "$expected" ]]; then
+    print 'FAIL: compact/expand steps showed the wrong windows:'; cat "$ui/steps.txt"; exit 1
+fi
 rm -rf "$ui"
-print 'Compact switch UI test passed'
+print 'Compact and expand UI test passed'
 [[ "${1:-}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
 
 # Never overwrite a dylib the game has loaded, or a running app executable.
