@@ -65,6 +65,13 @@ API(void *, il2cpp_gchandle_new, (void *, uint8_t));
 API(void *, il2cpp_gchandle_get_target, (void *));
 API(void, il2cpp_gchandle_free, (void *));
 API(void *, il2cpp_string_new, (const char *));
+API(void *, il2cpp_class_get_fields, (void *, void **));
+API(const char *, il2cpp_field_get_name, (void *));
+API(size_t, il2cpp_field_get_offset, (void *));
+API(void *, il2cpp_class_get_element_class, (void *));
+API(int, il2cpp_array_element_size, (void *));
+API(void *, il2cpp_class_from_type, (const void *));
+API(int, il2cpp_class_is_valuetype, (void *));
 
 static FILE *logfile;
 static void *gui_handle, *player_handle, *equipment_handle;
@@ -102,6 +109,18 @@ static int join_ok, join_off;
 static uint32_t last_join_seq, last_join_request, pending_join;
 static char pending_join_name[32];
 static uint64_t pending_join_deadline;
+/* Party finder reader (read-only): logs what the party manager holds for the finder, to see
+ * which parties the client knows about, their member counts, and how fresh the list is. */
+#define PARTY_FIELDS 16
+static void *party_list_field, *party_fetched_field, *own_party_field, *party_record_class;
+static struct { void *field; const char *name; int kind; } party_fields[PARTY_FIELDS];
+static int party_field_count;
+static void *dict_class, *dict_entries_field, *dict_count_field;
+static size_t dict_key_offset, dict_value_offset;
+static int dict_stride;
+static uint64_t next_party_poll, party_logged_hash;
+static double party_logged_fetch = -1;
+enum { VALUE_STRING, VALUE_INT32, VALUE_UNSIGNED, VALUE_DOUBLE, VALUE_BOOL };
 static void *cooldown_field;          /* QuickSlot.GCKDOJPIMLD: the game's quickslot cooldown flag */
 static uintptr_t validated_player;    /* player whose HP field has matched the HUD at least once */
 /* Live state for Exalt Guard.app (see live_state.h). */
@@ -135,7 +154,7 @@ static int ready;
 #endif
 
 /* One-off status lines from the game thread, printed by the writer. */
-#define NOTE_CAPACITY 32
+#define NOTE_CAPACITY 512
 static char notes[NOTE_CAPACITY][1024];
 static _Atomic uint64_t note_head, note_tail;
 __attribute__((format(printf, 1, 2))) static void note(const char *format, ...) {
@@ -180,6 +199,9 @@ static int bind_api(void) {
     BIND(il2cpp_field_static_get_value); BIND(il2cpp_free); BIND(il2cpp_array_length);
     BIND(il2cpp_runtime_class_init); BIND(il2cpp_format_exception);
     BIND(il2cpp_string_length); BIND(il2cpp_string_chars); BIND(il2cpp_string_new);
+    BIND(il2cpp_class_get_fields); BIND(il2cpp_field_get_name); BIND(il2cpp_field_get_offset);
+    BIND(il2cpp_class_get_element_class); BIND(il2cpp_array_element_size);
+    BIND(il2cpp_class_from_type); BIND(il2cpp_class_is_valuetype);
     return 1;
 }
 
@@ -269,6 +291,23 @@ static void prepare_guard(const void *game) {
     party_manager_field = typed_field(player_class, "EAKILNOKDDC", "IOPKEEBMGJK");
     join_ok = party_manager_field && at_offset(join_method, JOIN_OFFSET) && at_offset(join_cooldown_method, JOIN_COOLDOWN_OFFSET);
     if (!join_ok) note("guard_join_unavailable\n");
+    party_record_class = il2cpp_class_from_name(game, "", "PEAFHEDHOPC");
+    if (party_class && party_record_class) {
+        party_list_field = typed_field(party_class, "GHMLBBONNCG", "System.Collections.Generic.Dictionary<System.UInt32,PEAFHEDHOPC>");
+        party_fetched_field = typed_field(party_class, "LMIPPHKNPIH", "System.Double");   /* when the list was last fetched */
+        own_party_field = typed_field(party_class, "LLBNOFLDCOF", "PEAFHEDHOPC");
+        void *iterator = NULL, *field;
+        while ((field = il2cpp_class_get_fields(party_record_class, &iterator)) && party_field_count < PARTY_FIELDS) {
+            if (il2cpp_field_get_flags(field) & 16) continue;
+            const void *type = il2cpp_field_get_type(field);
+            void *type_class = il2cpp_class_from_type(type);
+            int kind = type_is(field, "System.String") ? VALUE_STRING : type_is(field, "System.Int32") ? VALUE_INT32 :
+                       type_is(field, "System.Double") ? VALUE_DOUBLE : type_is(field, "System.Boolean") ? VALUE_BOOL :
+                       type_class && il2cpp_class_is_valuetype(type_class) ? VALUE_UNSIGNED : -1;   /* UInt16/32, enums */
+            if (kind >= 0) party_fields[party_field_count++] = (typeof(party_fields[0])){field, il2cpp_field_get_name(field), kind};
+        }
+    }
+    if (!(party_list_field && party_field_count)) note("guard_party_reader_unavailable\n");
     if (guard_ok) note("guard_ready\n");
     else note("guard_refused\tplayer_fields_missing\n");
 }
@@ -586,6 +625,90 @@ static void check_control(void) {
     else note("guard_config_rejected\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\trequest=%u\n",
               c.armed, c.potion, c.ceiling, c.nexus, c.request);
 }
+/* Locates a Dictionary<UInt32, T>'s entries array and the key/value offsets inside an entry.
+ * Returns the number of entry slots in use (some may be free: hashCode < 0). */
+static int32_t dict_read(void *dict, char **entries) {
+    void *klass = il2cpp_object_get_class(dict);
+    if (klass != dict_class) {
+        dict_class = klass; dict_stride = 0;
+        dict_entries_field = il2cpp_class_get_field_from_name(klass, "_entries");
+        dict_count_field = typed_field(klass, "_count", "System.Int32");
+    }
+    if (!dict_entries_field || !dict_count_field) return 0;
+    void *array = read_reference(dict, dict_entries_field);
+    int32_t count = 0;
+    il2cpp_field_get_value(dict, dict_count_field, &count);
+    if (!array || count <= 0) return 0;
+    if (!dict_stride) {
+        void *array_class = il2cpp_object_get_class(array), *entry = il2cpp_class_get_element_class(array_class);
+        void *key = entry ? il2cpp_class_get_field_from_name(entry, "key") : NULL;
+        void *value = entry ? il2cpp_class_get_field_from_name(entry, "value") : NULL;
+        if (!key || !value) return 0;
+        /* Field offsets of a value type include the 16-byte object header it would have if boxed. */
+        dict_key_offset = il2cpp_field_get_offset(key) - 16;
+        dict_value_offset = il2cpp_field_get_offset(value) - 16;
+        dict_stride = il2cpp_array_element_size(array_class);
+        note("guard_party_dict\tstride=%d\tkey=%zu\tvalue=%zu\n", dict_stride, dict_key_offset, dict_value_offset);
+        if (dict_stride <= 0 || dict_value_offset + 8 > (size_t)dict_stride) { dict_stride = -1; }
+    }
+    if (dict_stride <= 0) return 0;
+    if ((uint32_t)count > il2cpp_array_length(array)) count = (int32_t)il2cpp_array_length(array);
+    *entries = (char *)array + 0x20;
+    return count;
+}
+/* Appends "\tNAME=value" for each readable field of a party record. */
+static void describe_party(void *party, char *line, size_t size) {
+    for (int i = 0; i < party_field_count; ++i) {
+        size_t used = strlen(line);
+        if (used + 8 >= size) return;
+        char value[64] = "";
+        if (party_fields[i].kind == VALUE_STRING) {
+            read_utf8(read_reference(party, party_fields[i].field), value, sizeof value);
+        } else {
+            union { uint64_t u; int32_t i; double d; uint8_t b; } v = {0};
+            il2cpp_field_get_value(party, party_fields[i].field, &v);
+            if (party_fields[i].kind == VALUE_INT32) snprintf(value, sizeof value, "%d", v.i);
+            else if (party_fields[i].kind == VALUE_DOUBLE) snprintf(value, sizeof value, "%.3f", v.d);
+            else if (party_fields[i].kind == VALUE_BOOL) snprintf(value, sizeof value, "%d", v.b != 0);
+            else snprintf(value, sizeof value, "%llu", (unsigned long long)v.u);
+        }
+        snprintf(line + used, size - used, "\t%s=%s", safe(party_fields[i].name), value);
+    }
+}
+/* Every second: logs the party finder list when it (or its fetch time) changes. */
+static void poll_parties(void *player, uint64_t now) {
+    if (!player || !party_list_field || !party_field_count || now < next_party_poll) return;
+    next_party_poll = now + NSEC_PER_SEC;
+    void *manager = read_reference(player, party_manager_field);
+    if (!manager) return;
+    double fetched = 0;
+    if (party_fetched_field) il2cpp_field_get_value(manager, party_fetched_field, &fetched);
+    void *dict = read_reference(manager, party_list_field);
+    char *entries = NULL;
+    int32_t slots = dict ? dict_read(dict, &entries) : 0;
+    uint64_t hash = 1469598103934665603ULL;
+    static char lines[256][700];
+    int n = 0;
+    for (int32_t i = 0; i < slots && n < 256; ++i) {
+        char *entry = entries + (size_t)i * (size_t)dict_stride;
+        if (*(int32_t *)entry < 0) continue;              /* free slot (hashCode -1) */
+        void *party = *(void **)(entry + dict_value_offset);
+        if (!party || il2cpp_object_get_class(party) != party_record_class) continue;
+        snprintf(lines[n], sizeof lines[n], "guard_party_entry\tkey=%u", *(uint32_t *)(entry + dict_key_offset));
+        describe_party(party, lines[n], sizeof lines[n]);
+        hash = (hash ^ fnv1a(lines[n])) * 1099511628211ULL;
+        ++n;
+    }
+    char own[700] = "guard_party_own";
+    void *mine = own_party_field ? read_reference(manager, own_party_field) : NULL;
+    if (mine && il2cpp_object_get_class(mine) == party_record_class) describe_party(mine, own, sizeof own);
+    hash = (hash ^ fnv1a(own)) * 1099511628211ULL;
+    if (hash == party_logged_hash && fetched == party_logged_fetch) return;
+    party_logged_hash = hash; party_logged_fetch = fetched;
+    note("guard_party_list\tentries=%d\tfetched=%.3f\n", n, fetched);
+    for (int i = 0; i < n; ++i) note("%s\n", lines[i]);
+    note("%s\n", own);
+}
 static void finish_join(int result) {
     live_data.join_request = pending_join;
     live_data.join_result = result;
@@ -792,7 +915,7 @@ static void tick(void *unused) {
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
     if (r.status == 0) run_guard(&r, player, begin);
 done:
-    if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
+    if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); poll_parties(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;
     r.decreased = detect(&detector, (uintptr_t)player, r.hp, begin, r.status == 0);
     r.detection_ns = monotonic_ns() - begin;

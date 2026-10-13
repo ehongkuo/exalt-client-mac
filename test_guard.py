@@ -270,4 +270,19 @@ class GuardTests(unittest.TestCase):
   self.assertIn('guard_join_unavailable',log)
   self.assertEqual(self.join['calls'],0)
   self.assertEqual(self.live['join_result'],'-4')
+ def test_party_reader_logs_the_finder_list(self):
+  # Read-only: the party manager's finder list, skipping free dictionary slots, logged again
+  # when a fetch changes it ("blue" goes from 8/8 to 7/8).
+  log,rows,calls=self.run_fixture()
+  self.assertIn('guard_party_dict\tstride=24\tkey=8\tvalue=16',log)
+  lists=[l for l in log.splitlines() if l.startswith('guard_party_list\t')]
+  self.assertEqual(lists,['guard_party_list\tentries=2\tfetched=12.500','guard_party_list\tentries=2\tfetched=42.000'])
+  blue=[l for l in log.splitlines() if l.startswith('guard_party_entry\tkey=7\t')]
+  self.assertEqual(blue,['guard_party_entry\tkey=7\tOACPEMGPMKD=7\tPFHDLCLMLBC=blue\tPFFPONPFJCK=8\tGGIJKAIAMBP=8\tBJNOGNLPADD=1',
+                         'guard_party_entry\tkey=7\tOACPEMGPMKD=7\tPFHDLCLMLBC=blue\tPFFPONPFJCK=7\tGGIJKAIAMBP=8\tBJNOGNLPADD=1'])
+  self.assertIn('guard_party_entry\tkey=9\tOACPEMGPMKD=9\tPFHDLCLMLBC=o3 run\tPFFPONPFJCK=3\tGGIJKAIAMBP=6\tBJNOGNLPADD=1',log)
+  self.assertIn('guard_party_own\tOACPEMGPMKD=5\tPFHDLCLMLBC=mine\tPFFPONPFJCK=1\tGGIJKAIAMBP=8\tBJNOGNLPADD=1',log)
+ def test_party_reader_without_party_manager(self):
+  log,rows,calls=self.run_fixture(None,"NO_PARTY")
+  self.assertNotIn('guard_party_list',log)
 if __name__=='__main__': unittest.main()
