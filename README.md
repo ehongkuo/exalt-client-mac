@@ -64,6 +64,8 @@ The game must be started from the app; that's how the guard gets loaded. Setting
 
 ## How it works
 
+For a plain-language walkthrough with diagrams, including the game server and step-by-step traces of taking damage, an auto-potion, a key press and a Join click, see **[docs/how-it-works.md](docs/how-it-works.md)**. The technical summary:
+
 ```
 Exalt Client Mac.app  (Swift, arm64)
    │  Start game: opens DECA's launcher with DYLD_INSERT_LIBRARIES=ExaltGuard.dylib
