@@ -13,6 +13,9 @@ static inline void guard_control_send(void *map, const LiveControlData *data) {
 static inline int guard_control_peek(void *map, LiveControlData *out) {
     return control_read(live_control(map), out);
 }
+static inline void guard_join_send(void *map, const LiveJoinData *data) {
+    join_write(live_join(map), data);
+}
 static inline int guard_process_alive(int32_t pid) {
     return pid > 0 && kill(pid, 0) == 0;
 }

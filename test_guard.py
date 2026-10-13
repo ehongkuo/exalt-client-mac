@@ -16,7 +16,12 @@ def live_control(path,request,armed,potion,ceiling,nexus):
  if CONTROL is None:
   CONTROL=Path(tempfile.mkdtemp(prefix='exalt-live-control-'))/'live-control'
   subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'live_control.c'),'-o',str(CONTROL)],check=True)
- subprocess.run([str(CONTROL),str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)],check=True)
+ args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)]
+ if request=='join':args=args[:4]   # FILE join REQUEST NAME
+ subprocess.run([str(CONTROL),*args],check=True)
+
+def live_join(path,request,name):
+ live_control(path,'join',request,name,'','')
 
 def live_dump(path):
  global DUMP
@@ -57,6 +62,8 @@ class GuardTests(unittest.TestCase):
    calls=dict(kv.split('=') for kv in out.split())
    rows=[l.split('\t') for l in log.splitlines() if l.startswith('timing\t')]
    self.live=live_dump(logdir/'guard-live.bin')
+   # Join results are checked on their own, so the exact potion/Nexus comparisons stay as they were.
+   self.join={'calls':int(calls.pop('join_calls')),'cooldown':int(calls.pop('join_cooldown_arg')),'name':calls.pop('join_name')}
    return log,rows,{k:int(v) for k,v in calls.items()}
  def actions(self,rows):
   return [(r[ACTION],r[RESULT]) for r in rows if r[ACTION]!='0']
@@ -229,4 +236,38 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(self.live['chat_status'],'0')
   self.assertEqual(self.live['party_calls'],'0')
   self.assertEqual(calls['nexus_calls'],1)        # the guard itself is unaffected
+
+ def test_join_runs_the_menu_handler(self):
+  # A Join click from the app runs what the menu's "Join dungeon" button runs: the party
+  # manager joins the named member, then the character's LMCLHOGGKKG(1000).
+  log,rows,calls=self.run_fixture(None,during=(1.2,lambda f:live_join(f,1,'Teratopositor')))
+  self.assertEqual(self.join,{'calls':1,'cooldown':1000,'name':'Teratopositor'})
+  self.assertIn('guard_join\tTeratopositor\tsent',log)
+  self.assertEqual((self.live['join_request'],self.live['join_result'],self.live['join_name']),('1','1','Teratopositor'))
+  self.assertEqual(calls['potion_calls'],0)   # dry run still never drinks: Join is a separate click
+ def test_join_runs_once_per_click(self):
+  def clicks(f):
+   live_join(f,1,'Ann'); time.sleep(0.3); live_join(f,1,'Ann'); time.sleep(0.3); live_join(f,2,'Bo')
+  log,rows,calls=self.run_fixture(None,during=(1.0,clicks))
+  self.assertEqual(self.join['calls'],2)
+  self.assertEqual(self.join['name'],'Bo')
+ def test_join_game_error_disables_only_join(self):
+  def clicks(f):
+   live_join(f,1,'Ann'); time.sleep(0.3); live_join(f,2,'Bo')
+  log,rows,calls=self.run_fixture('armed=1',"JOIN_THROWS",during=(1.0,clicks))
+  self.assertEqual(self.join['calls'],1)                 # the second click is refused
+  self.assertIn('guard_exception\tjoin\t',log)
+  self.assertIn('guard_join\tAnn\tgame_error',log)
+  self.assertIn('guard_join\tBo\tunsupported',log)
+  self.assertEqual(calls['nexus_calls'],1)              # the HP guard keeps working
+ def test_join_without_party_expires(self):
+  log,rows,calls=self.run_fixture(None,"NO_PARTY",during=(0.8,lambda f:live_join(f,1,'Ann')))
+  self.assertEqual(self.join['calls'],0)
+  self.assertIn('guard_join\tAnn\tunavailable',log)
+  self.assertEqual(self.live['join_result'],'-2')
+ def test_join_refused_on_unexpected_build(self):
+  log,rows,calls=self.run_fixture(None,"JOIN_BAD_OFFSET",during=(1.0,lambda f:live_join(f,1,'Ann')))
+  self.assertIn('guard_join_unavailable',log)
+  self.assertEqual(self.join['calls'],0)
+  self.assertEqual(self.live['join_result'],'-4')
 if __name__=='__main__': unittest.main()

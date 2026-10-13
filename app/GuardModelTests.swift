@@ -98,6 +98,27 @@ private func sample() -> LiveData {
         check(trip.update(at("Nexus", 3), live: true, now: 80) == nil, "leaving the dungeon does not replay its calls")
         check(trip.update(at("Nexus", 4), live: true, now: 81)?.count == 4, "next dungeon's call alerts")
 
+        // Join status and popup rules.
+        func joined(_ request: UInt32, _ result: Int32, map: String = "Nexus") -> GuardSnapshot {
+            var d = sample(); d.join_request = request; d.join_result = result
+            var s = GuardSnapshot(d); s.map = map; return s
+        }
+        check(JoinStatus.evaluate(sent: nil, snapshot: joined(0, 0), live: true) == .idle, "no click")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(1, 1), live: true) == .sending, "guard has not answered yet")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(2, 1), live: true) == .sent, "sent")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(2, -1), live: true) == .failed("The game refused the join"), "game error")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(2, -2), live: true) == .failed("No character or party to join with"), "unavailable")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(2, -4), live: true) == .failed("Join is not available in this game build"), "unsupported")
+        check(JoinStatus.evaluate(sent: 2, snapshot: joined(2, 1), live: false) == .failed("Game not running"), "game closed")
+        let inHub = joined(0, 0, map: "Nexus"), dungeon = joined(0, 0, map: "Fungal Cavern")
+        check(!JoinPopupRules.shouldClose(shownAt: 0, now: 30, snapshot: inHub, live: true, status: .idle, statusSince: 0), "stays while waiting")
+        check(JoinPopupRules.shouldClose(shownAt: 0, now: 90, snapshot: inHub, live: true, status: .idle, statusSince: 0), "times out")
+        check(JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: dungeon, live: true, status: .idle, statusSince: 0), "closes in a dungeon")
+        check(JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: inHub, live: false, status: .idle, statusSince: 0), "closes when the game closes")
+        check(!JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: inHub, live: true, status: .sent, statusSince: 3), "shows Join sent briefly")
+        check(JoinPopupRules.shouldClose(shownAt: 0, now: 8, snapshot: inHub, live: true, status: .sent, statusSince: 3), "then closes")
+        check(!JoinPopupRules.shouldClose(shownAt: 0, now: 30, snapshot: inHub, live: true, status: .failed("x"), statusSince: 3), "an error stays visible")
+
         // Outcome text.
         let texts = [0: "dry run", 1: "sent", -1: "game error, disarmed", -2: "target unavailable", -3: "no potions"]
         for (code, text) in texts {

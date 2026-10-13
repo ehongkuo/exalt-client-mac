@@ -26,6 +26,9 @@
  * The guard refuses to arm if the runtime reports anything else. */
 #define POTION_OFFSET 0x52cc60UL  /* EquipmentManager::OnQuickslotHotkeyPressedHandler(Int32) */
 #define NEXUS_OFFSET  0x7264f0UL  /* HJMBOMEHGDJ::GGGHNGEJPDE(), run by the Nexus key */
+/* The ctrl-click menu's "Join dungeon" button (PlayerActionPanel::KJFENHHKFOO) runs these two: */
+#define JOIN_OFFSET          0xa3d060UL   /* IOPKEEBMGJK::FDOIPKHKGNF(String name): party manager, join a member */
+#define JOIN_COOLDOWN_OFFSET 0x11f7e00UL  /* FKALGHJIADI::LMCLHOGGKKG(Int32), called with 1000 on your character */
 
 enum { RESULT_DRY = 0, RESULT_CALLED = 1, RESULT_EXCEPTION = -1, RESULT_UNAVAILABLE = -2, RESULT_EMPTY = -3 };
 #define MAX_QUICKSLOTS 8
@@ -61,6 +64,7 @@ API(uint16_t *, il2cpp_string_chars, (void *));
 API(void *, il2cpp_gchandle_new, (void *, uint8_t));
 API(void *, il2cpp_gchandle_get_target, (void *));
 API(void, il2cpp_gchandle_free, (void *));
+API(void *, il2cpp_string_new, (const char *));
 
 static FILE *logfile;
 static void *gui_handle, *player_handle, *equipment_handle;
@@ -89,6 +93,15 @@ static struct { void *object; uint64_t hash; } chat_seen[CHAT_SEEN];
 static unsigned chat_seen_next;
 static uint64_t next_chat_lookup, next_chat_poll;
 static char own_name[64];
+/* Join: runs what the menu's "Join dungeon" button runs, when the user clicks Join in the app.
+ * A request waits up to JOIN_WAIT_NS for a player object (for example during a map load). */
+#define JOIN_WAIT_NS (2 * NSEC_PER_SEC)
+static void *party_manager_field;
+static const void *join_method, *join_cooldown_method;
+static int join_ok, join_off;
+static uint32_t last_join_seq, last_join_request, pending_join;
+static char pending_join_name[32];
+static uint64_t pending_join_deadline;
 static void *cooldown_field;          /* QuickSlot.GCKDOJPIMLD: the game's quickslot cooldown flag */
 static uintptr_t validated_player;    /* player whose HP field has matched the HUD at least once */
 /* Live state for Exalt Guard.app (see live_state.h). */
@@ -166,7 +179,7 @@ static int bind_api(void) {
     BIND(il2cpp_type_get_name); BIND(il2cpp_field_get_value);
     BIND(il2cpp_field_static_get_value); BIND(il2cpp_free); BIND(il2cpp_array_length);
     BIND(il2cpp_runtime_class_init); BIND(il2cpp_format_exception);
-    BIND(il2cpp_string_length); BIND(il2cpp_string_chars);
+    BIND(il2cpp_string_length); BIND(il2cpp_string_chars); BIND(il2cpp_string_new);
     return 1;
 }
 
@@ -250,6 +263,12 @@ static void prepare_guard(const void *game) {
         live_data.chat_status = CHAT_UNAVAILABLE;
         note("guard_chat_unavailable\n");
     }
+    void *party_class = il2cpp_class_from_name(game, "", "IOPKEEBMGJK");
+    if (party_class) join_method = find_method_named(party_class, "FDOIPKHKGNF", 1, "System.String");
+    join_cooldown_method = find_method_named(player_class, "LMCLHOGGKKG", 1, "System.Int32");
+    party_manager_field = typed_field(player_class, "EAKILNOKDDC", "IOPKEEBMGJK");
+    join_ok = party_manager_field && at_offset(join_method, JOIN_OFFSET) && at_offset(join_cooldown_method, JOIN_COOLDOWN_OFFSET);
+    if (!join_ok) note("guard_join_unavailable\n");
     if (guard_ok) note("guard_ready\n");
     else note("guard_refused\tplayer_fields_missing\n");
 }
@@ -479,7 +498,9 @@ static void disarm(const char *what, const void *exception) {
     for (char *c = message; *c; ++c) if (*c == '\t' || *c == '\n') *c = ' ';
     note("guard_exception\t%s\t%s\n", what, message);
     /* Switch off only the action that failed, so a potion error never disables the Nexus. */
-    if (!strcmp(what, "potion")) potion_off = 1; else nexus_off = 1;
+    if (!strcmp(what, "potion")) potion_off = 1;
+    else if (!strcmp(what, "join")) join_off = 1;
+    else nexus_off = 1;
     note("guard_disarmed\t%s_exception\n", what);
 }
 static void *equipment_instance(uint64_t now) {
@@ -565,6 +586,49 @@ static void check_control(void) {
     else note("guard_config_rejected\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\trequest=%u\n",
               c.armed, c.potion, c.ceiling, c.nexus, c.request);
 }
+static void finish_join(int result) {
+    live_data.join_request = pending_join;
+    live_data.join_result = result;
+    memcpy(live_data.join_name, pending_join_name, sizeof live_data.join_name);
+    note("guard_join\t%s\t%s\n", pending_join_name, result == JOIN_SENT ? "sent" : result == JOIN_ERROR ? "game_error" :
+         result == JOIN_UNAVAILABLE ? "unavailable" : "unsupported");
+    pending_join = 0;
+}
+/* Picks up a Join click from the app (see LiveJoin in live_state.h). */
+static void check_join(uint64_t now) {
+    if (!live) return;
+    LiveJoin *join = live_join(live);
+    uint32_t seq = atomic_load_explicit(&join->seq, memory_order_acquire);
+    if (seq == last_join_seq) return;
+    LiveJoinData j;
+    if (!join_read(join, &j)) return;
+    last_join_seq = seq;
+    if (!j.request || j.request == last_join_request) return;
+    last_join_request = j.request;
+    pending_join = j.request;
+    memcpy(pending_join_name, j.name, sizeof pending_join_name);
+    pending_join_name[sizeof pending_join_name - 1] = 0;
+    for (char *c = pending_join_name; *c; ++c) if (*c == '\t' || *c == '\n') *c = ' ';
+    pending_join_deadline = now + JOIN_WAIT_NS;
+    if (!join_ok || join_off || !pending_join_name[0]) finish_join(JOIN_UNSUPPORTED);
+}
+/* Runs a pending Join with the user's character, exactly as the menu button does: the party
+ * manager joins the named member, then the character's LMCLHOGGKKG(1000). The game's own checks
+ * (party membership, where that member is) apply. */
+static void run_join(void *player, uint64_t now) {
+    if (!pending_join) return;
+    void *party = player ? read_reference(player, party_manager_field) : NULL;
+    if (!party) { if (now >= pending_join_deadline) finish_join(JOIN_UNAVAILABLE); return; }
+    void *name = il2cpp_string_new(pending_join_name);
+    void *args[] = {name}, *exception = NULL;
+    il2cpp_runtime_invoke(join_method, party, args, &exception);
+    if (exception) { disarm("join", exception); finish_join(JOIN_ERROR); return; }
+    int32_t wait_ms = 1000;
+    void *cooldown_args[] = {&wait_ms};
+    il2cpp_runtime_invoke(join_cooldown_method, player, cooldown_args, &exception);
+    if (exception) { disarm("join", exception); }   /* the join itself went out */
+    finish_join(JOIN_SENT);
+}
 static void record_event(const Record *r) {
     if (r->result == RESULT_CALLED) { if (r->action == GUARD_POTION) ++live_data.potions_sent; else ++live_data.nexus_sent; }
     else if (r->result == RESULT_DRY) { if (r->action == GUARD_POTION) ++live_data.potions_dry; else ++live_data.nexus_dry; }
@@ -647,6 +711,7 @@ static void open_live(const char *folder) {
     live_data.next_slot = -1;
     snprintf(live_data.log_name, sizeof live_data.log_name, "guard-%d.tsv", getpid());
     memset(live_control(live), 0, sizeof(LiveControl));   /* ignore settings left from a past session */
+    memset(live_join(live), 0, sizeof(LiveJoin));         /* and Join clicks */
     atomic_store_explicit(&live->seq, 0, memory_order_relaxed);
     atomic_thread_fence(memory_order_release);
     live->magic = LIVE_MAGIC;
@@ -693,6 +758,7 @@ static void tick(void *unused) {
     }
     if (!ready) goto done;
     check_control();
+    check_join(begin);
     r.status = 2;
     if (gui_handle) {
         gui = il2cpp_gchandle_get_target(gui_handle);
@@ -726,7 +792,7 @@ static void tick(void *unused) {
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
     if (r.status == 0) run_guard(&r, player, begin);
 done:
-    if (ready) poll_chat(begin, r.epoch, own);
+    if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;
     r.decreased = detect(&detector, (uintptr_t)player, r.hp, begin, r.status == 0);
     r.detection_ns = monotonic_ns() - begin;

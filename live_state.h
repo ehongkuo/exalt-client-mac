@@ -4,7 +4,8 @@
  * game under Rosetta) and Exalt Guard.app (arm64). Fixed-width fields only, so the layout is
  * identical on both. Two sequence-locked blocks:
  *   - LiveData, written by the guard after every check, read by the app;
- *   - LiveControl, written by the app when the user applies settings, read by the guard.
+ *   - LiveControl, written by the app when the user applies settings, read by the guard;
+ *   - LiveJoin, written by the app when the user clicks Join on a party call, read by the guard.
  * A writer makes `seq` odd while writing and even when done; a reader retries if `seq`
  * changed or was odd. */
 #include <stdatomic.h>
@@ -13,16 +14,20 @@
 #include <string.h>
 
 #define LIVE_MAGIC 0x44475845u  /* "EXGD" */
-#define LIVE_VERSION 4u
+#define LIVE_VERSION 5u
 #define LIVE_SLOTS 8
 #define LIVE_EVENTS 16
 #define LIVE_FILE_SIZE 4096
 #define LIVE_CONTROL_OFFSET 3072
+#define LIVE_JOIN_OFFSET 3584
 
 /* Result of the latest settings change sent from the app. */
 enum { CONTROL_NONE = 0, CONTROL_APPLIED = 1, CONTROL_REJECTED = 2 };
 /* Whether the guard can read chat: not found yet, reading, or the game's chat fields are missing. */
 enum { CHAT_SEARCHING = 0, CHAT_READING = 1, CHAT_UNAVAILABLE = -1 };
+/* Result of the latest Join request: sent to the game, the game threw, no party or player to
+ * join with (the request expired), or this game build is not the inspected one. */
+enum { JOIN_NONE = 0, JOIN_SENT = 1, JOIN_ERROR = -1, JOIN_UNAVAILABLE = -2, JOIN_UNSUPPORTED = -4 };
 
 typedef struct {
     double epoch;                 /* wall-clock seconds */
@@ -60,6 +65,9 @@ typedef struct {
     double party_call_epoch;
     char party_caller[32];                   /* sender name, UTF-8 */
     char party_text[96];                     /* message text, UTF-8, cut to fit */
+    uint32_t join_request;                   /* the latest Join request the guard handled */
+    int32_t join_result;                     /* JOIN_* for it */
+    char join_name[32];
 } LiveData;
 
 /* Settings sent by the app. request increases with every change; 0 means none yet. */
@@ -67,6 +75,19 @@ typedef struct {
     uint32_t request;
     int32_t armed, potion, ceiling, nexus;
 } LiveControlData;
+
+/* A Join click: the party member to join, by the plain name shown in the game. request
+ * increases with every click; 0 means none yet. */
+typedef struct {
+    uint32_t request;
+    char name[32];
+} LiveJoinData;
+
+typedef struct {
+    _Atomic uint32_t seq;
+    uint32_t reserved;
+    LiveJoinData data;
+} LiveJoin;
 
 typedef struct {
     uint32_t magic, version;
@@ -82,7 +103,8 @@ typedef struct {
 } LiveControl;
 
 _Static_assert(sizeof(LiveState) <= LIVE_CONTROL_OFFSET, "live state must end before the control block");
-_Static_assert(LIVE_CONTROL_OFFSET + sizeof(LiveControl) <= LIVE_FILE_SIZE, "control block must fit");
+_Static_assert(LIVE_CONTROL_OFFSET + sizeof(LiveControl) <= LIVE_JOIN_OFFSET, "control block must end before the join block");
+_Static_assert(LIVE_JOIN_OFFSET + sizeof(LiveJoin) <= LIVE_FILE_SIZE, "join block must fit");
 
 static inline void seqlock_write(_Atomic uint32_t *seq, void *dst, const void *src, size_t size) {
     uint32_t value = atomic_load_explicit(seq, memory_order_relaxed);
@@ -104,6 +126,7 @@ static inline uint32_t seqlock_read(const _Atomic uint32_t *seq, void *dst, cons
 }
 
 static inline LiveControl *live_control(void *file) { return (LiveControl *)((char *)file + LIVE_CONTROL_OFFSET); }
+static inline LiveJoin *live_join(void *file) { return (LiveJoin *)((char *)file + LIVE_JOIN_OFFSET); }
 
 static inline void live_publish(LiveState *state, const LiveData *data) {
     seqlock_write(&state->seq, &state->data, data, sizeof *data);
@@ -119,5 +142,11 @@ static inline void control_write(LiveControl *control, const LiveControlData *da
 /* Returns 1 with a consistent copy. */
 static inline int control_read(const LiveControl *control, LiveControlData *out) {
     return seqlock_read(&control->seq, out, (const void *)&control->data, sizeof *out) != 0;
+}
+static inline void join_write(LiveJoin *join, const LiveJoinData *data) {
+    seqlock_write(&join->seq, &join->data, data, sizeof *data);
+}
+static inline int join_read(const LiveJoin *join, LiveJoinData *out) {
+    return seqlock_read(&join->seq, out, (const void *)&join->data, sizeof *out) != 0;
 }
 #endif

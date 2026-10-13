@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 import SwiftUI
 import UserNotifications
@@ -122,6 +123,12 @@ final class LaunchController: ObservableObject {
 final class PartyAlerts: ObservableObject {
     @Published var settings: PartyAlertSettings { didSet { save() } }
     @Published private(set) var flashUntil = Date.distantPast
+    /// The call shown in the Join popup (and as a Join button on the compact strip), if any.
+    @Published private(set) var popup: PartyCall?
+    @Published private(set) var joinStatus: JoinStatus = .idle
+    private var popupShownAt = 0.0, statusSince = 0.0
+    private var joinSent: UInt32?
+    private var lastJoinRequest: UInt32 = 0
     private var tracker = PartyAlertTracker()
     private let defaults = UserDefaults.standard
     /// Notifications need a bundled app; the test build runs without one.
@@ -146,14 +153,37 @@ final class PartyAlerts: ObservableObject {
         guard canNotify else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
     }
+    private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
     func check(_ source: LiveSource) {
+        updatePopup(source)
         // The tracker sees every snapshot even with alerts off, so turning them on never replays old calls.
-        guard let call = tracker.update(source.snapshot, live: source.link.isLive, now: Double(Clock.monotonicNs()) / 1e9),
+        guard let call = tracker.update(source.snapshot, live: source.link.isLive, now: now),
               settings.enabled else { return }
         alert(call)
     }
+    private func updatePopup(_ source: LiveSource) {
+        let status = JoinStatus.evaluate(sent: joinSent, snapshot: source.snapshot, live: source.link.isLive)
+        if status != joinStatus { joinStatus = status; statusSince = now }
+        guard popup != nil, JoinPopupRules.shouldClose(shownAt: popupShownAt, now: now, snapshot: source.snapshot,
+                                                       live: source.link.isLive, status: joinStatus, statusSince: statusSince)
+        else { return }
+        dismiss()
+    }
+    func dismiss() { popup = nil; joinSent = nil; joinStatus = .idle }
+    /// Joins the caller's dungeon the way the game's ctrl-click menu does, then switches to the game.
+    func join(_ call: PartyCall, source: LiveSource) {
+        guard let s = source.snapshot, source.link.isLive else { joinStatus = .failed("Game not running"); return }
+        lastJoinRequest = max(lastJoinRequest, s.joinRequest) + 1
+        if source.feed.sendJoin(call.caller, request: lastJoinRequest) {
+            joinSent = lastJoinRequest; joinStatus = .sending; statusSince = now
+        } else {
+            joinStatus = .failed("Could not reach the guard")
+        }
+        GameFocus.bringForward(pid: s.pid)
+    }
     func alert(_ call: PartyCall) {
         flashUntil = Date().addingTimeInterval(8)
+        popup = call; popupShownAt = now; joinSent = nil; joinStatus = .idle
         #if !GUARD_UI_TEST
         if settings.sound { NSSound(named: "Glass")?.play() }
         #endif
@@ -165,6 +195,70 @@ final class PartyAlerts: ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "party-call", content: content, trigger: nil))
     }
     func flashing(at date: Date) -> Bool { date < flashUntil }
+}
+
+/// Brings the game to the front, also from a full-screen video in another space.
+enum GameFocus {
+    static func bringForward(pid: Int32) {
+        guard pid > 0, let game = NSRunningApplication(processIdentifier: pid) else { return }
+        // Opening the running app through Launch Services activates it reliably even when this
+        // app is not in front (a plain activate() request can be declined on recent macOS).
+        if let url = game.bundleURL {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in }
+        } else {
+            game.activate(options: [.activateAllWindows])
+        }
+    }
+}
+
+/// The Join popup: a small card at the top of the screen, over everything, for the newest call.
+struct JoinPopupView: View {
+    @ObservedObject var alerts: PartyAlerts
+    let source: LiveSource
+
+    var body: some View {
+        if let call = alerts.popup {
+            JoinPopupContent(call: call, status: alerts.joinStatus,
+                             join: { alerts.join(call, source: source) }, dismiss: { alerts.dismiss() })
+        }
+    }
+}
+
+struct JoinPopupContent: View {
+    var call: PartyCall
+    var status: JoinStatus
+    var join: () -> Void
+    var dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("PARTY CALL").font(.system(size: 10, weight: .bold)).foregroundStyle(amber)
+                Text(call.caller).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                Text(status == .idle ? call.text : status.text).font(.system(size: 12))
+                    .foregroundStyle({ if case .failed = status { return coral } else { return Color.secondary } }())
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button(action: join) {
+                Text(status == .sending ? "Joining..." : "Join")
+                    .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                    .frame(width: 84, height: 36)
+                    .background(amber).clipShape(RoundedRectangle(cornerRadius: 9))
+            }
+            .buttonStyle(.plain).disabled(status == .sending || status == .sent)
+            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Dismiss")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(width: 380, height: 76)
+        .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.96))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(amber.opacity(0.7), lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
+    }
 }
 
 final class WindowState: ObservableObject {
@@ -515,6 +609,8 @@ struct GuardPanel {
                         Text(call.caller).font(.system(size: 12, weight: .semibold)).foregroundStyle(amber)
                         Text(call.text).font(.system(size: 12)).lineLimit(1)
                         Spacer()
+                        Button("Join") { alerts.join(call, source: source) }.font(.system(size: 11))
+                            .disabled(alerts.joinStatus == .sending)
                     }
                 }
             }
@@ -616,7 +712,10 @@ struct CompactView: View {
         TimelineView(.animation) { context in
             let _ = source.refresh()
             CompactContent(snapshot: source.snapshot, link: source.link, expand: expand,
-                           flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil)
+                           flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil,
+                           pendingCall: alerts.popup,
+                           join: { call in alerts.join(call, source: source) },
+                           openGame: { if let pid = source.snapshot?.pid, source.link.isLive { GameFocus.bringForward(pid: pid) } })
         }
     }
 }
@@ -627,6 +726,11 @@ struct CompactContent: View {
     var expand: () -> Void
     /// While a party call is fresh: the current time, which drives the pulse. nil otherwise.
     var flash: Double? = nil
+    /// A call waiting for a Join click: the strip shows a Join button in place of the potion count.
+    var pendingCall: PartyCall? = nil
+    var join: (PartyCall) -> Void = { _ in }
+    /// Clicking the strip anywhere else switches to the game.
+    var openGame: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 10) {
@@ -650,9 +754,17 @@ struct CompactContent: View {
                     HPBar(fraction: percent / 100, nexus: s.nexus, potion: s.potion, ceiling: s.ceiling, color: color)
                         .frame(height: 8)
                 }
-                VStack(spacing: 0) {
-                    Text("\(s.totalPotions)").font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Text(s.nextSlot >= 0 ? "slot \(s.nextSlot + 1)" : "none").font(.system(size: 9)).foregroundStyle(.secondary)
+                if let call = pendingCall {
+                    Button { join(call) } label: {
+                        Text("Join").font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
+                            .frame(width: 46, height: 26).background(amber).clipShape(RoundedRectangle(cornerRadius: 7))
+                    }
+                    .buttonStyle(.plain).help("Join \(call.caller)'s dungeon and switch to the game")
+                } else {
+                    VStack(spacing: 0) {
+                        Text("\(s.totalPotions)").font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Text(s.nextSlot >= 0 ? "slot \(s.nextSlot + 1)" : "none").font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Text(link == .offline("Game closed") ? "Game closed" : "Waiting for the guard")
@@ -665,6 +777,8 @@ struct CompactContent: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .frame(width: 340, height: 52)
         .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92))
+        .contentShape(Rectangle())
+        .onTapGesture { openGame() }
         .overlay {
             if let flash {
                 RoundedRectangle(cornerRadius: 10).strokeBorder(amber, lineWidth: 3)
@@ -687,9 +801,18 @@ struct CompactContent: View {
         if v.count == 4 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2], nexus: v[3]) }
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_COMPACT"] != nil {
+        let flashing = ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil
         let compact = CompactContent(snapshot: source.snapshot, link: source.link, expand: {},
-                                     flash: ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil ? 0.1 : nil)
+                                     flash: flashing ? 0.1 : nil, pendingCall: flashing ? source.snapshot?.lastCall : nil)
         let renderer = ImageRenderer(content: compact); renderer.scale = 2
+        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
+        try! png.write(to: URL(fileURLWithPath: path)); exit(0)
+    }
+    if ProcessInfo.processInfo.environment["GUARD_RENDER_POPUP"] != nil {
+        let popup = JoinPopupContent(call: PartyCall(caller: "Teratopositor", text: "j cit", epoch: 0, count: 1),
+                                     status: .idle, join: {}, dismiss: {})
+        let renderer = ImageRenderer(content: popup); renderer.scale = 2
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
         try! png.write(to: URL(fileURLWithPath: path)); exit(0)
@@ -719,6 +842,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let settings = SettingsController()
     let launch = LaunchController()
     let alerts = PartyAlerts()
+    var joinPopup: NSPanel!
+    private var popupWatch: AnyCancellable?
     private var alertTimer: Timer?
     private var activity: NSObjectProtocol?
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -760,6 +885,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
+        // Join popup: top centre of the screen, above everything including full-screen video.
+        joinPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 76),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        joinPopup.level = .statusBar
+        joinPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        joinPopup.backgroundColor = .clear; joinPopup.isOpaque = false; joinPopup.hasShadow = true
+        joinPopup.hidesOnDeactivate = false
+        joinPopup.contentView = NSHostingView(rootView: JoinPopupView(alerts: alerts, source: source))
+        popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
+            guard let self, let panel = self.joinPopup else { return }
+            if call == nil { panel.orderOut(nil); return }
+            if let screen = NSScreen.main {
+                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: screen.visibleFrame.maxY - 12))
+            }
+            panel.orderFrontRegardless()
+        }
         #if GUARD_UI_TEST
         // Test hook: drive compact and full screen automatically and report what is visible.
         let env = ProcessInfo.processInfo.environment
@@ -810,6 +951,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }
+    /// Clicking a party call banner switches to the game.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let pid = source.snapshot?.pid, source.link.isLive { GameFocus.bringForward(pid: pid) }
+        completionHandler()
+    }
     /// Show party call banners even while this app is in front.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

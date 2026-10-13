@@ -119,6 +119,7 @@ struct GuardSnapshot: Equatable {
     var chatStatus: Int32         // CHAT_SEARCHING, CHAT_READING or CHAT_UNAVAILABLE
     var partyCalls: UInt32
     var lastCall: PartyCall?
+    var joinRequest: UInt32, joinResult: Int32
 
     init(_ d: LiveData) {
         pid = d.pid; status = d.status; armed = d.armed != 0
@@ -145,6 +146,7 @@ struct GuardSnapshot: Equatable {
             potionsDry: Int(d.potions_dry), nexusDry: Int(d.nexus_dry),
             lowestHP: Int(d.lowest_hp), lowestMaxHP: Int(d.lowest_max_hp), lowestEpoch: d.lowest_epoch,
             logName: withUnsafeBytes(of: d.log_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) })
+        joinRequest = d.join_request; joinResult = d.join_result
         chatStatus = d.chat_status
         partyCalls = d.party_calls
         let text = { (raw: UnsafeRawBufferPointer) in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
@@ -187,6 +189,45 @@ struct PartyCall: Equatable {
     var text: String
     var epoch: Double
     var count: UInt32
+}
+
+/// Where a Join click stands, from the guard's answer in the live file.
+enum JoinStatus: Equatable {
+    case idle, sending, sent
+    case failed(String)
+
+    static func evaluate(sent: UInt32?, snapshot: GuardSnapshot?, live: Bool) -> JoinStatus {
+        guard let sent else { return .idle }
+        guard let s = snapshot, live else { return .failed("Game not running") }
+        guard s.joinRequest == sent else { return .sending }
+        switch s.joinResult {
+        case Int32(JOIN_SENT): return .sent
+        case Int32(JOIN_ERROR): return .failed("The game refused the join")
+        case Int32(JOIN_UNAVAILABLE): return .failed("No character or party to join with")
+        default: return .failed("Join is not available in this game build")
+        }
+    }
+    var text: String {
+        switch self {
+        case .idle: return ""
+        case .sending: return "Joining..."
+        case .sent: return "Join sent"
+        case .failed(let why): return why
+        }
+    }
+}
+
+/// When the Join popup for a call goes away: once you are in a dungeon, a few seconds after a
+/// join went through, or after `timeout` with no answer.
+enum JoinPopupRules {
+    static let timeout = 90.0
+    static let afterJoin = 4.0
+    static func shouldClose(shownAt: Double, now: Double, snapshot: GuardSnapshot?, live: Bool,
+                            status: JoinStatus, statusSince: Double) -> Bool {
+        if now - shownAt >= timeout || !live { return true }
+        if let s = snapshot, !WaitingMaps.contains(s) { return true }
+        return status == .sent && now - statusSince >= afterJoin
+    }
 }
 
 /// Party alert preferences, kept by the app (the guard always reports calls).
@@ -284,6 +325,18 @@ final class LiveFeed {
         var data = LiveControlData(request: request, armed: settings.armed ? 1 : 0, potion: Int32(settings.potion),
                                    ceiling: Int32(settings.ceiling), nexus: Int32(settings.nexus))
         guard_control_send(map, &data)
+        return true
+    }
+    /// Asks the guard to join `name`'s dungeon, as the game's ctrl-click menu does.
+    func sendJoin(_ name: String, request: UInt32) -> Bool {
+        remapIfNeeded()
+        guard let map, writable else { return false }
+        var data = LiveJoinData()
+        data.request = request
+        withUnsafeMutableBytes(of: &data.name) { raw in
+            for (i, b) in Array(name.utf8.prefix(raw.count - 1)).enumerated() { raw[i] = b }
+        }
+        guard_join_send(map, &data)
         return true
     }
     func peekControl(_ out: inout LiveControlData) -> Bool {
