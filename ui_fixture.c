@@ -18,7 +18,8 @@ int main(int argc, char **argv) {
     LiveState *s = mmap(NULL, LIVE_FILE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     s->magic = LIVE_MAGIC; s->version = LIVE_VERSION;
     LiveData d = {.pid = getpid(), .armed = 1, .potion = 50, .ceiling = 80, .nexus = 25,
-                  .map_known = 1, .settled = 1, .max_hp = 235, .slot_count = 3};
+                  .map_known = 1, .settled = 1, .max_hp = 235, .slot_count = 3,
+                  .chat_status = CHAT_READING};
     snprintf(d.map, sizeof d.map, "Realm of the Mad God");
     d.session_start_epoch = wall() - 754;  /* pretend the session started 12.5 minutes ago */
     snprintf(d.log_name, sizeof d.log_name, "guard-%d.tsv", getpid());
@@ -39,6 +40,11 @@ int main(int argc, char **argv) {
             }
             d.in_nexus = p == 5; snprintf(d.map, sizeof d.map, p == 5 ? "Nexus" : "Realm of the Mad God");
             d.drinking = p == 1 || p == 2 || p == 3;
+            if (p == 3) {   /* a party call each cycle */
+                ++d.party_calls; d.party_call_epoch = wall();
+                snprintf(d.party_caller, sizeof d.party_caller, "Teratopositor");
+                snprintf(d.party_text, sizeof d.party_text, "j cit");
+            }
             int action = p == 1 || p == 2 ? 1 : p == 4 ? 2 : 0;
             if (action) {
                 int slot = stacks[0] ? 0 : stacks[1] ? 1 : 2;

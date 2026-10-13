@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import SwiftUI
+import UserNotifications
 
 private let mint = Color(red: 0.35, green: 0.88, blue: 0.72)
 private let amber = Color(red: 0.98, green: 0.74, blue: 0.30)
@@ -115,6 +116,57 @@ final class LaunchController: ObservableObject {
     }
 }
 
+/// Party call alerts: a notification banner, a sound and a flash on the compact strip. Checked
+/// on a timer rather than by the views, which stop redrawing while hidden or behind a
+/// full-screen game. Preferences are kept in the app's defaults.
+final class PartyAlerts: ObservableObject {
+    @Published var settings: PartyAlertSettings { didSet { save() } }
+    @Published private(set) var flashUntil = Date.distantPast
+    private var tracker = PartyAlertTracker()
+    private let defaults = UserDefaults.standard
+    /// Notifications need a bundled app; the test build runs without one.
+    private var canNotify: Bool {
+        #if GUARD_UI_TEST
+        return false
+        #else
+        return Bundle.main.bundleIdentifier != nil
+        #endif
+    }
+
+    init() {
+        settings = PartyAlertSettings(enabled: defaults.object(forKey: "partyAlerts") as? Bool ?? true,
+                                      sound: defaults.object(forKey: "partyAlertSound") as? Bool ?? true)
+    }
+    private func save() {
+        defaults.set(settings.enabled, forKey: "partyAlerts")
+        defaults.set(settings.sound, forKey: "partyAlertSound")
+        if settings.enabled { requestPermission() }
+    }
+    func requestPermission() {
+        guard canNotify else { return }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+    }
+    func check(_ source: LiveSource) {
+        // The tracker sees every snapshot even with alerts off, so turning them on never replays old calls.
+        guard let call = tracker.update(source.snapshot, live: source.link.isLive, now: Double(Clock.monotonicNs()) / 1e9),
+              settings.enabled else { return }
+        alert(call)
+    }
+    func alert(_ call: PartyCall) {
+        flashUntil = Date().addingTimeInterval(8)
+        #if !GUARD_UI_TEST
+        if settings.sound { NSSound(named: "Glass")?.play() }
+        #endif
+        guard canNotify else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Party call from \(call.caller)"
+        content.body = call.text
+        // One notification at a time: a newer call replaces the previous banner.
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "party-call", content: content, trigger: nil))
+    }
+    func flashing(at date: Date) -> Bool { date < flashUntil }
+}
+
 final class WindowState: ObservableObject {
     @Published var floating = false
     var window: NSWindow?
@@ -177,13 +229,14 @@ struct GuardView: View {
     @ObservedObject var window: WindowState
     @ObservedObject var settings: SettingsController
     @ObservedObject var launch: LaunchController
+    @ObservedObject var alerts: PartyAlerts
 
     var body: some View {
         TimelineView(.animation) { _ in
             let _ = source.refresh()
             let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
             MainLayout {
-                GuardPanel(window: window, settings: settings, launch: launch, source: source).content(source.snapshot, source.link, source.rate)
+                GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, source: source).content(source.snapshot, source.link, source.rate)
             }
         }
         .frame(minWidth: 420, minHeight: 360)
@@ -208,6 +261,7 @@ struct GuardPanel {
     @ObservedObject var window: WindowState
     @ObservedObject var settings: SettingsController
     @ObservedObject var launch: LaunchController
+    @ObservedObject var alerts: PartyAlerts
     let source: LiveSource
 
     @ViewBuilder func content(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -219,10 +273,12 @@ struct GuardPanel {
                 startCard(link)
                 if let s, link == .offline("Game closed") { summaryCard(s, title: "Last session") }
                 settingsCard(nil)
+                partyCard(nil)
             } else if let s {
                 mapCard(s)
                 hpCard(s)
                 summaryCard(s)
+                partyCard(s)
                 settingsCard(s)
                 potionCard(s)
                 eventsCard(s)
@@ -421,6 +477,49 @@ struct GuardPanel {
         }
     }
 
+    private func partyCard(_ s: GuardSnapshot?) -> some View {
+        Card(title: "Party calls") {
+            HStack {
+                Toggle(isOn: $alerts.settings.enabled) {
+                    Text("Alert me when someone calls j in party chat").font(.system(size: 12, weight: .medium))
+                }
+                .toggleStyle(.switch)
+                Spacer()
+            }
+            HStack(spacing: 14) {
+                Toggle("Play a sound", isOn: $alerts.settings.sound).toggleStyle(.checkbox).font(.system(size: 11))
+                    .disabled(!alerts.settings.enabled)
+                Spacer()
+                Button("Test alert") {
+                    alerts.requestPermission()
+                    alerts.alert(PartyCall(caller: "Test", text: "j cit", epoch: Date().timeIntervalSince1970, count: 0))
+                }
+                .font(.system(size: 11)).disabled(!alerts.settings.enabled)
+            }
+            Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" as the first word, from other players in party chat only. A burst alerts once every 5 s.")
+                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let s {
+                HStack(spacing: 8) {
+                    switch s.chatStatus {
+                    case Int32(CHAT_READING): Pill(text: "READING PARTY CHAT", color: mint)
+                    case Int32(CHAT_UNAVAILABLE): Pill(text: "CHAT NOT SUPPORTED IN THIS BUILD", color: coral)
+                    default: Pill(text: "LOOKING FOR CHAT", color: .gray)
+                    }
+                    Spacer()
+                    Text("\(s.partyCalls) this session").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                if let call = s.lastCall {
+                    HStack(spacing: 8) {
+                        Text(Format.time(call.epoch)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                        Text(call.caller).font(.system(size: 12, weight: .semibold)).foregroundStyle(amber)
+                        Text(call.text).font(.system(size: 12)).lineLimit(1)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
     private func potionCard(_ s: GuardSnapshot) -> some View {
         Card(title: "Quickslots (used in order)") {
             if s.stacks.isEmpty {
@@ -509,12 +608,14 @@ struct GuardPanel {
 /// Small always-on-top strip: HP, potions and guard state. Never takes focus from the game.
 struct CompactView: View {
     let source: LiveSource
+    @ObservedObject var alerts: PartyAlerts
     var expand: () -> Void
 
     var body: some View {
-        TimelineView(.animation) { _ in
+        TimelineView(.animation) { context in
             let _ = source.refresh()
-            CompactContent(snapshot: source.snapshot, link: source.link, expand: expand)
+            CompactContent(snapshot: source.snapshot, link: source.link, expand: expand,
+                           flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil)
         }
     }
 }
@@ -523,6 +624,8 @@ struct CompactContent: View {
     var snapshot: GuardSnapshot?
     var link: Link
     var expand: () -> Void
+    /// While a party call is fresh: the current time, which drives the pulse. nil otherwise.
+    var flash: Double? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -533,7 +636,12 @@ struct CompactContent: View {
                 Text(s.armed ? "ARMED" : "DRY").font(.system(size: 10, weight: .bold)).foregroundStyle(s.armed ? mint : .gray)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text(s.percent == nil ? "-" : "\(s.hp)/\(s.maxHP)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                        if flash != nil, let call = s.lastCall {
+                            Text("J  \(call.caller)").font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(amber).lineLimit(1)
+                        } else {
+                            Text(s.percent == nil ? "-" : "\(s.hp)/\(s.maxHP)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
                         Spacer()
                         Text(s.inNexus ? "NEXUS" : s.percent.map { String(format: "%.0f%%", $0) } ?? "")
                             .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(s.inNexus ? amber : color)
@@ -556,6 +664,12 @@ struct CompactContent: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .frame(width: 340, height: 52)
         .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92))
+        .overlay {
+            if let flash {
+                RoundedRectangle(cornerRadius: 10).strokeBorder(amber, lineWidth: 3)
+                    .opacity(0.55 + 0.45 * sin(flash * 2 * .pi * 1.5))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .environment(\.colorScheme, .dark)
     }
@@ -572,7 +686,8 @@ struct CompactContent: View {
         if v.count == 4 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2], nexus: v[3]) }
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_COMPACT"] != nil {
-        let compact = CompactContent(snapshot: source.snapshot, link: source.link, expand: {})
+        let compact = CompactContent(snapshot: source.snapshot, link: source.link, expand: {},
+                                     flash: ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil ? 0.1 : nil)
         let renderer = ImageRenderer(content: compact); renderer.scale = 2
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
@@ -584,7 +699,7 @@ struct CompactContent: View {
         let deadline = Date().addingTimeInterval(20)
         while launch.state == .checking && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
-    let view = GuardPanel(window: WindowState(), settings: settings, launch: launch, source: source).content(source.snapshot, source.link, source.rate)
+    let view = GuardPanel(window: WindowState(), settings: settings, launch: launch, alerts: PartyAlerts(), source: source).content(source.snapshot, source.link, source.rate)
         .padding(16).frame(width: 460, alignment: .top)
         .background(Color(red: 0.07, green: 0.08, blue: 0.10))
         .environment(\.colorScheme, .dark)
@@ -595,14 +710,30 @@ struct CompactContent: View {
 }
 #endif
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     var window: NSWindow!
     var compact: NSPanel!
     let source = LiveSource()
     let state = WindowState()
     let settings = SettingsController()
     let launch = LaunchController()
+    let alerts = PartyAlerts()
+    private var alertTimer: Timer?
+    private var activity: NSObjectProtocol?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Party calls are checked 10 times a second whatever the windows are doing. Without the
+        // activity, App Nap slows timers while the game is in front.
+        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
+        alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.source.refresh(); self.alerts.check(self.source)
+        }
+        #if !GUARD_UI_TEST
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = self
+            if alerts.settings.enabled { alerts.requestPermission() }
+        }
+        #endif
         try? FileManager.default.createDirectory(at: GuardPaths.logs(data: dataURL), withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
         let menu = NSMenu()
@@ -612,7 +743,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 1000), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Exalt Client Mac"
         window.delegate = self
-        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch))
+        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
         // Compact strip: floats over the game (also in full screen) and never takes focus.
         compact = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 52),
@@ -622,7 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         compact.isMovableByWindowBackground = true
         compact.backgroundColor = .clear; compact.isOpaque = false; compact.hasShadow = true
         compact.hidesOnDeactivate = false
-        compact.contentView = NSHostingView(rootView: CompactView(source: source) { [weak self] in self?.showFull() })
+        compact.contentView = NSHostingView(rootView: CompactView(source: source, alerts: alerts) { [weak self] in self?.showFull() })
         compact.setFrameAutosaveName("ExaltClientMacCompact")
         if compact.frame.origin == .zero, let screen = NSScreen.main {
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
@@ -678,6 +809,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }
+    /// Show party call banners even while this app is in front.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list])
+    }
     /// Clicking the Dock icon while compact brings the full window back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showFull(); return true }
 }

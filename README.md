@@ -8,6 +8,7 @@ A macOS companion for Realm of the Mad God Exalt. It watches your HP from inside
 
 - **Auto-potion.** Starts drinking when HP drops to the potion trigger (default 50%) and keeps going until HP is over a ceiling (default 80%). After each potion it waits for the heal to show up in HP before drinking again (details under Potion pacing). Quickslots are used in order: the first until it's empty, then the next.
 - **Auto-Nexus.** Returns to the Nexus once when HP is at or below the Nexus threshold (default 25%).
+- **Party call alerts.** When another player starts a party chat message with "j" (any number of j's, as in "j cit" or "JJJJ") or "join", the app shows a notification, plays a sound and flashes the compact strip. Normal chat and your own messages never alert, and a burst of calls alerts once every 5 s. It can be switched off in the app.
 - **Live view.** HP and thresholds, quickslot counts and cooldowns, the last 16 actions with millisecond timestamps, a session summary (potions used, Nexus count, closest call) and latency numbers. There's also a compact always-on-top strip that floats over the game without taking focus.
 - **Log export.** **Export logs...** saves every session log plus your settings as one zip.
 - **Settings while you play.** Thresholds and armed/dry-run change live from the app and are saved for the next launch.
@@ -52,6 +53,10 @@ Checks have to run on the game's main thread, between frames, since that's where
 
 One investigation finding shaped the design: the client reports each bullet hit to the server before applying any damage locally, and the HUD follows the server's HP. So no reader of client HP can step in between bullets of a single volley. Percentage thresholds were the right scope for this tool.
 
+## Party calls
+
+The guard reads the chat window's messages every 100 ms. The game reuses message objects for new messages, so a message counts as new when an object's sender, channel or text changes, and messages already in the chat when the guard starts are only remembered. A message is a call when its channel is party chat, its sender isn't your character, and its first word is only j's or is "join". The guard logs only the caller's name; message text never goes to the log. The app checks for new calls 10 times a second on a timer, so alerts still work while its windows are hidden behind a full-screen game.
+
 ## Potion pacing
 
 The game has no client-side potion cooldown, and HP only updates when the server reports it, about every 200 ms. An early version drank whenever HP was under the target, so it kept drinking on the old HP before the first heal arrived and emptied 7 potions in 316 ms.
@@ -78,7 +83,7 @@ A new drop to the trigger starts a fresh run immediately. The integration tests 
 | --- | --- |
 | `core_tests.c` | Decision logic: thresholds, ceiling, pacing, settle time, the Nexus rule, settings validation |
 | `live_tests.c`, `live_cross.c` | Sequence-lock consistency under concurrent writes, both in one process and between an x86_64 writer and an arm64 reader in separate processes (millions of reads per run, zero torn reads) |
-| `test_guard.py` + `fixture.c` | 23 integration tests: the real guard library loaded into a synthetic `RotMGExalt` process with a fake IL2CPP runtime and scripted HP, covering potions, Nexus, ceiling, game cooldown, settings sent mid-session, wrong or lagging HUD fields, game exceptions, unknown maps and the live file |
+| `test_guard.py` + `fixture.c` | 27 integration tests: the real guard library loaded into a synthetic `RotMGExalt` process with a fake IL2CPP runtime and scripted HP, covering potions, Nexus, ceiling, game cooldown, settings sent mid-session, wrong or lagging HUD fields, game exceptions, unknown maps, party chat calls (reused message objects, history, normal chat, own messages) and the live file |
 | `app/*Tests.swift` | Live-file decoding, connection state, settings rules and file, launch checks, hashing, session summary |
 | `build.sh` UI check | Builds a test copy of the app, switches to the compact strip and back, and fails if the app quits |
 

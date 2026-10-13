@@ -75,6 +75,20 @@ static void *realm_quests_class, *realm_quests_handle, *map_info_field, *map_nam
 static void *last_map_info, *last_map_name;
 static int map_ok, in_nexus, map_unknown_logged;
 static uint64_t next_map_lookup, next_equipment_lookup;
+/* Party chat calls. ChatManager keeps the chat window's slots (ChatSlotController), each showing
+ * one message model (CPHENFGHHNA). The game reuses message objects for new messages, so a
+ * message is new when an object's sender, channel or text changes. Only the sender of a party
+ * call is logged; message text never goes to the log. */
+#define CHAT_SEEN 256
+static void *chat_class, *chat_handle, *chat_slots_field, *chat_slot_class, *chat_slot_model_field;
+static void *chat_message_class, *chat_sender_field, *chat_channel_field, *chat_text_field, *own_name_field;
+static void *chat_list_class, *chat_items_field, *chat_size_field;
+static void *chat_object;   /* compared only, never read: it may have been collected */
+static int chat_primed;
+static struct { void *object; uint64_t hash; } chat_seen[CHAT_SEEN];
+static unsigned chat_seen_next;
+static uint64_t next_chat_lookup, next_chat_poll;
+static char own_name[64];
 static void *cooldown_field;          /* QuickSlot.GCKDOJPIMLD: the game's quickslot cooldown flag */
 static uintptr_t validated_player;    /* player whose HP field has matched the HUD at least once */
 /* Live state for Exalt Guard.app (see live_state.h). */
@@ -108,8 +122,8 @@ static int ready;
 #endif
 
 /* One-off status lines from the game thread, printed by the writer. */
-#define NOTE_CAPACITY 16
-static char notes[NOTE_CAPACITY][256];
+#define NOTE_CAPACITY 32
+static char notes[NOTE_CAPACITY][1024];
 static _Atomic uint64_t note_head, note_tail;
 __attribute__((format(printf, 1, 2))) static void note(const char *format, ...) {
     uint64_t head = atomic_load_explicit(&note_head, memory_order_relaxed);
@@ -221,6 +235,21 @@ static void prepare_guard(const void *game) {
         map_display_field = typed_field(map_info_class, "FHLCMICEGNM", "System.String");
     }
     map_ok = map_info_field && map_name_field && map_display_field;
+    chat_class = il2cpp_class_from_name(game, "DecaGames.RotMG.UI.Managers", "ChatManager");
+    chat_slot_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Chat.UI", "ChatSlotController");
+    chat_message_class = il2cpp_class_from_name(game, "", "CPHENFGHHNA");
+    if (chat_class && chat_slot_class && chat_message_class) {
+        chat_slots_field = typed_field(chat_class, "CPEAFDEENOD", "System.Collections.Generic.List<DecaGames.RotMG.Chat.UI.ChatSlotController>");
+        chat_slot_model_field = typed_field(chat_slot_class, "HPGHGFMACLH", "CPHENFGHHNA");
+        chat_sender_field = typed_field(chat_message_class, "DPGEBOCBKEF", "System.String");   /* "Name,a19d" */
+        chat_channel_field = typed_field(chat_message_class, "JPDFALDPJCK", "System.String");  /* "*Party*", "*Guild*" or empty */
+        chat_text_field = typed_field(chat_message_class, "HOAKHDPFALM", "System.String");
+    }
+    if (!(chat_slots_field && chat_slot_model_field && chat_sender_field && chat_channel_field && chat_text_field)) {
+        chat_slots_field = NULL;
+        live_data.chat_status = CHAT_UNAVAILABLE;
+        note("guard_chat_unavailable\n");
+    }
     if (guard_ok) note("guard_ready\n");
     else note("guard_refused\tplayer_fields_missing\n");
 }
@@ -262,6 +291,7 @@ static int prepare(void) {
     if (character) {
         max_field = typed_field(character, "OADOHPKBPJB", "System.Int32");
         player_hp_field = typed_field(character, "ABCPKBGJPEP", "System.Int32");
+        own_name_field = typed_field(character, "DPGEBOCBKEF", "System.String");  /* same name as the chat sender field */
     }
     if (!(bar_field && player_field && hp_field && native_field && position_field)) return 0;
     prepare_guard(game);
@@ -328,6 +358,120 @@ static void update_map(uint64_t now) {
     in_nexus = !strcasecmp(text, "Nexus") || !strcasecmp(display, "Nexus") || !strcasecmp(display, "{s.nexus}");
     snprintf(live_data.map, sizeof live_data.map, "%s", text);
     note("guard_map\t%s\t%s\t%s\n", text, display, in_nexus ? "nexus" : "not_nexus");
+}
+static uint64_t fnv1a(const char *text) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (; *text; ++text) hash = (hash ^ (uint8_t)*text) * 1099511628211ULL;
+    return hash;
+}
+/* Copies a managed string as UTF-8, dropping control characters and never splitting a character. */
+static void read_utf8(void *string, char *out, size_t size) {
+    out[0] = 0;
+    if (!string || size < 2) return;
+    int32_t length = il2cpp_string_length(string);
+    const uint16_t *chars = il2cpp_string_chars(string);
+    size_t n = 0;
+    for (int32_t i = 0; chars && i < length; ++i) {
+        uint32_t c = chars[i];
+        if (c >= 0xD800 && c < 0xDC00 && i + 1 < length && chars[i + 1] >= 0xDC00 && chars[i + 1] < 0xE000)
+            c = 0x10000 + ((c - 0xD800) << 10) + (uint32_t)(chars[++i] - 0xDC00);
+        else if (c >= 0xD800 && c < 0xE000) c = 0xFFFD;
+        if (c < 0x20 || c == 0x7F) continue;
+        unsigned char b[4];
+        size_t k;
+        if (c < 0x80) { b[0] = (unsigned char)c; k = 1; }
+        else if (c < 0x800) { b[0] = (unsigned char)(0xC0 | c >> 6); b[1] = (unsigned char)(0x80 | (c & 63)); k = 2; }
+        else if (c < 0x10000) {
+            b[0] = (unsigned char)(0xE0 | c >> 12); b[1] = (unsigned char)(0x80 | (c >> 6 & 63));
+            b[2] = (unsigned char)(0x80 | (c & 63)); k = 3;
+        } else {
+            b[0] = (unsigned char)(0xF0 | c >> 18); b[1] = (unsigned char)(0x80 | (c >> 12 & 63));
+            b[2] = (unsigned char)(0x80 | (c >> 6 & 63)); b[3] = (unsigned char)(0x80 | (c & 63)); k = 4;
+        }
+        if (n + k + 1 > size) break;
+        memcpy(out + n, b, k);
+        n += k;
+    }
+    out[n] = 0;
+}
+/* Returns 1 when `object` is new or its contents changed since last seen, and remembers them. */
+static int chat_changed(void *object, uint64_t hash) {
+    for (unsigned i = 0; i < CHAT_SEEN; ++i) {
+        if (chat_seen[i].object != object) continue;
+        if (chat_seen[i].hash == hash) return 0;
+        chat_seen[i].hash = hash;
+        return 1;
+    }
+    chat_seen[chat_seen_next++ % CHAT_SEEN] = (typeof(chat_seen[0])){object, hash};
+    return 1;
+}
+/* Reads the chat slot list's backing array; returns the element count (0 if unreadable). */
+static int32_t chat_slot_items(void *list, void *const **items) {
+    if (!list) return 0;
+    void *klass = il2cpp_object_get_class(list);
+    if (klass != chat_list_class) {
+        chat_list_class = klass;
+        chat_items_field = typed_field(klass, "_items", "DecaGames.RotMG.Chat.UI.ChatSlotController[]");
+        chat_size_field = typed_field(klass, "_size", "System.Int32");
+    }
+    if (!chat_items_field || !chat_size_field) return 0;
+    void *array = read_reference(list, chat_items_field);
+    int32_t size = 0;
+    il2cpp_field_get_value(list, chat_size_field, &size);
+    if (!array || size <= 0) return 0;
+    if ((uint32_t)size > il2cpp_array_length(array)) size = (int32_t)il2cpp_array_length(array);
+    *items = (void *const *)((char *)array + 0x20);
+    return size;
+}
+/* A message is a party call when it is new, in party chat, from someone else, and matches
+ * chat_is_call. During priming, messages already in the chat are remembered, not reported. */
+static void chat_check(void *message, int priming, double epoch) {
+    if (!message || il2cpp_object_get_class(message) != chat_message_class) return;
+    char sender[64], channel[16], text[sizeof live_data.party_text], key[200];
+    read_utf8(read_reference(message, chat_sender_field), sender, sizeof sender);
+    read_utf8(read_reference(message, chat_channel_field), channel, sizeof channel);
+    read_utf8(read_reference(message, chat_text_field), text, sizeof text);
+    if (!sender[0] && !text[0]) return;   /* an unused pooled object */
+    snprintf(key, sizeof key, "%s\t%s\t%s", sender, channel, text);
+    if (!chat_changed(message, fnv1a(key)) || priming) return;
+    if (strcmp(channel, "*Party*") || !chat_is_call(text) || chat_same_name(sender, own_name)) return;
+    ++live_data.party_calls;
+    live_data.party_call_epoch = epoch;
+    int name_length = (int)strcspn(sender, ",");
+    if (name_length >= (int)sizeof live_data.party_caller) name_length = (int)sizeof live_data.party_caller - 1;
+    snprintf(live_data.party_caller, sizeof live_data.party_caller, "%.*s", name_length, sender);
+    memcpy(live_data.party_text, text, sizeof text);
+    note("guard_party_call\t%s\n", live_data.party_caller);
+}
+/* Every 100 ms: reads the chat window's messages. `player` (may be NULL) gives the name of the
+ * user's own character, whose messages never count as calls. */
+static void poll_chat(uint64_t now, double epoch, void *player) {
+    if (!chat_slots_field || now < next_chat_poll) return;
+    next_chat_poll = now + 100 * NSEC_PER_MSEC;
+    if (player && own_name_field) read_utf8(read_reference(player, own_name_field), own_name, sizeof own_name);
+    void *chat = chat_handle ? il2cpp_gchandle_get_target(chat_handle) : NULL;
+    if (!chat || il2cpp_object_get_class(chat) != chat_class || !native_alive(chat)) {
+        release(&chat_handle);
+        live_data.chat_status = CHAT_SEARCHING;
+        if (now < next_chat_lookup) return;
+        next_chat_lookup = now + 500 * NSEC_PER_MSEC;
+        chat = find_object(chat_class);
+        if (!chat || il2cpp_object_get_class(chat) != chat_class || !native_alive(chat)) return;
+        chat_handle = il2cpp_gchandle_new(chat, 0);
+        /* A different chat window: what it already shows is history. The same one found again
+         * (after a brief loss) keeps its record, so calls that arrived meanwhile still count. */
+        if (chat != chat_object) { chat_object = chat; chat_primed = 0; }
+        if (live_data.chat_status != CHAT_READING) note("guard_chat_ready\n");
+        live_data.chat_status = CHAT_READING;
+    }
+    void *const *slots = NULL;
+    int32_t count = chat_slot_items(read_reference(chat, chat_slots_field), &slots);
+    int priming = !chat_primed;
+    chat_primed = 1;
+    for (int32_t i = 0; i < count; ++i) {
+        if (!slots[i] || il2cpp_object_get_class(slots[i]) != chat_slot_class) continue;
+        chat_check(read_reference(slots[i], chat_slot_model_field), priming, epoch);
+    }
 }
 static void disarm(const char *what, const void *exception) {
     char message[128] = "";
@@ -531,6 +675,7 @@ static void drain(void *unused) {
 }
 static void finish(void) {
     release(&gui_handle); release(&player_handle); release(&equipment_handle); release(&realm_quests_handle);
+    release(&chat_handle);
     dispatch_source_cancel(timer);
     atomic_store_explicit(&finished, 1, memory_order_release);
 }
@@ -542,7 +687,7 @@ static void tick(void *unused) {
                 .epoch = start_epoch + (double)(begin - start_ns) / 1e9,
                 .gap_ns = previous_ns ? begin - previous_ns : 0, .status = 1};
     previous_ns = begin;
-    void *gui = NULL, *player = NULL, *bar = NULL;
+    void *gui = NULL, *player = NULL, *bar = NULL, *own = NULL;
     if (!ready && begin >= next_lookup) {
         ready = prepare(); next_lookup = begin + 500 * NSEC_PER_MSEC;
     }
@@ -569,6 +714,7 @@ static void tick(void *unused) {
     bar = read_reference(gui, bar_field);
     if (!player || il2cpp_object_get_class(player) != player_class ||
         !bar || il2cpp_object_get_class(bar) != bar_class || !native_alive(bar)) goto done;
+    own = player;
     if (!player_handle || il2cpp_gchandle_get_target(player_handle) != player) {
         release(&player_handle); detector.valid = 0;
         player_handle = il2cpp_gchandle_new(player, 0);
@@ -580,6 +726,7 @@ static void tick(void *unused) {
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
     if (r.status == 0) run_guard(&r, player, begin);
 done:
+    if (ready) poll_chat(begin, r.epoch, own);
     r.previous_hp = detector.valid ? detector.hp : r.hp;
     r.decreased = detect(&detector, (uintptr_t)player, r.hp, begin, r.status == 0);
     r.detection_ns = monotonic_ns() - begin;

@@ -23,6 +23,8 @@ int main(int argc, char **argv) {
     printf("potions_sent=%u\nnexus_sent=%u\npotions_dry=%u\nnexus_dry=%u\n", d.potions_sent, d.nexus_sent, d.potions_dry, d.nexus_dry);
     printf("lowest_hp=%d\nlowest_max_hp=%d\nlowest_epoch=%.6f\nsession_start_epoch=%.6f\nlog_name=%s\n",
            d.lowest_hp, d.lowest_max_hp, d.lowest_epoch, d.session_start_epoch, d.log_name);
+    printf("chat_status=%d\nparty_calls=%u\nparty_call_epoch=%.6f\nparty_caller=%s\nparty_text=%s\n",
+           d.chat_status, d.party_calls, d.party_call_epoch, d.party_caller, d.party_text);
     unsigned n = d.event_count < LIVE_EVENTS ? d.event_count : LIVE_EVENTS;
     for (unsigned k = 0; k < n; ++k) {
         const LiveEvent *e = &d.events[(d.event_count - n + k) % LIVE_EVENTS];

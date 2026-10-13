@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 typedef struct {
     int armed;             /* 0 = dry run: decide and log, never call the game */
@@ -137,5 +138,27 @@ static inline GuardAction guard_decide(GuardState *s, const GuardConfig *c, uint
     s->last_potion_hp = hp;
     return GUARD_POTION;
     return GUARD_NONE;
+}
+/* Party chat calls. A message is a call when its first word, ignoring case and trailing
+ * punctuation, is only j's ("j", "JJJJ", "j!" in "j cit") or is "join". Words that merely start
+ * with j ("jump", "jk") are not. */
+static inline int chat_is_call(const char *text) {
+    if (!text) return 0;
+    while (*text == ' ') ++text;
+    size_t length = 0;
+    while (text[length] && text[length] != ' ') ++length;
+    while (length && !((text[length - 1] | 0x20) >= 'a' && (text[length - 1] | 0x20) <= 'z') &&
+           !(text[length - 1] >= '0' && text[length - 1] <= '9')) --length;
+    if (!length) return 0;
+    if (length == 4 && !strncasecmp(text, "join", 4)) return 1;
+    for (size_t i = 0; i < length; ++i)
+        if (text[i] != 'j' && text[i] != 'J') return 0;
+    return 1;
+}
+/* Chat senders carry suffixes after a comma ("Name,a19d"). Compares the names before them,
+ * ignoring case; empty names never match. */
+static inline int chat_same_name(const char *a, const char *b) {
+    size_t la = strcspn(a, ","), lb = strcspn(b, ",");
+    return la && la == lb && !strncasecmp(a, b, la);
 }
 #endif

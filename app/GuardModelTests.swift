@@ -56,6 +56,29 @@ private func sample() -> LiveData {
         }
         check(GuardSnapshot(few).events.map(\.epoch) == [1, 2], "partial ring")
 
+        // Party calls.
+        check(s.lastCall == nil && s.partyCalls == 0, "no call yet")
+        func calls(_ n: UInt32, caller: String = "Teratopositor", text: String = "j cit \u{2192}", pid: Int32 = 4242) -> GuardSnapshot {
+            var d = sample(); d.pid = pid; d.chat_status = 1; d.party_calls = n; d.party_call_epoch = 77
+            withUnsafeMutableBytes(of: &d.party_caller) { raw in for (i, b) in Array(caller.utf8).enumerated() { raw[i] = b } }
+            withUnsafeMutableBytes(of: &d.party_text) { raw in for (i, b) in Array(text.utf8).enumerated() { raw[i] = b } }
+            return GuardSnapshot(d)
+        }
+        check(calls(3).lastCall == PartyCall(caller: "Teratopositor", text: "j cit \u{2192}", epoch: 77, count: 3), "call decoded")
+        check(calls(3).chatStatus == 1, "chat status")
+        var tracker = PartyAlertTracker()
+        check(tracker.update(calls(2), live: true, now: 0) == nil, "calls before the app watched are not replayed")
+        check(tracker.update(calls(2), live: true, now: 1) == nil, "nothing new")
+        check(tracker.update(calls(3), live: true, now: 2)?.count == 3, "a new call alerts")
+        check(tracker.update(calls(4), live: true, now: 3) == nil, "a burst alerts once")
+        check(tracker.update(calls(5), live: true, now: 6.5) == nil, "still within 5 s of the last alert")
+        check(tracker.update(calls(6), live: true, now: 7.5)?.count == 6, "alerts again after a quiet period")
+        check(tracker.update(calls(7), live: false, now: 20) == nil, "never from stale data")
+        check(tracker.update(calls(8), live: true, now: 21)?.count == 8, "catches up when live again")
+        check(tracker.update(calls(0, pid: 5000), live: true, now: 30) == nil, "a new session sets a new baseline")
+        check(tracker.update(calls(1, pid: 5000), live: true, now: 31)?.count == 1, "first call of the new session")
+        check(tracker.update(nil, live: true, now: 40) == nil, "no data")
+
         // Outcome text.
         let texts = [0: "dry run", 1: "sent", -1: "game error, disarmed", -2: "target unavailable", -3: "no potions"]
         for (code, text) in texts {

@@ -13,7 +13,7 @@
 #include <string.h>
 
 #define LIVE_MAGIC 0x44475845u  /* "EXGD" */
-#define LIVE_VERSION 3u
+#define LIVE_VERSION 4u
 #define LIVE_SLOTS 8
 #define LIVE_EVENTS 16
 #define LIVE_FILE_SIZE 4096
@@ -21,6 +21,8 @@
 
 /* Result of the latest settings change sent from the app. */
 enum { CONTROL_NONE = 0, CONTROL_APPLIED = 1, CONTROL_REJECTED = 2 };
+/* Whether the guard can read chat: not found yet, reading, or the game's chat fields are missing. */
+enum { CHAT_SEARCHING = 0, CHAT_READING = 1, CHAT_UNAVAILABLE = -1 };
 
 typedef struct {
     double epoch;                 /* wall-clock seconds */
@@ -52,6 +54,12 @@ typedef struct {
     int32_t lowest_hp, lowest_max_hp;        /* closest call outside the Nexus; lowest_max_hp 0 = none yet */
     double lowest_epoch;
     char log_name[64];                       /* this session's log file, in the logs folder */
+    /* Party chat calls ("j", "join") from other players; the app alerts when party_calls grows. */
+    int32_t chat_status;                     /* CHAT_* below */
+    uint32_t party_calls;
+    double party_call_epoch;
+    char party_caller[32];                   /* sender name, UTF-8 */
+    char party_text[96];                     /* message text, UTF-8, cut to fit */
 } LiveData;
 
 /* Settings sent by the app. request increases with every change; 0 means none yet. */

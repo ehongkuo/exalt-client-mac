@@ -209,4 +209,24 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25',data_dir=True)
   self.assertEqual(calls['nexus_calls'],1)
   self.assertEqual(self.live['armed'],'1')
+ def test_party_calls_from_others_only(self):
+  # Message objects are reused, so new messages are content changes. History at start, normal
+  # chat, the user's own call and a word that only starts with j never count.
+  log,rows,calls=self.run_fixture()
+  self.assertIn('guard_chat_ready',log)
+  calls=[l.split('\t')[1] for l in log.splitlines() if l.startswith('guard_party_call\t')]
+  self.assertEqual(calls,['Dana','Eve','Frank'])
+  self.assertEqual(self.live['chat_status'],'1')
+  self.assertEqual(self.live['party_calls'],'3')
+  self.assertEqual(self.live['party_caller'],'Frank')
+  self.assertEqual(self.live['party_text'],'Join now \u2192')
+  self.assertGreater(float(self.live['party_call_epoch']),0)
+  # Message text never reaches the log.
+  for text in ('j cit','JJJJ','Join now','jump'): self.assertNotIn(text,log)
+ def test_party_calls_without_chat_manager(self):
+  log,rows,calls=self.run_fixture("armed=1","NO_CHAT")
+  self.assertNotIn('guard_party_call',log)
+  self.assertEqual(self.live['chat_status'],'0')
+  self.assertEqual(self.live['party_calls'],'0')
+  self.assertEqual(calls['nexus_calls'],1)        # the guard itself is unaffected
 if __name__=='__main__': unittest.main()

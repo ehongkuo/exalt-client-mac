@@ -181,7 +181,23 @@ static void test_apply(void) {
     assert(guard_apply(&c, &s, 1, 60, 0, 0));
 }
 
+static void test_chat_call(void) {
+    const char *calls[] = {"j", "J", "jjjjj", "JJjj", "j cit", "j inf", "JJ O3 now", "j!", "jjj...", "  j",
+                           "join", "Join now", "JOIN!", "j?"};
+    for (unsigned i = 0; i < sizeof calls / sizeof *calls; ++i) assert(chat_is_call(calls[i]));
+    const char *not_calls[] = {"", " ", "!", "jump", "jk", "joined", "rejoin", "hello j", "can i join",
+                               "j1", "jo", "s?", NULL};
+    for (unsigned i = 0; i < sizeof not_calls / sizeof *not_calls; ++i) assert(!chat_is_call(not_calls[i]));
+    assert(chat_same_name("Wehatelife,a19d,c84c", "wehatelife"));
+    assert(chat_same_name("Me", "Me,ab12"));
+    assert(!chat_same_name("Teratopositor,cbf9", "Wehatelife"));
+    assert(!chat_same_name("Me", "Mel"));
+    assert(!chat_same_name("", ""));
+    assert(!chat_same_name(",x", ",x"));
+}
+
 int main(void) {
+    test_chat_call();
     test_apply();
     test_pick_slot();
     test_parse();

@@ -116,6 +116,9 @@ struct GuardSnapshot: Equatable {
     var events: [GuardEvent]      // oldest first, at most 16
     var controlRequest: UInt32, controlResult: Int32
     var summary: SessionSummary
+    var chatStatus: Int32         // CHAT_SEARCHING, CHAT_READING or CHAT_UNAVAILABLE
+    var partyCalls: UInt32
+    var lastCall: PartyCall?
 
     init(_ d: LiveData) {
         pid = d.pid; status = d.status; armed = d.armed != 0
@@ -142,6 +145,12 @@ struct GuardSnapshot: Equatable {
             potionsDry: Int(d.potions_dry), nexusDry: Int(d.nexus_dry),
             lowestHP: Int(d.lowest_hp), lowestMaxHP: Int(d.lowest_max_hp), lowestEpoch: d.lowest_epoch,
             logName: withUnsafeBytes(of: d.log_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) })
+        chatStatus = d.chat_status
+        partyCalls = d.party_calls
+        let text = { (raw: UnsafeRawBufferPointer) in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+        lastCall = d.party_calls == 0 ? nil : PartyCall(
+            caller: withUnsafeBytes(of: d.party_caller, text), text: withUnsafeBytes(of: d.party_text, text),
+            epoch: d.party_call_epoch, count: d.party_calls)
         let ring = withUnsafeBytes(of: d.events) { Array($0.bindMemory(to: LiveEvent.self)) }
         let shown = Int(min(d.event_count, UInt32(LIVE_EVENTS)))
         events = (0..<shown).map { k in
@@ -169,6 +178,42 @@ struct SessionSummary: Equatable {
     var closestText: String {
         guard let percent = closestPercent else { return "None yet" }
         return String(format: "%.0f%% (%d/%d)", percent, lowestHP, lowestMaxHP)
+    }
+}
+
+/// The newest party "j" or "join" call from another player. `count` is the session's total so far.
+struct PartyCall: Equatable {
+    var caller: String
+    var text: String
+    var epoch: Double
+    var count: UInt32
+}
+
+/// Party alert preferences, kept by the app (the guard always reports calls).
+struct PartyAlertSettings: Equatable {
+    var enabled = true
+    var sound = true
+}
+
+/// Decides when a party call should alert. The first snapshot of each guard session sets a
+/// baseline, so calls counted before the app was watching are not replayed. After that, each
+/// new call alerts, except that a burst (one player spamming "jjjj" ten times) alerts once per
+/// `quiet` seconds.
+struct PartyAlertTracker {
+    var quiet: Double = 5
+    private var pid: Int32 = 0
+    private var seen: UInt32 = 0
+    private var lastAlert = -Double.infinity
+
+    /// `now`: seconds on any steadily increasing clock.
+    mutating func update(_ snapshot: GuardSnapshot?, live: Bool, now: Double) -> PartyCall? {
+        guard let s = snapshot, live else { return nil }
+        if s.pid != pid { pid = s.pid; seen = s.partyCalls; return nil }
+        guard s.partyCalls > seen, let call = s.lastCall else { seen = s.partyCalls; return nil }
+        seen = s.partyCalls
+        guard now - lastAlert >= quiet else { return nil }
+        lastAlert = now
+        return call
     }
 }
 
