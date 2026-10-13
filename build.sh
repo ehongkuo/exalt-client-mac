@@ -4,7 +4,8 @@
 # Usage: work/exalt-guard/build.sh            (tests + build)
 #        ./build.sh --test-only
 #        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
-#                                  until it is restarted from the app)
+#                                  until it is restarted from the app). Skips the tests: their
+#                                  UI check takes focus from the game. Run them with the game closed.
 set -eu
 src="${0:A:h}"
 out="$src/build"
@@ -14,6 +15,7 @@ installed="$HOME/Applications/Exalt Client Mac.app"
 data="$HOME/Library/Application Support/Exalt Client Mac"
 mkdir -p "$cache"
 
+if [[ "${1:-}" != --app-only ]]; then
 print '== Tests'
 clang -Wall -Wextra -Werror "$src/core_tests.c" -o "$src/core-tests" && "$src/core-tests"
 clang -O2 -Wall -Wextra -Werror "$src/live_tests.c" -o "$src/live-tests" && "$src/live-tests"
@@ -62,6 +64,9 @@ fi
 rm -rf "$ui"
 print 'Compact and expand UI test passed'
 [[ "${1:-}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
+else
+print '== Tests skipped (--app-only: the game may be running)'
+fi
 
 # Never overwrite a dylib the game has loaded, or a running app executable.
 # A running game has the installed guard loaded. Replacing the app bundle is still safe: the
