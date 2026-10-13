@@ -1,0 +1,22 @@
+# Build output and caches
+build/
+module-cache/
+*.dSYM/
+
+# Test binaries compiled next to the sources
+core-tests
+live-tests
+live-tests-x86
+live-cross-x86
+live-cross-arm64
+model-tests
+live-dump
+live-control
+ui-fixture
+
+# Runtime data (written to ~/Library/Application Support/Exalt Client Mac, never here)
+*.tsv
+*.bin
+guard-settings.conf
+
+.DS_Store
