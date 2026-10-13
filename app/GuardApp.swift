@@ -927,6 +927,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 }
             }
         }
+        // Screenshot hook: scroll the full window to the bottom after N seconds (README captures).
+        if let delay = env["GUARD_SCROLL_BOTTOM"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                func scrollView(in view: NSView?) -> NSScrollView? {
+                    guard let view else { return nil }
+                    if let scroll = view as? NSScrollView { return scroll }
+                    return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+                }
+                guard let scroll = scrollView(in: self?.window.contentView), let doc = scroll.documentView else { return }
+                let y = doc.isFlipped ? max(0, doc.bounds.height - scroll.contentView.bounds.height) : 0
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }

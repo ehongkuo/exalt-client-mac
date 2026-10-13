@@ -12,6 +12,17 @@ A macOS companion app for Realm of the Mad God Exalt. It runs alongside the game
   <img src="docs/compact-strip.png" width="340" alt="Compact strip: armed, HP 85%, flashing for a party call with a Join button">
 </p>
 
+<details open>
+<summary><b>Full view</b> (top, and scrolled to the bottom)</summary>
+<p>
+  <img src="docs/full-view.png" width="360" alt="Full view: map, health bar at 85% with threshold markers, session summary, party calls with a Join button, and settings">
+  &nbsp;
+  <img src="docs/full-view-scrolled.png" width="360" alt="Full view scrolled down: settings, quickslots, recent potion and Nexus actions, and latency numbers">
+</p>
+</details>
+
+Screenshots are taken from a test build fed by a synthetic writer (`tests/ui_fixture.c`), not the real game.
+
 > Not affiliated with or endorsed by DECA Games. Third-party tools can conflict with the game's terms of service; use it at your own risk. It reacts to the HP the server reports, so a single hit that takes you from above a threshold to 0 still kills you.
 
 ## Features
