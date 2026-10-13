@@ -76,7 +76,7 @@ private extension ApplyState {
     func replacingIdle(savedOffline: Bool) -> ApplyState { self == .idle && savedOffline ? .savedForNextLaunch : self }
 }
 
-/// Runs the same checks as Start Guard.command, then starts DECA's launcher with the guard.
+/// Checks the install and the game build, then starts DECA's launcher with the guard.
 final class LaunchController: ObservableObject {
     enum State: Equatable { case idle, checking, launched(Date), failed(String) }
     @Published private(set) var state: State = .idle
@@ -809,7 +809,7 @@ struct CompactContent: View {
         try! png.write(to: URL(fileURLWithPath: path)); exit(0)
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_POPUP"] != nil {
-        let popup = JoinPopupContent(call: PartyCall(caller: "Teratopositor", text: "j cit", epoch: 0, count: 1),
+        let popup = JoinPopupContent(call: PartyCall(caller: "Lyra", text: "j cit", epoch: 0, count: 1),
                                      status: .idle, join: {}, dismiss: {})
         let renderer = ImageRenderer(content: popup); renderer.scale = 2
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,

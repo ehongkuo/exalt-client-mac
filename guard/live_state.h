@@ -1,7 +1,7 @@
 #ifndef LIVE_STATE_H
 #define LIVE_STATE_H
 /* Live guard state shared through a memory-mapped file between the guard (x86_64, inside the
- * game under Rosetta) and Exalt Guard.app (arm64). Fixed-width fields only, so the layout is
+ * game under Rosetta) and Exalt Client Mac (arm64). Fixed-width fields only, so the layout is
  * identical on both. Two sequence-locked blocks:
  *   - LiveData, written by the guard after every check, read by the app;
  *   - LiveControl, written by the app when the user applies settings, read by the guard;

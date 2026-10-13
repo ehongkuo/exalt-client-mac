@@ -1,6 +1,6 @@
 /* Sequence-lock test: a writer publishes records whose fields all carry the same number;
  * a concurrent reader must never see a mix of two records. */
-#include "live_state.h"
+#include "../guard/live_state.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>

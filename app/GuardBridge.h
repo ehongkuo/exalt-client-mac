@@ -1,6 +1,6 @@
-/* Bridging header for Exalt Guard.app: the shared live-state layout, its reader and the
+/* Bridging header for Exalt Client Mac: the shared live-state layout, its reader and the
  * settings channel. */
-#include "../live_state.h"
+#include "../guard/live_state.h"
 #include <signal.h>
 
 /* `map` is a mapping of the live file; LiveState itself stays opaque to Swift. */

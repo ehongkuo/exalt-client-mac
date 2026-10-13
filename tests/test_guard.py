@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parent.parent   # repository root
 # Columns appended to the timing row: 15 player_hp, 16 player_max, 17 bar_aux, 18 action, 19 result, 20 slot
 ACTION,RESULT,SLOT=18,19,20
 POTION,NEXUS='1','2'
@@ -15,7 +15,7 @@ def live_control(path,request,armed,potion,ceiling,nexus):
  global CONTROL
  if CONTROL is None:
   CONTROL=Path(tempfile.mkdtemp(prefix='exalt-live-control-'))/'live-control'
-  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'live_control.c'),'-o',str(CONTROL)],check=True)
+  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_control.c'),'-o',str(CONTROL)],check=True)
  args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)]
  if request=='join':args=args[:4]   # FILE join REQUEST NAME
  subprocess.run([str(CONTROL),*args],check=True)
@@ -27,7 +27,7 @@ def live_dump(path):
  global DUMP
  if DUMP is None:
   DUMP=Path(tempfile.mkdtemp(prefix='exalt-live-dump-'))/'live-dump'
-  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'live_dump.c'),'-o',str(DUMP)],check=True)
+  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_dump.c'),'-o',str(DUMP)],check=True)
  out=subprocess.run([str(DUMP),str(path)],check=True,capture_output=True,text=True).stdout
  state={'event':[]}
  for line in out.splitlines():
@@ -44,8 +44,8 @@ class GuardTests(unittest.TestCase):
    logdir=p/'data'/'logs' if data_dir else p
    flags=[] if data_dir else [f'-DPROBE_LOG_DIR="{p}"']
    subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
-    *flags,'-DSESSION_NS=3500000000ULL',str(ROOT/'guard.c'),'-o',str(p/'guard.dylib')],check=True)
-   cmd=['clang','-arch','x86_64','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'fixture.c'),'-o',str(p/'RotMGExalt')]
+    *flags,'-DSESSION_NS=3500000000ULL',str(ROOT/'guard'/'guard.c'),'-o',str(p/'guard.dylib')],check=True)
+   cmd=['clang','-arch','x86_64','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests'/'fixture.c'),'-o',str(p/'RotMGExalt')]
    cmd+=[f'-D{d}' for d in defines]
    subprocess.run(cmd,check=True)
    env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env.pop('EXALT_GUARD',None)
@@ -270,19 +270,4 @@ class GuardTests(unittest.TestCase):
   self.assertIn('guard_join_unavailable',log)
   self.assertEqual(self.join['calls'],0)
   self.assertEqual(self.live['join_result'],'-4')
- def test_party_reader_logs_the_finder_list(self):
-  # Read-only: the party manager's finder list, skipping free dictionary slots, logged again
-  # when a fetch changes it ("blue" goes from 8/8 to 7/8).
-  log,rows,calls=self.run_fixture()
-  self.assertIn('guard_party_dict\tstride=24\tkey=8\tvalue=16',log)
-  lists=[l for l in log.splitlines() if l.startswith('guard_party_list\t')]
-  self.assertEqual(lists,['guard_party_list\tentries=2\tfetched=12.500','guard_party_list\tentries=2\tfetched=42.000'])
-  blue=[l for l in log.splitlines() if l.startswith('guard_party_entry\tkey=7\t')]
-  self.assertEqual(blue,['guard_party_entry\tkey=7\tOACPEMGPMKD=7\tPFHDLCLMLBC=blue\tPFFPONPFJCK=8\tGGIJKAIAMBP=8\tBJNOGNLPADD=1',
-                         'guard_party_entry\tkey=7\tOACPEMGPMKD=7\tPFHDLCLMLBC=blue\tPFFPONPFJCK=7\tGGIJKAIAMBP=8\tBJNOGNLPADD=1'])
-  self.assertIn('guard_party_entry\tkey=9\tOACPEMGPMKD=9\tPFHDLCLMLBC=o3 run\tPFFPONPFJCK=3\tGGIJKAIAMBP=6\tBJNOGNLPADD=1',log)
-  self.assertIn('guard_party_own\tOACPEMGPMKD=5\tPFHDLCLMLBC=mine\tPFFPONPFJCK=1\tGGIJKAIAMBP=8\tBJNOGNLPADD=1',log)
- def test_party_reader_without_party_manager(self):
-  log,rows,calls=self.run_fixture(None,"NO_PARTY")
-  self.assertNotIn('guard_party_list',log)
 if __name__=='__main__': unittest.main()

@@ -1,7 +1,7 @@
 /* Sends a settings change or a Join click to a running guard, exactly as the app does.
  * Usage: live_control FILE REQUEST ARMED POTION CEILING NEXUS
  *        live_control FILE join REQUEST NAME */
-#include "live_state.h"
+#include "../guard/live_state.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>

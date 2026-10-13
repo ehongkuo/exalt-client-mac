@@ -1,6 +1,6 @@
 /* Cross-process, cross-architecture check: `live_cross write FILE` (built x86_64, runs under
  * Rosetta) publishes into a mapped file while `live_cross read FILE` (arm64) verifies every read. */
-#include "live_state.h"
+#include "../guard/live_state.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>

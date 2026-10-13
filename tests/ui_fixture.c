@@ -1,6 +1,6 @@
 /* Synthetic live-state writer for UI checks: a scripted beach fight with drinks and a Nexus.
  * Usage: ui_fixture FILE SECONDS. Never touches the game. */
-#include "live_state.h"
+#include "../guard/live_state.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
             d.drinking = p == 1 || p == 2 || p == 3;
             if (p == 3) {   /* a party call each cycle */
                 ++d.party_calls; d.party_call_epoch = wall();
-                snprintf(d.party_caller, sizeof d.party_caller, "Teratopositor");
+                snprintf(d.party_caller, sizeof d.party_caller, "Lyra");
                 snprintf(d.party_text, sizeof d.party_text, "j cit");
             }
             int action = p == 1 || p == 2 ? 1 : p == 4 ? 2 : 0;

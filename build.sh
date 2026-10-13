@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
-# Usage: work/exalt-guard/build.sh            (tests + build)
+# Usage: ./build.sh               (tests + build + install; the game must be closed)
 #        ./build.sh --test-only
 #        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
 #                                  until it is restarted from the app). Skips the tests: their
@@ -13,30 +13,31 @@ cache="$src/module-cache"
 app="$out/Exalt Client Mac.app"
 installed="$HOME/Applications/Exalt Client Mac.app"
 data="$HOME/Library/Application Support/Exalt Client Mac"
-mkdir -p "$cache"
+tests="$out/tests"   # test binaries
+mkdir -p "$cache" "$tests"
 
 if [[ "${1:-}" != --app-only ]]; then
 print '== Tests'
-clang -Wall -Wextra -Werror "$src/core_tests.c" -o "$src/core-tests" && "$src/core-tests"
-clang -O2 -Wall -Wextra -Werror "$src/live_tests.c" -o "$src/live-tests" && "$src/live-tests"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/live_tests.c" -o "$src/live-tests-x86" && "$src/live-tests-x86"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/live_cross.c" -o "$src/live-cross-x86"
-clang -arch arm64 -O2 -Wall -Wextra -Werror "$src/live_cross.c" -o "$src/live-cross-arm64"
+clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests" && "$tests/core-tests"
+clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests" && "$tests/live-tests"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86" && "$tests/live-tests-x86"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_cross.c" -o "$tests/live-cross-x86"
+clang -arch arm64 -O2 -Wall -Wextra -Werror "$src/tests/live_cross.c" -o "$tests/live-cross-arm64"
 cross="$(mktemp -d)/live.bin"
-"$src/live-cross-x86" write "$cross" &
+"$tests/live-cross-x86" write "$cross" &
 until [[ -s "$cross" ]]; do :; done
-"$src/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
+"$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
     "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
-    -o "$src/model-tests" && "$src/model-tests"
-python3 "$src/test_guard.py"
+    -o "$tests/model-tests" && "$tests/model-tests"
+python3 "$src/tests/test_guard.py"
 # UI regression: compact, back, compact again and back must each show the right window and
 # never quit the app (it briefly shows its window, fed by a synthetic writer; never touches
 # the game).
 ui="$(mktemp -d)"
 mkdir -p "$ui/UITest.app/Contents/MacOS"
-clang -O2 -Wall -Wextra -Werror "$src/ui_fixture.c" -o "$ui/ui-fixture"
+clang -O2 -Wall -Wextra -Werror "$src/tests/ui_fixture.c" -o "$ui/ui-fixture"
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors -D GUARD_UI_TEST \
     -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" \
     "$src/app/GuardApp.swift" -o "$ui/UITest.app/Contents/MacOS/UITest"
@@ -84,11 +85,9 @@ fi
 print '== Build guard (Intel, runs inside the game under Rosetta)'
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "$src/guard.c" -o "$out/ExaltGuard.dylib"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "$src/guard/guard.c" -o "$out/ExaltGuard.dylib"
 # The app carries its own copy of the guard and the build record, so it works from anywhere.
-cp "$out/ExaltGuard.dylib" "$src/game-build.sha256" "$app/Contents/Resources/"
-cp "$src/game-build.sha256" "$out/game-build.sha256"   # for Start Guard.command
-cp "$src/Start Guard.command" "$out/Start Guard.command"
+cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resources/"
 
 print '== Build Exalt Client Mac.app (Apple silicon)'
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
@@ -131,8 +130,7 @@ codesign --force --sign - "$out/ExaltGuard.dylib"
 codesign --force --sign - "$app/Contents/Resources/ExaltGuard.dylib"   # sign the inner guard before sealing the app
 codesign --force --sign - "$app"
 codesign --verify --strict "$out/ExaltGuard.dylib" "$app/Contents/Resources/ExaltGuard.dylib" "$app"
-/bin/zsh -n "$out/Start Guard.command"
-[[ -s "$out/game-build.sha256" ]] || { print 'ERROR: game-build.sha256 is missing.'; exit 1; }
+[[ -s "$app/Contents/Resources/game-build.sha256" ]] || { print 'ERROR: game-build.sha256 is missing.'; exit 1; }
 print '== Install to ~/Applications'
 mkdir -p "$HOME/Applications" "$data/logs"
 chmod 700 "$data" "$data/logs"

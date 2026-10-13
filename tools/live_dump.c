@@ -1,5 +1,5 @@
 /* Prints a guard live-state file as key=value lines (tests and troubleshooting). */
-#include "live_state.h"
+#include "../guard/live_state.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/mman.h>

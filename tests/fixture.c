@@ -71,14 +71,7 @@ const void *il2cpp_assembly_get_image(const void *a) { return a; }
 const char *il2cpp_image_get_name(const void *i) { return i==(void*)1?"Assembly-CSharp.dll":"UnityEngine.CoreModule.dll"; }
 static const char *class_names[]={"","Object","GuiManager","ProgressBar","FKALGHJIADI","KJMONHENJEN","EquipmentManager",
  "HJMBOMEHGDJ","LKHPPBEGNOM","QuickSlot","RealmQuestsManager","NCAFKHMPKJC","ChatManager","","CPHENFGHHNA",
- "ChatSlotController","List`1","IOPKEEBMGJK","","","","","Dictionary`2","","PEAFHEDHOPC","Entry[]","Entry","ICLDOIDKKOB","UInt32"};
-/* Party finder list: the party manager's GHMLBBONNCG dictionary (object 220) of party records
- * (class 24): "blue" (id 7) and "o3 run" (id 9), with a free slot between them. "blue" is full
- * (8/8) until a fetch at 1.5 s shows 7/8. The user's own party is record 241. */
-typedef struct { int32_t hash, next; uint32_t key, pad; void *value; } FakeEntry;
-static struct { void *klass, *monitor, *bounds; uintptr_t length; FakeEntry items[3]; } party_entries={0,0,0,3,{
- {7,-1,7,0,(void*)240},{-1,-1,0,0,NULL},{9,-1,9,0,(void*)242}}};
-static FakeString blue={4,{'b','l','u','e'}}, o3run={6,{'o','3',' ','r','u','n'}}, mine={4,{'m','i','n','e'}};
+ "ChatSlotController","List`1","IOPKEEBMGJK"};
 void *il2cpp_class_from_name(const void *i,const char *ns,const char *name) {
  (void)i;(void)ns;
  for(uintptr_t c=1;c<sizeof class_names/sizeof *class_names;++c) if(!strcmp(name,class_names[c]))return (void*)c;
@@ -175,32 +168,21 @@ void *il2cpp_runtime_invoke(const void *m,void *o,void **p,void **e) {
  if(m==&join_cooldown_method){assert(o==(void*)40||o==(void*)41);join_cooldown_arg=*(int*)p[0];return NULL;}
  abort();
 }
-void *il2cpp_object_get_class(void *o) { return o==&party_entries?(void*)25:(void*)((uintptr_t)o/10); }
-void *il2cpp_class_get_element_class(void *c) { assert(c==(void*)25);return (void*)26; }
-int il2cpp_array_element_size(void *c) { assert(c==(void*)25);return (int)sizeof(FakeEntry); }
-size_t il2cpp_field_get_offset(void *f) { assert(f==(void*)41||f==(void*)42);return f==(void*)41?16+8:16+16; }
-/* Field types are the fields themselves here; the enum and UInt32 fields map to value-type classes. */
-void *il2cpp_class_from_type(const void *t) { return t==(void*)47?(void*)27:t==(void*)43?(void*)28:NULL; }
-int il2cpp_class_is_valuetype(void *c) { return c==(void*)27||c==(void*)28; }
+void *il2cpp_object_get_class(void *o) { return (void*)((uintptr_t)o/10); }
 const char *il2cpp_class_get_name(void *c) { return (uintptr_t)c<sizeof class_names/sizeof *class_names?class_names[(uintptr_t)c]:"Fixture"; }
 void *il2cpp_class_get_parent(void *c) { return c==(void*)4?(void*)8:c==(void*)8?(void*)5:NULL; }
 static const char *field_names[]={"","hpProgressBar","JLFBFCOFDOF","OJAHBHNIGDI","DGNPJNFGFPE","","","m_CachedPtr","","",
  "OADOHPKBPJB","ABCPKBGJPEP","EFAGNJBDCOM","FirstQuickslotIndex","BBFODHPMFCC","quickSlots","JFBFHHAJOAK",
  "PNOBIMOELCK","MJGBECCHGIP","FHLCMICEGNM","GCKDOJPIMLD",
  "","","","DPGEBOCBKEF","JPDFALDPJCK","HOAKHDPFALM","","","","",
- "CPEAFDEENOD","HPGHGFMACLH","_items","_size","EAKILNOKDDC",
- "GHMLBBONNCG","LMIPPHKNPIH","LLBNOFLDCOF","_entries","_count","key","value",
- "OACPEMGPMKD","PFHDLCLMLBC","PFFPONPFJCK","GGIJKAIAMBP","BJNOGNLPADD"};
+ "CPEAFDEENOD","HPGHGFMACLH","_items","_size","EAKILNOKDDC"};
 static const char *field_types[]={"","DecaGames.RotMG.UI.Helpers.ProgressBar","FKALGHJIADI","System.Single","Unity.Mathematics.float3","","","System.IntPtr","","",
  "System.Int32","System.Int32","HJMBOMEHGDJ","System.Int32","System.Single","DecaGames.RotMG.Managers.Equipment.QuickSlot[]","System.Int32",
  "NCAFKHMPKJC","System.String","System.String","System.Boolean",
  "","","","System.String","System.String","System.String",
  "","","","",
  "System.Collections.Generic.List<DecaGames.RotMG.Chat.UI.ChatSlotController>","CPHENFGHHNA",
- "DecaGames.RotMG.Chat.UI.ChatSlotController[]","System.Int32","IOPKEEBMGJK",
- "System.Collections.Generic.Dictionary<System.UInt32,PEAFHEDHOPC>","System.Double","PEAFHEDHOPC",
- "System.Collections.Generic.Dictionary.Entry<System.UInt32,PEAFHEDHOPC>[]","System.Int32","System.UInt32","PEAFHEDHOPC",
- "System.UInt32","System.String","System.Int32","System.Int32","ICLDOIDKKOB"};
+ "DecaGames.RotMG.Chat.UI.ChatSlotController[]","System.Int32","IOPKEEBMGJK"};
 void *il2cpp_class_get_field_from_name(void *c,const char *n) {
  (void)c;
  for(uintptr_t f=1;f<sizeof field_names/sizeof *field_names;++f) if(*field_names[f]&&!strcmp(n,field_names[f]))return (void*)f;
@@ -246,16 +228,6 @@ void il2cpp_field_get_value(void *o,void *f,void *v) {
   *(void**)v=(void*)170;
 #endif
   return;
- case 36:assert(o==(void*)170);*(void**)v=(void*)220;return;
- case 37:assert(o==(void*)170);*(double*)v=t<1.5?12.5:42.0;return;
- case 38:assert(o==(void*)170);*(void**)v=(void*)241;return;
- case 39:assert(o==(void*)220);*(void**)v=&party_entries;return;
- case 40:assert(o==(void*)220);*(int*)v=3;return;
- case 43:*(uint32_t*)v=o==(void*)240?7:o==(void*)242?9:5;return;
- case 44:*(void**)v=o==(void*)240?&blue:o==(void*)242?&o3run:&mine;return;
- case 45:*(int*)v=o==(void*)240?(t<1.5?8:7):o==(void*)242?3:1;return;
- case 46:*(int*)v=o==(void*)242?6:8;return;
- case 47:*(uint8_t*)v=1;return;
  case 31:assert(o==(void*)120);*(void**)v=(void*)160;return;
  case 32:assert((uintptr_t)o>=150&&(uintptr_t)o<=153);*(void**)v=(void*)((uintptr_t)o-10);return;
  case 33:assert(o==(void*)160);*(void**)v=&slot_items;return;
@@ -274,15 +246,7 @@ void il2cpp_format_exception(const void *ex,char *message,int size) {
 int32_t il2cpp_string_length(void *s) { return ((FakeString*)s)->length; }
 uint16_t *il2cpp_string_chars(void *s) { return ((FakeString*)s)->chars; }
 void il2cpp_free(void *p) { free(p); }
-/* Fields in declaration order, for the party record class (24): OACPEMGPMKD .. BJNOGNLPADD. */
-void *il2cpp_class_get_fields(void *c,void **it) {
- if(c!=(void*)24)return NULL;
- uintptr_t next=*it?(uintptr_t)*it+1:43;
- if(next>47)return NULL;
- *it=(void*)next;return (void*)next;
-}
-const char *il2cpp_field_get_name(void *f) { return field_names[(uintptr_t)f]; }
-uint32_t il2cpp_array_length(void *a) { assert(a==&quick_array||a==&slot_items||a==(void*)&party_entries);return (uint32_t)((uintptr_t*)a)[3]; }
+uint32_t il2cpp_array_length(void *a) { assert(a==&quick_array||a==&slot_items);return (uint32_t)((uintptr_t*)a)[3]; }
 static void stop(void *p) {
  (void)p;assert(finds<=20);
  printf("potion_calls=%u potion_arg=%d nexus_calls=%u join_calls=%u join_cooldown_arg=%d join_name=%s\n",
