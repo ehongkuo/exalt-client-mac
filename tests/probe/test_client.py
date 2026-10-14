@@ -1,4 +1,4 @@
-"""Exercise the app's guard build, including its Arm/Dry Run and toggle settings."""
+"""Exercise the app's guard build, including Arm/Dry Run, toggle settings and legacy Nexus migration."""
 import os
 from pathlib import Path
 import subprocess
@@ -49,22 +49,22 @@ class ClientInterventionTests(unittest.TestCase):
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
- def test_armed_toggle_protects_burst_with_existing_thresholds_enabled(self):
+ def test_armed_toggle_protects_burst_with_legacy_nexus_ignored(self):
   self.run_client('armed=1,potion=50,ceiling=80,nexus=25,death=1')
   self.assertIn('nexus_calls=1',self.output);self.assertIn('potion_calls=0',self.output)
   self.assertEqual(self.live['armed'],'1');self.assertEqual(self.live['death'],'1')
-  self.assertEqual(self.live['nexus'],'25');self.assertEqual(self.live['potion'],'50')
+  self.assertEqual(self.live['nexus'],'0');self.assertEqual(self.live['potion'],'50')
   self.assertEqual(self.live['nexus_sent'],'1')
   self.assertIn('guard_death_nexus',self.log)
   self.assertEqual(sum(e['phase']==23 for e in self.events),3)
   self.assertTrue(any(e['phase']==25 and e['flag0']==1 for e in self.events))
  def test_unarmed_toggle_only_records_dry_decision(self):
-  self.run_client('armed=0,potion=0,nexus=0,death=1',denied=True)
+  self.run_client('armed=0,potion=0,nexus=100,death=1',denied=True)
   self.assertIn('nexus_calls=0',self.output)
   self.assertEqual(self.live['nexus_sent'],'0');self.assertEqual(self.live['nexus_dry'],'1')
   self.assertFalse(any(e['phase'] in (22,23,24) for e in self.events))
  def test_toggle_off_never_installs_or_changes_damage(self):
-  self.run_client('armed=1,potion=0,nexus=0',denied=True)
+  self.run_client('armed=1,potion=0,nexus=100',denied=True)
   self.assertIn('nexus_calls=0',self.output)
   self.assertEqual(self.live['death'],'0');self.assertEqual(self.live['death_status'],'0')
   self.assertNotIn('hit_probe_ready',self.log)

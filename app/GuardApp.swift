@@ -300,10 +300,10 @@ struct Pill: View {
     }
 }
 
-/// HP bar with markers at the Nexus, potion and ceiling thresholds.
+/// HP bar with markers at the potion and ceiling thresholds.
 struct HPBar: View {
     var fraction: Double
-    var nexus: Int, potion: Int, ceiling: Int
+    var potion: Int, ceiling: Int
     var color: Color
     var body: some View {
         GeometryReader { geo in
@@ -311,7 +311,7 @@ struct HPBar: View {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08))
                 RoundedRectangle(cornerRadius: 6).fill(color).frame(width: max(0, min(1, fraction)) * w)
-                ForEach([(nexus, coral), (potion, amber), (ceiling, mint)], id: \.0) { value, tint in
+                ForEach([(potion, amber), (ceiling, mint)], id: \.0) { value, tint in
                     if value > 0 {
                         Rectangle().fill(tint).frame(width: 2).offset(x: w * Double(value) / 100 - 1)
                     }
@@ -427,7 +427,7 @@ struct GuardPanel {
 
     private func hpCard(_ s: GuardSnapshot) -> some View {
         let percent = s.percent ?? 0
-        let color = percent <= Double(s.nexus) ? coral : percent <= Double(s.potion) ? amber : mint
+        let color = s.deathBlocking ? coral : percent <= Double(s.potion) ? amber : mint
         return Card(title: "Health") {
             HStack(alignment: .firstTextBaseline) {
                 Text(s.percent == nil ? "-" : "\(s.hp)").font(.system(size: 34, weight: .semibold, design: .rounded))
@@ -436,9 +436,8 @@ struct GuardPanel {
                 Text(s.percent.map { String(format: "%.0f%%", $0) } ?? "").font(.system(size: 22, weight: .medium, design: .rounded))
                     .foregroundStyle(color)
             }
-            HPBar(fraction: percent / 100, nexus: s.nexus, potion: s.potion, ceiling: s.ceiling, color: color)
+            HPBar(fraction: percent / 100, potion: s.potion, ceiling: s.ceiling, color: color)
             HStack(spacing: 14) {
-                legend("Nexus \(s.nexus)%", coral)
                 legend("Potion \(s.potion)%", amber)
                 if s.ceiling > 0 { legend("Ceiling \(s.ceiling)%", mint) }
                 Spacer()
@@ -530,11 +529,9 @@ struct GuardPanel {
                          help: "Start drinking at or below this HP.")
             thresholdRow("Ceiling", value: $settings.draft.ceiling, tint: mint,
                          help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
-            thresholdRow("Nexus", value: $settings.draft.nexus, tint: coral,
-                         help: "Return to the Nexus at or below this HP.")
             Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath)
                 .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
-            Text("Escape before predicted lethal projectile damage. Requires Armed. The Nexus threshold still applies.")
+            Text("Escape before predicted lethal projectile damage. Requires Armed. This is the only automatic Nexus mode.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             if let s, s.nexusOnDeath || s.deathBlocking {
                 Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")
@@ -651,7 +648,7 @@ struct GuardPanel {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                if s.totalPotions == 0 { Text(s.nexusOnDeath ? "Out of potions: Nexus protection remains enabled" : "Out of potions: only the Nexus threshold applies").font(.system(size: 11)).foregroundStyle(amber) }
+                if s.totalPotions == 0 { Text(s.nexusOnDeath ? "Out of potions: Nexus protection remains enabled" : "Out of potions: automatic Nexus is off").font(.system(size: 11)).foregroundStyle(amber) }
             }
         }
     }
@@ -748,7 +745,7 @@ struct CompactContent: View {
             Circle().fill(link.isLive ? mint : link == .offline("Waiting for the guard") ? Color.gray : coral).frame(width: 8, height: 8)
             if let s = snapshot, link.isLive || { if case .stale = link { return true } else { return false } }() {
                 let percent = s.percent ?? 0
-                let color = percent <= Double(s.nexus) ? coral : percent <= Double(s.potion) ? amber : mint
+                let color = s.deathBlocking ? coral : percent <= Double(s.potion) ? amber : mint
                 Text(s.armed ? "ARMED" : "DRY").font(.system(size: 10, weight: .bold)).foregroundStyle(s.armed ? mint : .gray)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
@@ -762,7 +759,7 @@ struct CompactContent: View {
                         Text(s.inNexus ? "NEXUS" : s.percent.map { String(format: "%.0f%%", $0) } ?? "")
                             .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(s.inNexus ? amber : color)
                     }
-                    HPBar(fraction: percent / 100, nexus: s.nexus, potion: s.potion, ceiling: s.ceiling, color: color)
+                    HPBar(fraction: percent / 100, potion: s.potion, ceiling: s.ceiling, color: color)
                         .frame(height: 8)
                 }
                 if let call = pendingCall {
@@ -804,10 +801,10 @@ struct CompactContent: View {
 @MainActor func renderSnapshot(to path: String) {
     let source = LiveSource(); source.refresh()
     let settings = SettingsController(); settings.sync(with: source.snapshot, live: source.link.isLive)
-    // GUARD_RENDER_DRAFT="armed,potion,ceiling,nexus" shows an edited (possibly invalid) draft.
+    // GUARD_RENDER_DRAFT="armed,potion,ceiling" shows an edited (possibly invalid) draft.
     if let edit = ProcessInfo.processInfo.environment["GUARD_RENDER_DRAFT"] {
         let v = edit.split(separator: ",").compactMap { Int($0) }
-        if v.count == 4 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2], nexus: v[3]) }
+        if v.count == 3 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2]) }
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_COMPACT"] != nil {
         let flashing = ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil
