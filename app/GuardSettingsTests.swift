@@ -26,6 +26,12 @@ enum SettingsTests {
             check(GuardSettings(text: bad) == nil, "rejects \(bad)")
         }
 
+        let death = GuardSettings(armed: true, potion: 50, ceiling: 80, nexus: 25, nexusOnDeath: true)
+        check(GuardSettings(text: death.text) == death, "death toggle round trip")
+        check(death.text.hasSuffix(",death=1"), "death toggle reaches launcher")
+        check(!s.nexusOnDeath, "old settings keep death off")
+        check(GuardSettings(text: "death=2") == nil, "death must be boolean")
+
         // Saved file: written atomically, read back.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("guard-settings-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -44,6 +50,11 @@ enum SettingsTests {
         check(feed.peekControl(&seen) && seen.request == 7 && seen.armed == 0 && seen.potion == 45 &&
               seen.ceiling == 70 && seen.nexus == 20, "guard sees the change")
         check(!LiveFeed(url: folder.appendingPathComponent("missing.bin")).send(s, request: 1), "no file, no send")
+
+        check(feed.send(death, request: 8), "send death toggle")
+        check(feed.peekControl(&seen) && seen.death == 1, "guard receives death toggle")
+        try! SettingsFile.save(death, to: file)
+        check(SettingsFile.load(file) == death, "death toggle persisted")
 
         // Apply status shown to the user.
         check(ApplyState.evaluate(sent: nil, live: true, controlRequest: 0, controlResult: 0) == .idle, "idle")

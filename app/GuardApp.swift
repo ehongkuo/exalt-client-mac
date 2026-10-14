@@ -532,6 +532,15 @@ struct GuardPanel {
                          help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
             thresholdRow("Nexus", value: $settings.draft.nexus, tint: coral,
                          help: "Return to the Nexus at or below this HP.")
+            Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath)
+                .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
+            Text("Escape before predicted lethal projectile damage. Requires Armed. The Nexus threshold still applies.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            if let s, s.nexusOnDeath || s.deathBlocking {
+                Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(s.deathReady ? mint : amber)
+            }
             if let problem = settings.draft.problem {
                 Text(problem).font(.system(size: 11, weight: .semibold)).foregroundStyle(coral)
             } else if let error = settings.error {
@@ -642,7 +651,7 @@ struct GuardPanel {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                if s.totalPotions == 0 { Text("Out of potions: only the Nexus threshold applies").font(.system(size: 11)).foregroundStyle(amber) }
+                if s.totalPotions == 0 { Text(s.nexusOnDeath ? "Out of potions: Nexus protection remains enabled" : "Out of potions: only the Nexus threshold applies").font(.system(size: 11)).foregroundStyle(amber) }
             }
         }
     }
@@ -657,7 +666,8 @@ struct GuardPanel {
                         HStack(spacing: 8) {
                             Text(Format.time(e.epoch)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                             Text(e.title).font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(e.action == .nexus ? coral : amber).frame(width: 48, alignment: .leading)
+                                .foregroundStyle(e.action == .nexus || e.action == .nexusOnDeath ? coral : amber)
+                                .frame(width: e.action == .nexusOnDeath ? 104 : 48, alignment: .leading)
                             Text("\(e.hp)/\(e.maxHP)").font(.system(size: 11, design: .monospaced))
                             if e.action == .potion && e.slot >= 0 { Text("slot \(e.slot + 1)").font(.system(size: 11)).foregroundStyle(.secondary) }
                             Spacer()

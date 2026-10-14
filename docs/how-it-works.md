@@ -217,3 +217,16 @@ Calls only alert while you're in the Nexus, Vault, Realm and other waiting areas
 | The decisions | `guard/guard_core.h` | thresholds, ceiling, pacing; pure C, no game access |
 | Shared status file | `guard/live_state.h` | layout and the lock-free sequence lock |
 | Alerts, popup, Join button | `app/GuardApp.swift`, `app/GuardModel.swift` | `PartyAlerts`, `JoinPopupRules` |
+
+
+## Nexus on death
+
+The optional toggle adds prediction to the existing guard. The same validated projectile calculation, report, notification and incoming HP hooks used in the diagnostic run are shared with the app build. The app sends `death=1` with its settings; the live state reports hook readiness and the current escape latch. Version 6 of the shared layout carries the setting across the Intel game and Apple silicon app.
+
+Each audited damage calculation adds to a budget until the next incoming player HP assignment, which clears it. When observed HP minus pending damage reaches zero, Armed mode requests the game's normal Nexus action. A confirmed local Nexusing flag latches suppression of the fatal and subsequent projectile reports and local notifications. The app suspends further threshold and potion actions during that escape. Switching the toggle or Armed off does not cancel the in-progress escape latch. Nexus arrival or a validated scope change clears it.
+
+The app records these actions as “Nexus on death” and includes successful local requests in the existing Nexus session count. Dry Run only records the decision. Ordinary updates and Join continue. Normal app use writes intervention events to its standard log without allocating a diagnostic flight file or sampling probe state on every guard tick.
+
+A local flag is not a server acknowledgement, and resetting HP is not a hit-specific acknowledgement. The limitations described in [the integration notes](nexus-on-death.md) remain.
+
+🤖 Generated with Codex

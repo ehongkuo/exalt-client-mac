@@ -2,6 +2,7 @@
 
 A macOS companion app for Realm of the Mad God Exalt. It runs alongside the game and:
 
+- **optionally escapes before predicted lethal projectile damage**, with a **Nexus on death** toggle,
 - **drinks health potions and returns you to the Nexus** at HP thresholds you choose,
 - **pings you when someone calls "j" in party chat**, with a one-click **Join** that takes you into their dungeon,
 - **shows what it's doing live**, in a window or a small strip that floats over the game.
@@ -23,13 +24,14 @@ A macOS companion app for Realm of the Mad God Exalt. It runs alongside the game
 
 Screenshots are taken from a test build fed by a synthetic writer (`tests/ui_fixture.c`), not the real game.
 
-> Not affiliated with or endorsed by DECA Games. Third-party tools can conflict with the game's terms of service; use it at your own risk. It reacts to the HP the server reports, so a single hit that takes you from above a threshold to 0 still kills you.
+> Not affiliated with or endorsed by DECA Games. Third-party tools can conflict with the game's terms of service; use it at your own risk. The percentage guard reacts to server HP. Optional Nexus on death predicts damage on the audited projectile path before reporting a fatal hit; it does not guarantee survival against every damage source or network condition.
 
 ## Features
 
 **HP guard**
 - **Auto-potion.** Starts drinking at the potion trigger (default 50%) and keeps going until HP is over the ceiling (default 80%), one potion per heal. Quickslots are used in order.
 - **Auto-Nexus.** Returns to the Nexus once when HP reaches the Nexus threshold (default 25%).
+- **Nexus on death.** Optional and off by default. Enable it in Settings, click Apply, and enter Nexus to prepare the validated hooks. While Armed, a predicted fatal projectile hit requests Nexus and withholds that report and subsequent local projectile damage during escape. Incoming server HP assignments reset the pending damage budget. The percentage threshold and potions remain active. Dry Run records decisions without requesting Nexus or changing damage.
 - **Dry run.** Off by default: the guard shows what it would do without doing it until you switch it to Armed.
 
 **Party calls**
@@ -87,7 +89,7 @@ The ideas that make it work:
 
 1. **Getting into the game.** The game runs under Rosetta and isn't built with the hardened runtime, so a library named in `DYLD_INSERT_LIBRARIES` when the launcher starts is loaded into the game. The guard only activates in the game process, and only on the exact game build it was checked against (SHA-256 in `guard/game-build.sha256`).
 2. **Reading without hardcoded addresses.** Unity IL2CPP games export a runtime API (`il2cpp_class_from_name`, `il2cpp_field_get_value`, ...). The guard finds classes and fields by name, checks each field's type, and holds objects through GC handles, so it never reads a destroyed object. Names are obfuscated, so each is pinned to this game build.
-3. **Acting like a key press.** Potions, Nexus and Join call the same game functions as the potion key, the Nexus key and the ctrl-click menu, through `il2cpp_runtime_invoke`. The game's own checks (potion count, whether Nexus is allowed, party membership) still apply. It never patches game code or edits network traffic, and it refuses to act if any of those functions isn't where this build puts it.
+3. **Acting like a key press.** Potions, Nexus and Join call the same game functions as the potion key, the Nexus key and the ctrl-click menu, through `il2cpp_runtime_invoke`. The game's own checks (potion count, whether Nexus is allowed, party membership) still apply. These controls refuse to act if their game functions are not where this build puts them. Nexus on death also installs validated in-process redirects for the projectile and HP-update paths while in Nexus. It can withhold local hit reports; it does not retract reports already sent.
 4. **Talking across architectures.** The guard (x86_64) and the app (arm64) share a memory-mapped file. Each direction is a sequence lock: the writer makes a counter odd, copies the data, then makes it even; the reader retries if the counter moved. No locks, no sockets, and the app always sees a consistent snapshot.
 
 ### Where each part lives on your Mac
@@ -164,12 +166,20 @@ These came from measuring the real game and shaped how the guard behaves.
 - **Never in the Nexus.** It reads the current map and doesn't act there.
 - **Contained errors.** If the game throws during a call, the error is logged and only that action is switched off. A potion error never disables the Nexus.
 
+## Nexus on death validation
+
+Five live escapes were recorded with the standalone intervention. The strongest burst was four calculated 114-damage hits at 225 HP: the first report was forwarded, the second crossed predicted zero, and the remaining three reports were withheld before an observed Nexus arrival. No death screen was recorded. The integrated app build has separate tests for Armed, Dry Run, toggle off, HP resets, failed requests, exceptions and switching off during an active escape.
+
+Live validation of the app integration is still pending. The standalone diagnostic and its logs are preserved until that validation succeeds. Delayed HP assignments may reset damage still in flight, and other damage sources remain outside the audited path. See [integration notes](docs/nexus-on-death.md).
+
 ## Testing
 
 None of the tests touch the real game. The guard is tested by loading the real library into a synthetic `RotMGExalt` process with a fake IL2CPP runtime.
 
 | Tests | What's covered |
 | --- | --- |
+| `tests/probe/test_client.py` | App-build intervention, toggle and Armed behavior, coexistence with existing thresholds, HP resets, errors and escape latch |
+| `tests/probe/test_probe.py` | Diagnostic hooks, raw-argument crash regression, ordering, recovery and update boundaries |
 | `tests/core_tests.c` | Decision logic: thresholds, ceiling, pacing, settle time, the Nexus rule, settings validation, party call matching |
 | `tests/live_tests.c`, `tests/live_cross.c` | The sequence lock under concurrent writes, in one process and between an x86_64 writer and an arm64 reader (millions of reads, zero torn reads) |
 | `tests/test_guard.py` + `tests/fixture.c` | 32 integration tests: potions, Nexus, ceiling, settings sent mid-session, wrong or lagging HUD fields, game exceptions, unknown maps, party calls (reused messages, history, normal chat, own messages), Join (once per click, game errors, no party, unexpected build), the live file |
@@ -198,3 +208,5 @@ The app icon is generated at build time from the installed launcher's icon (`app
 - **One game build at a time.** Exalt's code names are obfuscated and can change with every update, so each update needs re-inspection before the guard will start.
 - **One-shots still kill.** The guard acts on server HP updates, about every 200 ms.
 - **Sick is not checked.** The game appears to refuse potions while Sick on its own, but that isn't confirmed.
+
+🤖 Generated with Codex

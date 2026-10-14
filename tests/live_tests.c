@@ -15,7 +15,7 @@ static void *app(void *unused) {
     (void)unused;
     LiveControl *control = live_control(file);
     for (uint32_t i = 1; i <= 1000000; ++i) {
-        LiveControlData d = {.request = i, .armed = (int32_t)i, .potion = (int32_t)i, .ceiling = (int32_t)i, .nexus = (int32_t)i};
+        LiveControlData d = {.request = i, .armed = (int32_t)i, .potion = (int32_t)i, .ceiling = (int32_t)i, .nexus = (int32_t)i, .death = (int32_t)i};
         control_write(control, &d);
     }
     atomic_store(&control_done, 1);
@@ -26,7 +26,8 @@ static void *writer(void *unused) {
     (void)unused;
     LiveData d = {0};
     for (int32_t i = 1; i <= 2000000; ++i) {
-        d.hp = d.max_hp = d.status = i;
+        d.hp = d.max_hp = d.status = d.death = d.death_status = d.death_blocking = i;
+        d.death_pending = i; d.death_predicted = -(int64_t)i;
         d.ticks = (uint64_t)i;
         for (int s = 0; s < LIVE_SLOTS; ++s) d.stacks[s] = d.cooldown[s] = i;
         d.events[LIVE_EVENTS - 1].hp = i;
@@ -48,6 +49,7 @@ int main(void) {
         if (!live_read(&state, &d)) continue;
         ++reads;
         int32_t v = d.hp;
+        assert(d.death == v && d.death_status == v && d.death_blocking == v && d.death_pending == v && d.death_predicted == -(int64_t)v);
         assert(d.max_hp == v && d.status == v && d.ticks == (uint64_t)v && d.events[LIVE_EVENTS - 1].hp == v);
         for (int s = 0; s < LIVE_SLOTS; ++s) assert(d.stacks[s] == v && d.cooldown[s] == v);
         assert((unsigned)v >= last);   /* never goes backwards */
@@ -63,7 +65,7 @@ int main(void) {
         LiveControlData c;
         if (!control_read(live_control(file), &c)) continue;
         assert(c.armed == (int32_t)c.request && c.potion == (int32_t)c.request &&
-               c.ceiling == (int32_t)c.request && c.nexus == (int32_t)c.request);
+               c.ceiling == (int32_t)c.request && c.nexus == (int32_t)c.request && c.death == (int32_t)c.request);
         assert(c.request >= last_request);
         last_request = c.request; ++control_reads;
     }

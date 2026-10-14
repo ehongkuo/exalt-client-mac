@@ -32,6 +32,13 @@ xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$tests/model-tests" && "$tests/model-tests"
 python3 "$src/tests/test_guard.py"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/probe/hook_tests.c" "$src/tests/probe/hook_fixture.S" -o "$tests/hook-tests"
+"$tests/hook-tests"
+clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_tests.c" -o "$tests/fatal-policy-tests"
+"$tests/fatal-policy-tests"
+python3 "$src/tests/probe/test_probe.py"
+python3 "$src/tests/probe/test_client.py"
+python3 "$src/tests/probe/test_shadow_ledger.py"
 # UI regression: compact, back, compact again and back must each show the right window and
 # never quit the app (it briefly shows its window, fed by a synthetic writer; never touches
 # the game).
@@ -85,7 +92,7 @@ fi
 print '== Build guard (Intel, runs inside the game under Rosetta)'
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "$src/guard/guard.c" -o "$out/ExaltGuard.dylib"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib -DEXALT_CLIENT_FATAL "$src/guard/guard.c" -o "$out/ExaltGuard.dylib"
 # The app carries its own copy of the guard and the build record, so it works from anywhere.
 cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resources/"
 
@@ -116,8 +123,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 	<key>CFBundleName</key><string>Exalt Client Mac</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
-	<key>CFBundleShortVersionString</key><string>0.2</string>
-	<key>CFBundleVersion</key><string>2</string>
+	<key>CFBundleShortVersionString</key><string>0.3</string>
+	<key>CFBundleVersion</key><string>3</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSHighResolutionCapable</key><true/>
 </dict>

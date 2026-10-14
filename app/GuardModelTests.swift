@@ -161,6 +161,15 @@ private func sample() -> LiveData {
         check(LiveFeed(url: folder.appendingPathComponent("busy.bin")).read() == nil, "mid-write is rejected")
         check(LiveFeed(url: folder.appendingPathComponent("missing.bin")).read() == nil, "missing file")
         try? FileManager.default.removeItem(at: folder)
+        var fatalData = LiveData()
+        fatalData.death = 1; fatalData.death_status = 1; fatalData.death_blocking = 1
+        fatalData.death_pending = 228; fatalData.death_predicted = -3
+        let fatalSnapshot = GuardSnapshot(fatalData)
+        check(fatalSnapshot.settings.nexusOnDeath && fatalSnapshot.deathReady && fatalSnapshot.deathBlocking,
+              "death live status and settings")
+        check(fatalSnapshot.deathPending == 228 && fatalSnapshot.deathPredicted == -3, "prediction telemetry")
+        check(GuardEvent(epoch: 0, action: .nexusOnDeath, result: 1, slot: -1, hp: 225, maxHP: 225).title == "Nexus on death",
+              "death event labelled separately")
         print("Guard model tests passed")
         SettingsTests.run()
         LaunchTests.run()

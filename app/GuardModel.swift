@@ -11,9 +11,10 @@ enum GuardPaths {
     static func resources(forApp bundle: URL) -> URL { bundle.standardizedFileURL.appendingPathComponent("Contents/Resources") }
 }
 
-/// The four user-facing settings. Rules match guard_valid() in guard_core.h.
+/// The user-facing settings. Rules match guard_valid() in guard_core.h.
 struct GuardSettings: Equatable {
     var armed: Bool
+    var nexusOnDeath: Bool
     var potion: Int, ceiling: Int, nexus: Int
 
     static let standard = GuardSettings(armed: false, potion: 50, ceiling: 80, nexus: 25)
@@ -28,14 +29,14 @@ struct GuardSettings: Equatable {
         if ceiling > 0 && ceiling <= potion { return "Ceiling must be above the potion trigger." }
         return nil
     }
-    var text: String { "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling),nexus=\(nexus)" }
+    var text: String { "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling),nexus=\(nexus)" + (nexusOnDeath ? ",death=1" : "") }
 
-    init(armed: Bool, potion: Int, ceiling: Int, nexus: Int) {
-        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexus = nexus
+    init(armed: Bool, potion: Int, ceiling: Int, nexus: Int, nexusOnDeath: Bool = false) {
+        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexus = nexus; self.nexusOnDeath = nexusOnDeath
     }
     /// Parses the launcher format; nil for anything the guard would reject.
     init?(text: String) {
-        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 25]
+        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 25, "death": 0]
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         for pair in trimmed.split(separator: ",") {
@@ -44,8 +45,8 @@ struct GuardSettings: Equatable {
                   parts[1].count <= 3, let value = Int(parts[1]), value >= 0 else { return nil }
             values[key] = value
         }
-        guard let armed = values["armed"], armed <= 1 else { return nil }
-        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexus: values["nexus"]!)
+        guard let armed = values["armed"], armed <= 1, values["death"]! <= 1 else { return nil }
+        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexus: values["nexus"]!, nexusOnDeath: values["death"]! == 1)
         if problem != nil { return nil }
     }
 }
@@ -71,7 +72,7 @@ enum ApplyState: Equatable {
     }
 }
 
-enum GuardAction: Int32 { case none = 0, potion = 1, nexus = 2 }
+enum GuardAction: Int32 { case none = 0, potion = 1, nexus = 2, nexusOnDeath = 3 }
 
 struct GuardEvent: Equatable {
     var epoch: Double
@@ -81,8 +82,10 @@ struct GuardEvent: Equatable {
     var hp: Int
     var maxHP: Int
 
-    var title: String { action == .potion ? "Potion" : action == .nexus ? "Nexus" : "-" }
+    var title: String { action == .nexusOnDeath ? "Nexus on death" : action == .potion ? "Potion" : action == .nexus ? "Nexus" : "-" }
     var outcome: String {
+        if action == .nexusOnDeath && result == -1 { return "game error" }
+        if action == .nexusOnDeath && result == -2 { return "Nexus not confirmed" }
         switch result {
         case 0: return "dry run"
         case 1: return "sent"
@@ -119,6 +122,9 @@ struct GuardSnapshot: Equatable {
     var chatStatus: Int32         // CHAT_SEARCHING, CHAT_READING or CHAT_UNAVAILABLE
     var partyCalls: UInt32
     var lastCall: PartyCall?
+    var nexusOnDeath: Bool, deathReady: Bool, deathBlocking: Bool
+    var deathStatus: Int32
+    var deathPending: Int64, deathPredicted: Int64
     var joinRequest: UInt32, joinResult: Int32
 
     init(_ d: LiveData) {
@@ -146,6 +152,9 @@ struct GuardSnapshot: Equatable {
             potionsDry: Int(d.potions_dry), nexusDry: Int(d.nexus_dry),
             lowestHP: Int(d.lowest_hp), lowestMaxHP: Int(d.lowest_max_hp), lowestEpoch: d.lowest_epoch,
             logName: withUnsafeBytes(of: d.log_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) })
+        nexusOnDeath = d.death != 0; deathStatus = d.death_status
+        deathReady = d.death_status == 1; deathBlocking = d.death_blocking != 0
+        deathPending = d.death_pending; deathPredicted = d.death_predicted
         joinRequest = d.join_request; joinResult = d.join_result
         chatStatus = d.chat_status
         partyCalls = d.party_calls
@@ -166,7 +175,7 @@ struct GuardSnapshot: Equatable {
     var totalPotions: Int { stacks.reduce(0, +) }
     /// Where drinking stops: the ceiling, or the potion threshold when there is none.
     var stopPercent: Int { ceiling > 0 ? ceiling : potion }
-    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexus: nexus) }
+    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexus: nexus, nexusOnDeath: nexusOnDeath) }
 }
 
 /// Counts for the current game session, kept by the guard.
@@ -323,7 +332,7 @@ final class LiveFeed {
         remapIfNeeded()
         guard let map, writable else { return false }
         var data = LiveControlData(request: request, armed: settings.armed ? 1 : 0, potion: Int32(settings.potion),
-                                   ceiling: Int32(settings.ceiling), nexus: Int32(settings.nexus))
+                                   ceiling: Int32(settings.ceiling), nexus: Int32(settings.nexus), death: settings.nexusOnDeath ? 1 : 0)
         guard_control_send(map, &data)
         return true
     }
