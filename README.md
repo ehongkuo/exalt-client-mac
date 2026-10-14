@@ -94,7 +94,6 @@ The ideas that make it work:
 
 These came from measuring the real game and shaped how the guard behaves.
 
-- **Why thresholds and not "dodge the hit":** the client reports each bullet hit to the server before it applies any damage, and the HUD follows the server's HP. Nothing reading client HP can act between bullets of one volley, so the guard acts on HP percentages as early as the client sees them.
 - **Latency:** HP arrives from the server about every 200 ms. The guard checks at the end of every frame (6-7 ms frames in combat), and a check takes about 3 µs. The app draws one screen refresh behind the guard.
 - **Potion pacing:** the game has no client-side potion cooldown, and an early version emptied 7 potions in 316 ms while waiting for the first heal to show. Now each potion has to show its heal first (or 1 s passes), with at least 250 ms between potions.
 - **Reading chat:** the game reuses chat message objects, so a message counts as new when an object's sender, channel or text changes. Message text never goes to the log; only the caller's name does.

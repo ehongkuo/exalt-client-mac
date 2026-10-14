@@ -9,3 +9,4 @@ module-cache/
 guard-settings.conf
 
 .DS_Store
+.claude/
