@@ -15,28 +15,27 @@ enum GuardPaths {
 struct GuardSettings: Equatable {
     var armed: Bool
     var nexusOnDeath: Bool
-    var potion: Int, ceiling: Int, nexus: Int
+    var potion: Int, ceiling: Int
 
-    static let standard = GuardSettings(armed: false, potion: 50, ceiling: 80, nexus: 25)
+    static let standard = GuardSettings(armed: false, potion: 50, ceiling: 80)
 
     /// Why these settings would be refused, or nil when they are valid.
     var problem: String? {
-        for (name, value) in [("Potion", potion), ("Ceiling", ceiling), ("Nexus", nexus)] where !(0...100).contains(value) {
+        for (name, value) in [("Potion", potion), ("Ceiling", ceiling)] where !(0...100).contains(value) {
             return "\(name) must be between 0 and 100."
         }
-        if potion > 0 && nexus > 0 && nexus >= potion { return "Nexus must be below the potion trigger." }
         if ceiling > 0 && potion == 0 { return "A ceiling needs a potion trigger." }
         if ceiling > 0 && ceiling <= potion { return "Ceiling must be above the potion trigger." }
         return nil
     }
-    var text: String { "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling),nexus=\(nexus)" + (nexusOnDeath ? ",death=1" : "") }
+    var text: String { "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling)" + (nexusOnDeath ? ",death=1" : "") }
 
-    init(armed: Bool, potion: Int, ceiling: Int, nexus: Int, nexusOnDeath: Bool = false) {
-        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexus = nexus; self.nexusOnDeath = nexusOnDeath
+    init(armed: Bool, potion: Int, ceiling: Int, nexusOnDeath: Bool = false) {
+        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexusOnDeath = nexusOnDeath
     }
     /// Parses the launcher format; nil for anything the guard would reject.
     init?(text: String) {
-        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 25, "death": 0]
+        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 0, "death": 0]
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         for pair in trimmed.split(separator: ",") {
@@ -45,8 +44,8 @@ struct GuardSettings: Equatable {
                   parts[1].count <= 3, let value = Int(parts[1]), value >= 0 else { return nil }
             values[key] = value
         }
-        guard let armed = values["armed"], armed <= 1, values["death"]! <= 1 else { return nil }
-        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexus: values["nexus"]!, nexusOnDeath: values["death"]! == 1)
+        guard let armed = values["armed"], armed <= 1, values["death"]! <= 1, values["nexus"]! <= 100 else { return nil }
+        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexusOnDeath: values["death"]! == 1)
         if problem != nil { return nil }
     }
 }
@@ -103,7 +102,7 @@ struct GuardSnapshot: Equatable {
     var pid: Int32
     var status: Int32            // 0 valid, 1 starting, 2 waiting for HUD, 3 waiting for player, 4 bad data
     var armed: Bool
-    var potion: Int, ceiling: Int, nexus: Int
+    var potion: Int, ceiling: Int
     var mapKnown: Bool, inNexus: Bool, drinking: Bool, settled: Bool
     var hp: Int, maxHP: Int
     var hudHP: Float
@@ -129,7 +128,7 @@ struct GuardSnapshot: Equatable {
 
     init(_ d: LiveData) {
         pid = d.pid; status = d.status; armed = d.armed != 0
-        potion = Int(d.potion); ceiling = Int(d.ceiling); nexus = Int(d.nexus)
+        potion = Int(d.potion); ceiling = Int(d.ceiling)
         mapKnown = d.map_known != 0; inNexus = d.in_nexus != 0
         drinking = d.drinking != 0; settled = d.settled != 0
         hp = Int(d.hp); maxHP = Int(d.max_hp); hudHP = d.hud_hp
@@ -175,7 +174,7 @@ struct GuardSnapshot: Equatable {
     var totalPotions: Int { stacks.reduce(0, +) }
     /// Where drinking stops: the ceiling, or the potion threshold when there is none.
     var stopPercent: Int { ceiling > 0 ? ceiling : potion }
-    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexus: nexus, nexusOnDeath: nexusOnDeath) }
+    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexusOnDeath: nexusOnDeath) }
 }
 
 /// Counts for the current game session, kept by the guard.
@@ -332,7 +331,7 @@ final class LiveFeed {
         remapIfNeeded()
         guard let map, writable else { return false }
         var data = LiveControlData(request: request, armed: settings.armed ? 1 : 0, potion: Int32(settings.potion),
-                                   ceiling: Int32(settings.ceiling), nexus: Int32(settings.nexus), death: settings.nexusOnDeath ? 1 : 0)
+                                   ceiling: Int32(settings.ceiling), nexus: 0, death: settings.nexusOnDeath ? 1 : 0)
         guard_control_send(map, &data)
         return true
     }

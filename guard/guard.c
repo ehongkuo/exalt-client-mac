@@ -78,7 +78,7 @@ static void *max_field, *player_hp_field, *connection_field, *bar_aux_field, *qu
 static void *gui_class, *bar_class, *player_class, *equipment_class, *connection_class, *quickslot_class, *library;
 static const void *find_method, *potion_method, *nexus_method;
 static int guard_ok, base_logged;
-static int potion_off, nexus_off;  /* set after a game exception in that action only */
+static int potion_off;  /* set after a game exception in that action only */
 /* Current map, from the map-info message the game keeps on RealmQuestsManager. */
 static void *realm_quests_class, *realm_quests_handle, *map_info_field, *map_name_field, *map_display_field;
 static void *last_map_info, *last_map_name;
@@ -505,7 +505,6 @@ static void disarm(const char *what, const void *exception) {
     /* Switch off only the action that failed, so a potion error never disables the Nexus. */
     if (!strcmp(what, "potion")) potion_off = 1;
     else if (!strcmp(what, "join")) join_off = 1;
-    else nexus_off = 1;
     note("guard_disarmed\t%s_exception\n", what);
 }
 static void *equipment_instance(uint64_t now) {
@@ -551,14 +550,6 @@ static int drink(void *equipment, int slot) {
     void *args[] = {&quickslot}, *exception = NULL;
     il2cpp_runtime_invoke(potion_method, equipment, args, &exception);
     if (exception) { disarm("potion", exception); return RESULT_EXCEPTION; }
-    return RESULT_CALLED;
-}
-static int nexus(void *player) {
-    void *connection = read_reference(player, connection_field);
-    if (!connection || il2cpp_object_get_class(connection) != connection_class) return RESULT_UNAVAILABLE;
-    void *exception = NULL;
-    il2cpp_runtime_invoke(nexus_method, connection, NULL, &exception);
-    if (exception) { disarm("nexus", exception); return RESULT_EXCEPTION; }
     return RESULT_CALLED;
 }
 /* Logs each quickslot's count and cooldown flag when they change, to measure the game's
@@ -670,7 +661,6 @@ static void run_guard(Record *r, void *player, uint64_t now) {
     r->action = guard_decide(&guard, &config, (uintptr_t)player, (float)r->player_hp,
                              (float)r->player_max, now, validated, in_nexus, ready);
     if (r->action == GUARD_POTION) { r->slot = slot; r->result = drink(equipment, slot); }
-    else if (r->action == GUARD_NEXUS && config.armed && !nexus_off) r->result = nexus(player);
     if (r->action) record_event(r);
     live_data.slot_count = n;
     live_data.next_slot = slot;

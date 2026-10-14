@@ -21,7 +21,7 @@ enum LaunchTests {
         check(GuardPaths.liveFile(data: data).path == "/Users/x/Library/Application Support/Exalt Client Mac/logs/guard-live.bin", "live file")
         check(GuardPaths.settingsFile(data: data).path == "/Users/x/Library/Application Support/Exalt Client Mac/guard-settings.conf", "settings")
 
-        let settings = GuardSettings(armed: true, potion: 50, ceiling: 80, nexus: 25)
+        let settings = GuardSettings(armed: true, potion: 50, ceiling: 80)
         let dylib = URL(fileURLWithPath: "/g/ExaltGuard.dylib")
         let all: (URL) -> Bool = { _ in true }
         func plan(expected: String? = "abc", actual: String? = "abc", running: [String] = [], exists: @escaping (URL) -> Bool = all) -> Result<LaunchPlan, LaunchProblem> {
@@ -30,7 +30,7 @@ enum LaunchTests {
         }
         guard case .success(let ok) = plan() else { fatalError("expected a plan") }
         check(ok.executable == install.launcher, "runs DECA's launcher")
-        check(ok.environment["EXALT_GUARD"] == "armed=1,potion=50,ceiling=80,nexus=25", "settings passed")
+        check(ok.environment["EXALT_GUARD"] == "armed=1,potion=50,ceiling=80", "settings passed")
         check(ok.environment["DYLD_INSERT_LIBRARIES"] == "/g/ExaltGuard.dylib", "guard injected for this launch only")
         check(ok.environment["EXALT_GUARD_DIR"] == "/d", "guard writes to the app's data folder")
 
@@ -74,7 +74,7 @@ enum LaunchTests {
         try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-1.tsv"))
         try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-2.tsv"))
         try! Data(count: 4096).write(to: exportLogs.appendingPathComponent("guard-live.bin"))
-        try! SettingsFile.save(GuardSettings(armed: true, potion: 50, ceiling: 80, nexus: 25), to: GuardPaths.settingsFile(data: exportData))
+        try! SettingsFile.save(GuardSettings(armed: true, potion: 50, ceiling: 80), to: GuardPaths.settingsFile(data: exportData))
         let zip = exportData.appendingPathComponent("export.zip")
         check((try? LogExport.export(data: exportData, to: zip)) == 2, "two session logs exported")
         let list = Process(); let pipe = Pipe()
