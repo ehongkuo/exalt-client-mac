@@ -2,6 +2,7 @@
  * party chat through the IL2CPP runtime, and calls the same game functions as the potion and
  * Nexus keys and the ctrl-click menu's "Join dungeon". It never patches game code. Default is
  * dry run. */
+/* EXALT_HIT_PROBE builds add temporary in-memory observation redirects and force actions off. */
 #include "guard_core.h"
 #include "timing_core.h"
 #include "live_state.h"
@@ -67,6 +68,9 @@ API(void *, il2cpp_gchandle_get_target, (void *));
 API(void, il2cpp_gchandle_free, (void *));
 API(void *, il2cpp_string_new, (const char *));
 
+#ifdef EXALT_HIT_PROBE
+static void hit_probe_drain(void);
+#endif
 static FILE *logfile;
 static void *gui_handle, *player_handle, *equipment_handle;
 static void *bar_field, *player_field, *hp_field, *position_field, *native_field;
@@ -617,6 +621,10 @@ static void check_join(uint64_t now) {
  * manager joins the named member, then the character's LMCLHOGGKKG(1000). The game's own checks
  * (party membership, where that member is) apply. */
 static void run_join(void *player, uint64_t now) {
+#ifdef EXALT_HIT_PROBE
+    if (pending_join) finish_join(JOIN_UNSUPPORTED);
+    return;
+#endif
     if (!pending_join) return;
     void *party = player ? read_reference(player, party_manager_field) : NULL;
     if (!party) { if (now >= pending_join_deadline) finish_join(JOIN_UNAVAILABLE); return; }
@@ -720,6 +728,9 @@ static void open_live(const char *folder) {
 
 static void drain(void *unused) {
     (void)unused;
+#ifdef EXALT_HIT_PROBE
+    hit_probe_drain();
+#endif
     int closing = atomic_load_explicit(&finished, memory_order_acquire);
     uint64_t tail = atomic_load_explicit(&note_tail, memory_order_relaxed);
     while (tail != atomic_load_explicit(&note_head, memory_order_acquire)) {
@@ -745,6 +756,9 @@ static void finish(void) {
     dispatch_source_cancel(timer);
     atomic_store_explicit(&finished, 1, memory_order_release);
 }
+#ifdef EXALT_HIT_PROBE
+#include "../probe/hit_probe.h"
+#endif
 static void tick(void *unused) {
     (void)unused;
     uint64_t begin = monotonic_ns();
@@ -759,6 +773,9 @@ static void tick(void *unused) {
     }
     if (!ready) goto done;
     check_control();
+#ifdef EXALT_HIT_PROBE
+    config.armed = 0;
+#endif
     check_join(begin);
     r.status = 2;
     if (gui_handle) {
@@ -793,6 +810,9 @@ static void tick(void *unused) {
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
     if (r.status == 0) run_guard(&r, player, begin);
 done:
+#ifdef EXALT_HIT_PROBE
+    hit_probe_tick(own, begin);
+#endif
     if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;
     r.decreased = detect(&detector, (uintptr_t)player, r.hp, begin, r.status == 0);
@@ -840,6 +860,9 @@ __attribute__((constructor)) static void start(void) {
     if (fd < 0) return;
     logfile = fdopen(fd, "w"); if (!logfile) { close(fd); return; }
     int parsed = guard_parse(&config, getenv("EXALT_GUARD"));
+#ifdef EXALT_HIT_PROBE
+    config.armed = 0;
+#endif
     fputs("status\tguard_loaded\t1000Hz\n", logfile);
     if (!parsed) fputs("status\tguard_config_invalid\n", logfile);
     fprintf(logfile, "guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tquickslots=sequential\n",
@@ -848,6 +871,9 @@ __attribute__((constructor)) static void start(void) {
     open_live(folder);
     struct timespec epoch; clock_gettime(CLOCK_REALTIME, &epoch);
     start_epoch = epoch.tv_sec + epoch.tv_nsec / 1e9; start_ns = monotonic_ns();
+#ifdef EXALT_HIT_PROBE
+    hit_probe_open(folder);
+#endif
     live_data.session_start_epoch = start_epoch;
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     writer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
