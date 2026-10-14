@@ -90,6 +90,62 @@ The ideas that make it work:
 3. **Acting like a key press.** Potions, Nexus and Join call the same game functions as the potion key, the Nexus key and the ctrl-click menu, through `il2cpp_runtime_invoke`. The game's own checks (potion count, whether Nexus is allowed, party membership) still apply. It never patches game code or edits network traffic, and it refuses to act if any of those functions isn't where this build puts it.
 4. **Talking across architectures.** The guard (x86_64) and the app (arm64) share a memory-mapped file. Each direction is a sequence lock: the writer makes a counter odd, copies the data, then makes it even; the reader retries if the counter moved. No locks, no sockets, and the app always sees a consistent snapshot.
 
+### Where each part lives on your Mac
+
+```mermaid
+flowchart LR
+    subgraph appb["~/Applications/Exalt Client Mac.app/Contents"]
+        direction TB
+        app["<b>App</b><br/>MacOS/ExaltClientMac"]
+        guard["<b>Guard</b><br/>Resources/ExaltGuard.dylib<br/><i>runs inside the game</i>"]
+    end
+
+    subgraph data["~/Library/Application Support/Exalt Client Mac"]
+        direction TB
+        settings["<b>Settings</b><br/>guard-settings.conf"]
+        file[("<b>Shared status file</b><br/>logs/guard-live.bin")]
+        logs["<b>Session logs</b><br/>logs/guard-#lt;pid#gt;.tsv"]
+    end
+
+    launcher["<b>DECA's launcher</b><br/>/Applications/RotMG Exalt Launcher/<br/>RotMG Exalt Launcher.app"]
+
+    subgraph gameb["~/.local/share/RealmOfTheMadGod/Production/RotMGExalt.app/Contents"]
+        direction TB
+        exe["<b>Game starter</b><br/>MacOS/RotMGExalt"]
+        engine["<b>Unity engine</b><br/>Frameworks/UnityPlayer.dylib"]
+        code["<b>DECA's game code</b><br/>+ IL2CPP runtime<br/>Frameworks/GameAssembly.dylib"]
+        meta["<b>Names and types</b><br/>Resources/Data/il2cpp_data/<br/>Metadata/global-metadata.dat"]
+        assets["<b>Art, maps, sounds</b><br/>Resources/Data/*.assets, level0-5"]
+    end
+
+    server[("<b>DECA's game server</b><br/>remote, nothing local")]
+
+    app -->|1 Start game| launcher
+    launcher -->|"2 starts the game,<br/>guard attached"| exe
+    exe --> engine
+    exe --> code
+    engine --> assets
+    code --> meta
+    guard -->|"3 reads HP and chat,<br/>calls potion / Nexus / Join"| code
+    code <-->|"hits, item use,<br/>HP updates"| server
+    app -->|saves| settings
+    app <--> file
+    guard <--> file
+    guard -->|writes| logs
+
+    classDef ours fill:#e1f2ee,stroke:#1f8a78,color:#1b2124
+    classDef deca fill:#f8eedc,stroke:#b7791f,color:#1b2124
+    classDef shared fill:#e6e9f7,stroke:#4f63b8,color:#1b2124
+    class app,guard ours
+    class launcher,exe,engine,code,meta,assets,server deca
+    class settings,file,logs shared
+    style appb fill:#f4faf8,stroke:#1f8a78,color:#1b2124
+    style data fill:#f5f6fc,stroke:#4f63b8,color:#1b2124
+    style gameb fill:#fdfaf3,stroke:#b7791f,color:#1b2124
+```
+
+Every box is a real file on your Mac, except the server. Green is installed by this project, amber is DECA's (installed by their launcher), blue is data the app and guard write. The guard's file sits in the app, but it runs inside the game once the launcher starts it.
+
 ## Design notes
 
 These came from measuring the real game and shaped how the guard behaves.

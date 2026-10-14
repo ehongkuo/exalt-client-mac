@@ -44,6 +44,62 @@ flowchart LR
 
 Green is this project, amber is DECA's game and server, blue is the file the app and guard share. The app also starts the game, which is how the guard gets loaded into it.
 
+## Where each part lives on your Mac
+
+```mermaid
+flowchart LR
+    subgraph appb["~/Applications/Exalt Client Mac.app/Contents"]
+        direction TB
+        app["<b>App</b><br/>MacOS/ExaltClientMac"]
+        guard["<b>Guard</b><br/>Resources/ExaltGuard.dylib<br/><i>runs inside the game</i>"]
+    end
+
+    subgraph data["~/Library/Application Support/Exalt Client Mac"]
+        direction TB
+        settings["<b>Settings</b><br/>guard-settings.conf"]
+        file[("<b>Shared status file</b><br/>logs/guard-live.bin")]
+        logs["<b>Session logs</b><br/>logs/guard-#lt;pid#gt;.tsv"]
+    end
+
+    launcher["<b>DECA's launcher</b><br/>/Applications/RotMG Exalt Launcher/<br/>RotMG Exalt Launcher.app"]
+
+    subgraph gameb["~/.local/share/RealmOfTheMadGod/Production/RotMGExalt.app/Contents"]
+        direction TB
+        exe["<b>Game starter</b><br/>MacOS/RotMGExalt"]
+        engine["<b>Unity engine</b><br/>Frameworks/UnityPlayer.dylib"]
+        code["<b>DECA's game code</b><br/>+ IL2CPP runtime<br/>Frameworks/GameAssembly.dylib"]
+        meta["<b>Names and types</b><br/>Resources/Data/il2cpp_data/<br/>Metadata/global-metadata.dat"]
+        assets["<b>Art, maps, sounds</b><br/>Resources/Data/*.assets, level0-5"]
+    end
+
+    server[("<b>DECA's game server</b><br/>remote, nothing local")]
+
+    app -->|1 Start game| launcher
+    launcher -->|"2 starts the game,<br/>guard attached"| exe
+    exe --> engine
+    exe --> code
+    engine --> assets
+    code --> meta
+    guard -->|"3 reads HP and chat,<br/>calls potion / Nexus / Join"| code
+    code <-->|"hits, item use,<br/>HP updates"| server
+    app -->|saves| settings
+    app <--> file
+    guard <--> file
+    guard -->|writes| logs
+
+    classDef ours fill:#e1f2ee,stroke:#1f8a78,color:#1b2124
+    classDef deca fill:#f8eedc,stroke:#b7791f,color:#1b2124
+    classDef shared fill:#e6e9f7,stroke:#4f63b8,color:#1b2124
+    class app,guard ours
+    class launcher,exe,engine,code,meta,assets,server deca
+    class settings,file,logs shared
+    style appb fill:#f4faf8,stroke:#1f8a78,color:#1b2124
+    style data fill:#f5f6fc,stroke:#4f63b8,color:#1b2124
+    style gameb fill:#fdfaf3,stroke:#b7791f,color:#1b2124
+```
+
+Every box is a real file on your Mac, except the server. Green is installed by this project, amber is DECA's (installed by their launcher), blue is data the app and guard write. The guard's file sits in the app, but it runs inside the game once the launcher starts it.
+
 A few things to know before the traces:
 
 - **The guard only uses the game's own functions.** It reads values the game already has (like your HP) and calls the same functions the game's keys and menus call. It never edits game code or network traffic.
