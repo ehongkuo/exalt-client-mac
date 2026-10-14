@@ -1,8 +1,8 @@
 /* ExaltGuard.dylib: loaded into the game by Exalt Client Mac. Reads HP, quickslots, the map and
  * party chat through the IL2CPP runtime, and calls the same game functions as the potion and
- * Nexus keys and the ctrl-click menu's "Join dungeon". It never patches game code. Default is
- * dry run. */
-/* EXALT_HIT_PROBE builds add temporary in-memory observation redirects and force actions off. */
+ * Nexus keys and the ctrl-click menu's "Join dungeon". Optional predicted-death protection
+ * redirects audited projectile functions. Default is dry run. */
+/* The diagnostic build forces legacy actions off; the client build keeps their settings. */
 #include "guard_core.h"
 #include "timing_core.h"
 #include "live_state.h"
@@ -68,7 +68,7 @@ API(void *, il2cpp_gchandle_get_target, (void *));
 API(void, il2cpp_gchandle_free, (void *));
 API(void *, il2cpp_string_new, (const char *));
 
-#ifdef EXALT_HIT_PROBE
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 static void hit_probe_drain(void);
 #endif
 static FILE *logfile;
@@ -582,12 +582,13 @@ static void check_control(void) {
     last_control_seq = seq;
     if (!c.request || c.request == last_control_request) return;
     last_control_request = c.request;
-    int ok = guard_apply(&config, &guard, c.armed, c.potion, c.ceiling, c.nexus);
+    int ok = c.death >= 0 && c.death <= 1 && guard_apply(&config, &guard, c.armed, c.potion, c.ceiling, c.nexus);
+    if (ok) config.death = c.death;
     live_data.control_request = c.request;
     live_data.control_result = ok ? CONTROL_APPLIED : CONTROL_REJECTED;
     live_data.potion = config.potion; live_data.ceiling = config.ceiling; live_data.nexus = config.nexus;
-    if (ok) note("guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tsource=app\trequest=%u\n",
-                 config.armed, config.potion, config.ceiling, config.nexus, c.request);
+    if (ok) note("guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\tsource=app\trequest=%u\n",
+                 config.armed, config.potion, config.ceiling, config.nexus, config.death, c.request);
     else note("guard_config_rejected\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\trequest=%u\n",
               c.armed, c.potion, c.ceiling, c.nexus, c.request);
 }
@@ -662,6 +663,10 @@ static void run_guard(Record *r, void *player, uint64_t now) {
     log_slot_changes(n, counts, cooling, r->epoch);
     int slot = guard_pick_slot(counts, n);
     int ready = slot >= 0 && !cooling[slot] && !potion_off;
+#ifdef EXALT_CLIENT_FATAL
+    if (live_data.death_blocking) { r->action = GUARD_NONE; guard.drinking = 0; }
+    else
+#endif
     r->action = guard_decide(&guard, &config, (uintptr_t)player, (float)r->player_hp,
                              (float)r->player_max, now, validated, in_nexus, ready);
     if (r->action == GUARD_POTION) { r->slot = slot; r->result = drink(equipment, slot); }
@@ -690,7 +695,7 @@ static void publish_live(const Record *r, uint64_t now) {
     if (now - gap_window_start >= NSEC_PER_SEC) { gap_window_start = now; gap_window_max = 0; }
     if (gap_us > gap_window_max) gap_window_max = gap_us;
     live_data.status = r->status;
-    live_data.armed = config.armed;
+    live_data.armed = config.armed; live_data.death = config.death;
     live_data.hp = r->player_hp; live_data.max_hp = r->player_max; live_data.hud_hp = r->hp;
     live_data.map_known = map_ok && !map_unknown_logged;
     live_data.in_nexus = in_nexus;
@@ -728,7 +733,7 @@ static void open_live(const char *folder) {
 
 static void drain(void *unused) {
     (void)unused;
-#ifdef EXALT_HIT_PROBE
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_drain();
 #endif
     int closing = atomic_load_explicit(&finished, memory_order_acquire);
@@ -756,7 +761,7 @@ static void finish(void) {
     dispatch_source_cancel(timer);
     atomic_store_explicit(&finished, 1, memory_order_release);
 }
-#ifdef EXALT_HIT_PROBE
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 #include "../probe/hit_probe.h"
 #endif
 static void tick(void *unused) {
@@ -810,7 +815,7 @@ static void tick(void *unused) {
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
     if (r.status == 0) run_guard(&r, player, begin);
 done:
-#ifdef EXALT_HIT_PROBE
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_tick(own, begin);
 #endif
     if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
@@ -865,13 +870,13 @@ __attribute__((constructor)) static void start(void) {
 #endif
     fputs("status\tguard_loaded\t1000Hz\n", logfile);
     if (!parsed) fputs("status\tguard_config_invalid\n", logfile);
-    fprintf(logfile, "guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tquickslots=sequential\n",
-            config.armed, config.potion, config.ceiling, config.nexus);
+    fprintf(logfile, "guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\tquickslots=sequential\n",
+            config.armed, config.potion, config.ceiling, config.nexus, config.death);
     fflush(logfile);
     open_live(folder);
     struct timespec epoch; clock_gettime(CLOCK_REALTIME, &epoch);
     start_epoch = epoch.tv_sec + epoch.tv_nsec / 1e9; start_ns = monotonic_ns();
-#ifdef EXALT_HIT_PROBE
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_open(folder);
 #endif
     live_data.session_start_epoch = start_epoch;

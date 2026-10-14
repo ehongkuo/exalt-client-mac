@@ -85,9 +85,13 @@ static FlightRecorder *probe_flight;
 static int probe_zero_hp=-1;
 static uint64_t probe_zero_generation;
 static void hit_probe_open(const char *folder) {
+#ifdef EXALT_CLIENT_FATAL
+    (void)folder;fatal_enabled=1;
+#else
     const char *active=getenv("EXALT_FATAL_INTERVENTION");fatal_enabled=active && !strcmp(active,"1");
     probe_flight=flight_open(folder,start_ns,start_epoch);
     if(!probe_flight)note("hit_probe_refused\tflight_recorder\n");
+#endif
 }
 static ProbeEvent probe_events[PROBE_CAPACITY];
 static _Atomic uint64_t probe_head,probe_tail;
@@ -103,6 +107,9 @@ static void probe_publish(ProbeEvent e) {
     atomic_store_explicit(&probe_head,head+1,memory_order_release);
 }
 static void probe_emit(ProbeEvent e) {
+#ifdef EXALT_CLIENT_FATAL
+    if(e.phase<20)return;
+#endif
     probe_publish(e);
     if(probe_zero_generation!=e.generation){probe_zero_generation=e.generation;probe_zero_hp=-1;}
     if(e.max>0) {
@@ -117,7 +124,12 @@ static void *probe_player(void) {
     void *player=player_handle?il2cpp_gchandle_get_target(player_handle):NULL;
     return player && il2cpp_object_get_class(player)==player_class?player:NULL;
 }
-static int probe_active(void) { return probe_on_main() && !atomic_load_explicit(&finished,memory_order_acquire); }
+static int probe_active(void) {
+#ifdef EXALT_CLIENT_FATAL
+    if(!config.death && !fatal_policy.blocking)return 0;
+#endif
+    return probe_on_main() && !atomic_load_explicit(&finished,memory_order_acquire);
+}
 static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
     uint64_t begin=monotonic_ns();
     if(probe_map!=last_map_info || probe_identity!=player) {
@@ -152,8 +164,17 @@ static void fatal_clear(void *player,int reason) {
     atomic_store_explicit(&fatal_block_player,0,memory_order_release);
     release(&fatal_player_handle);release(&fatal_connection_handle);
     fatal_policy=(FatalPolicy){0};fatal_death_logged=0;
+#ifdef EXALT_CLIENT_FATAL
+    live_data.death_blocking=0;live_data.death_pending=0;live_data.death_predicted=0;
+#endif
 }
 static int fatal_sync(void *player) {
+#ifdef EXALT_CLIENT_FATAL
+    static int last_mode=-1;
+    int mode=(config.death?1:0)+(config.armed?2:0);
+    if(mode!=last_mode){if(fatal_policy.player && !fatal_policy.blocking)fatal_clear(player,3);last_mode=mode;}
+    if(!config.death && !fatal_policy.blocking)return 0;
+#endif
     if(!fatal_enabled || !guard_ok || !map_ok || map_unknown_logged || !last_map_info)return 0;
     if(in_nexus){if(fatal_policy.player)fatal_clear(player,1);return 0;}
     if(!player || validated_player!=(uintptr_t)player)return 0;
@@ -168,18 +189,36 @@ static int fatal_local_nexusing(void *connection) {
     if(!socket || il2cpp_object_get_class(socket)!=fatal_socket_class)return 0;
     uint8_t value=0;il2cpp_field_get_value(socket,fatal_nexusing_field,&value);return value!=0;
 }
+#ifdef EXALT_CLIENT_FATAL
+static void fatal_record(void *player,int hp,int result) {
+    int max=0;il2cpp_field_get_value(player,max_field,&max);
+    uint64_t now=monotonic_ns();
+    Record r={.epoch=start_epoch+(double)(now-start_ns)/1e9,.action=GUARD_NEXUS_DEATH,
+              .result=result,.slot=-1,.player_hp=hp,.player_max=max};
+    record_event(&r);
+    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\n",
+         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result);
+}
+#endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
     if(!fatal_sync(player))return damage;
     int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
     int decision=fatal_damage(&fatal_policy,hp,damage);
     if(decision==FATAL_REQUEST) {
         fatal_emit(20,player,calculation,damage,decision,0);
+#ifdef EXALT_CLIENT_FATAL
+        if(!config.armed){fatal_record(player,hp,RESULT_DRY);goto prediction_done;}
+#endif
         void *connection=(void*)fatal_policy.connection;
         fatal_player_handle=il2cpp_gchandle_new(player,0);
         fatal_connection_handle=il2cpp_gchandle_new(connection,0);
         if(!fatal_player_handle || !fatal_connection_handle){
             release(&fatal_player_handle);release(&fatal_connection_handle);
-            fatal_emit(22,player,calculation,damage,0,2);return damage;
+            fatal_emit(22,player,calculation,damage,0,2);
+#ifdef EXALT_CLIENT_FATAL
+            fatal_record(player,hp,RESULT_UNAVAILABLE);
+#endif
+            return damage;
         }
         int already=fatal_local_nexusing(connection);void *exception=NULL;
         fatal_emit(21,player,calculation,damage,already,0);
@@ -192,7 +231,15 @@ static int fatal_intervene(void *player,int damage,uint64_t calculation) {
             atomic_store_explicit(&fatal_block_connection,(uintptr_t)connection,memory_order_release);
         } else {release(&fatal_player_handle);release(&fatal_connection_handle);}
         fatal_emit(22,player,calculation,damage,local,exception!=NULL);
+#ifdef EXALT_CLIENT_FATAL
+        live_data.death_blocking=fatal_policy.blocking;
+        if(!already)fatal_record(player,hp,local?RESULT_CALLED:exception?RESULT_EXCEPTION:RESULT_UNAVAILABLE);
+#endif
     }
+#ifdef EXALT_CLIENT_FATAL
+prediction_done:
+    live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
+#endif
     fatal_emit(27,player,calculation,damage,decision,0);
     return fatal_policy.blocking?0:damage;
 }
@@ -259,6 +306,9 @@ static void hp_observed(void *self,int value,const void *info) {
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
             fatal_server_hp(&fatal_policy,after.hp);fatal_emit(28,self,after.id,after.hp,after.update_source,0);
+#ifdef EXALT_CLIENT_FATAL
+            live_data.death_pending=0;live_data.death_predicted=after.hp;
+#endif
         }
         if(fatal_enabled && fatal_policy.blocking && after.hp<=0 && !fatal_death_logged){fatal_death_logged=1;fatal_emit(26,self,after.id,after.hp,0,0);}}
 }
@@ -336,7 +386,11 @@ static int probe_signature(const void *method,const char **types,uint32_t count)
 }
 #endif
 static void probe_install(void) {
+#ifdef EXALT_CLIENT_FATAL
+    if(probe_attempted || !config.death)return;
+#else
     if(probe_attempted || !probe_flight)return;
+#endif
 #ifndef HIT_PROBE_TEST
     if(!in_nexus || !map_ok || map_unknown_logged || !guard_ok || !probe_player())return;
 #endif
@@ -395,16 +449,31 @@ static void probe_install(void) {
     probe_installed=1;note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 }
 static void hit_probe_tick(void *player,uint64_t now) {
-    config.armed=0;(void)now;
+#ifndef EXALT_CLIENT_FATAL
+    config.armed=0;
+#endif
+    (void)now;
     if(!ready)return;
-    probe_install();if(!probe_installed)return;
+    probe_install();
+#ifdef EXALT_CLIENT_FATAL
+    live_data.death_status=probe_installed?1:probe_attempted?-1:0;
+#endif
+    if(!probe_installed)return;
     if(fatal_enabled)fatal_sync(player);
+#ifdef EXALT_CLIENT_FATAL
+    live_data.death_blocking=fatal_policy.blocking;
+    live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
+    return;
+#endif
     uint64_t generation=probe_generation;
     ProbeEvent e=probe_snapshot(4,player,NULL);
     if(generation!=e.generation){e.phase=9;probe_emit(e);}
     if(e.hp!=probe_last_hp || e.max!=probe_last_max){e.phase=4;probe_emit(e);probe_last_hp=e.hp;probe_last_max=e.max;}
 }
 static void hit_probe_drain(void) {
+#ifdef EXALT_CLIENT_FATAL
+    if(!probe_installed)return;
+#endif
     uint64_t tail=atomic_load_explicit(&probe_tail,memory_order_relaxed);
     while(tail!=atomic_load_explicit(&probe_head,memory_order_acquire)) {
         ProbeEvent e=probe_events[tail%PROBE_CAPACITY];

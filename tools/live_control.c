@@ -11,7 +11,7 @@
 
 int main(int argc, char **argv) {
     int join = argc == 5 && !strcmp(argv[2], "join");
-    if (argc != 7 && !join) { fprintf(stderr, "usage: live_control FILE REQUEST ARMED POTION CEILING NEXUS | FILE join REQUEST NAME\n"); return 2; }
+    if (argc != 7 && argc != 8 && !join) { fprintf(stderr, "usage: live_control FILE REQUEST ARMED POTION CEILING NEXUS | FILE join REQUEST NAME\n"); return 2; }
     int fd = open(argv[1], O_RDWR);
     if (fd < 0) { perror("open"); return 1; }
     void *file = mmap(NULL, LIVE_FILE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     LiveControlData d = {.request = (uint32_t)strtoul(argv[2], NULL, 10), .armed = atoi(argv[3]),
-                         .potion = atoi(argv[4]), .ceiling = atoi(argv[5]), .nexus = atoi(argv[6])};
+                         .potion = atoi(argv[4]), .ceiling = atoi(argv[5]), .nexus = atoi(argv[6]), .death = argc == 8 ? atoi(argv[7]) : 0};
     control_write(live_control(file), &d);
     return 0;
 }

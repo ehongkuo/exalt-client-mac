@@ -10,13 +10,14 @@
 typedef struct {
     int armed;             /* 0 = dry run: decide and log, never call the game */
     int potion, nexus;     /* thresholds in percent of max HP; 0 disables */
+    int death;             /* predictive projectile escape, independent of the percent threshold */
     int ceiling;           /* once drinking, keep going until HP is over this percent; 0 = stop above potion */
     uint64_t min_interval_ns;  /* never two potions closer than this */
     uint64_t heal_timeout_ns;  /* after a potion, wait this long for the heal to show before another */
     uint64_t settle_ns;    /* max HP must be unchanged this long before acting */
 } GuardConfig;
 
-typedef enum { GUARD_NONE, GUARD_POTION, GUARD_NEXUS } GuardAction;
+typedef enum { GUARD_NONE, GUARD_POTION, GUARD_NEXUS, GUARD_NEXUS_DEATH } GuardAction;
 
 typedef struct {
     uintptr_t identity;
@@ -70,6 +71,7 @@ static inline int guard_parse(GuardConfig *c, const char *text) {
         else if (key == 6 && !strncmp(text, "potion", 6)) ok = guard_number(value, value_length, 0, 100, &parsed.potion);
         else if (key == 5 && !strncmp(text, "nexus", 5)) ok = guard_number(value, value_length, 0, 100, &parsed.nexus);
         else if (key == 7 && !strncmp(text, "ceiling", 7)) ok = guard_number(value, value_length, 0, 100, &parsed.ceiling);
+        else if (key == 5 && !strncmp(text, "death", 5)) ok = guard_number(value, value_length, 0, 1, &parsed.death);
         if (!ok) goto invalid;
         text += length + (end ? 1 : 0);
     }

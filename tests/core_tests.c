@@ -33,6 +33,10 @@ static void test_parse(void) {
 static void test_decide(void) {
     GuardConfig c; guard_parse(&c, "armed=1,potion=50,nexus=25");
     assert(c.settle_ns == 500 * MS);
+    assert(guard_parse(&c, "armed=1,potion=50,ceiling=80,nexus=25,death=1") && c.death == 1);
+    assert(!guard_parse(&c, "death=2") && c.death == 0);
+    assert(guard_parse(&c, "armed=1,potion=50,nexus=25") && c.death == 0);
+
     GuardState s = {0};
     assert(D(&s, &c, 1, 1000, 1000, 0, 1) == GUARD_NONE);
     /* Healthy, invalid, or nonsensical readings never act. */

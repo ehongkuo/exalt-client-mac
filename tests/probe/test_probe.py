@@ -44,7 +44,7 @@ class ProbeTests(unittest.TestCase):
    self.summary=analysis.analyze(logfile)
    return logfile.read_text()
  def test_incoming_identifiers_are_not_damage(self):
-  log=self.fixture();self.assertIn('hit_probe_ready\tv6',log)
+  log=self.fixture();self.assertIn('hit_probe_ready\tv7',log)
   events=analysis.read_events(log)
   reports=[e for e in events if e['phase']==1]
   notifications=[e for e in events if e['phase']==3]

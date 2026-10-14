@@ -43,7 +43,7 @@ class GuardTests(unittest.TestCase):
    # data_dir: the app's way, no compiled-in folder; EXALT_GUARD_DIR names the data folder.
    logdir=p/'data'/'logs' if data_dir else p
    flags=[] if data_dir else [f'-DPROBE_LOG_DIR="{p}"']
-   subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
+   subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_CLIENT_FATAL',
     *flags,'-DSESSION_NS=3500000000ULL',str(ROOT/'guard'/'guard.c'),'-o',str(p/'guard.dylib')],check=True)
    cmd=['clang','-arch','x86_64','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests'/'fixture.c'),'-o',str(p/'RotMGExalt')]
    cmd+=[f'-D{d}' for d in defines]
@@ -76,7 +76,7 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(potions,[(POTION,'0')])
   self.assertEqual([a for a in acts if a[0]==NEXUS],[(NEXUS,'0')])
   self.assertEqual({r[SLOT] for r in rows if r[ACTION]==POTION},{'1'})
-  self.assertIn('guard_config\tarmed=0\tpotion=50\tceiling=0\tnexus=25\tquickslots=sequential',log)
+  self.assertIn('guard_config\tarmed=0\tpotion=50\tceiling=0\tnexus=25\tdeath=0\tquickslots=sequential',log)
   self.assertIn('guard_ready\n',log)
   self.assertIn('guard_quickslot_base\t1000001',log)
  def test_armed_drinks_once_without_heal_then_nexus(self):
@@ -181,7 +181,7 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture('armed=0,potion=50,nexus=25',
    during=(0.8,lambda f:live_control(f,1,1,50,0,25)))
   self.assertEqual(calls,{'potion_calls':1,'potion_arg':1000002,'nexus_calls':1})
-  self.assertIn('guard_config\tarmed=1\tpotion=50\tceiling=0\tnexus=25\tsource=app\trequest=1',log)
+  self.assertIn('guard_config\tarmed=1\tpotion=50\tceiling=0\tnexus=25\tdeath=0\tsource=app\trequest=1',log)
   self.assertEqual((self.live['control_request'],self.live['control_result'],self.live['armed']),('1','1','1'))
  def test_invalid_settings_from_app_are_rejected(self):
   log,rows,calls=self.run_fixture('armed=0,potion=50,nexus=25',

@@ -20,6 +20,8 @@ int main(int argc, char **argv) {
     LiveData d = {.pid = getpid(), .armed = 1, .potion = 50, .ceiling = 80, .nexus = 25,
                   .map_known = 1, .settled = 1, .max_hp = 235, .slot_count = 3,
                   .chat_status = CHAT_READING};
+    int death_view = getenv("GUARD_UI_DEATH") != NULL;
+    if (death_view) { d.death = 1; d.death_status = 1; }
     snprintf(d.map, sizeof d.map, "Realm of the Mad God");
     d.session_start_epoch = wall() - 754;  /* pretend the session started 12.5 minutes ago */
     snprintf(d.log_name, sizeof d.log_name, "guard-%d.tsv", getpid());
@@ -45,7 +47,7 @@ int main(int argc, char **argv) {
                 snprintf(d.party_caller, sizeof d.party_caller, "Lyra");
                 snprintf(d.party_text, sizeof d.party_text, "j cit");
             }
-            int action = p == 1 || p == 2 ? 1 : p == 4 ? 2 : 0;
+            int action = p == 1 || p == 2 ? 1 : p == 4 ? (death_view ? 3 : 2) : 0;
             if (action) {
                 int slot = stacks[0] ? 0 : stacks[1] ? 1 : 2;
                 if (action == 1) { --stacks[slot]; ++d.potions_sent; } else ++d.nexus_sent;

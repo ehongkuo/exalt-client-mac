@@ -159,6 +159,14 @@ static void *other_thread(void *unused) {
 static void background(void *unused) {
  (void)unused;pthread_t thread;assert(!pthread_create(&thread,NULL,other_thread,NULL));assert(!pthread_join(thread,NULL));
 }
+#ifdef FATAL_CLIENT_TOGGLE
+static void late_blocked_hit(void *unused) {
+ (void)unused;
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,0,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+}
+#endif
 static void verify_forwarding(void *unused) {
  (void)unused;
 #ifdef FATAL_BURST
@@ -171,7 +179,7 @@ static void verify_forwarding(void *unused) {
  assert(report_forwarded==3 && notify_forwarded==3 && assigned_hp==200);
 #endif
 #endif
- #ifdef FATAL_RECONCILE
+ #if defined(FATAL_RECONCILE) || defined(FATAL_CLIENT_TOGGLE)
  assert(damage_forwarded==7 && enemy_forwarded==1);
 #else
  assert(damage_forwarded==6 && enemy_forwarded==1);
@@ -186,6 +194,9 @@ static void verify_forwarding(void *unused) {
  printf("probe_report_forwarded=%u probe_notify_forwarded=%u\n",report_forwarded,notify_forwarded);
 }
 int main(void) {
+#ifdef FATAL_CLIENT_TOGGLE
+ dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,1500*NSEC_PER_MSEC),dispatch_get_main_queue(),NULL,late_blocked_hit);
+#endif
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,900*NSEC_PER_MSEC),dispatch_get_main_queue(),NULL,burst);
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,1000*NSEC_PER_MSEC),dispatch_get_main_queue(),NULL,background);
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,3900*NSEC_PER_MSEC),dispatch_get_main_queue(),NULL,verify_forwarding);

@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
         LiveData d = {0};
         double end = now() + 1.5;  /* overlap with the reader for 1.5 s, then mark done */
         for (int32_t i = 1; now() < end; ++i) {
-            d.hp = d.max_hp = i; d.ticks = (uint64_t)i;
+            d.hp = d.max_hp = d.death = i; d.death_pending = i; d.death_predicted = -(int64_t)i; d.ticks = (uint64_t)i;
             for (int s = 0; s < LIVE_SLOTS; ++s) d.stacks[s] = i;
             live_publish(state, &d);
         }
@@ -35,6 +35,7 @@ int main(int argc, char **argv) {
     for (;;) {
         LiveData d;
         if (!live_read(state, &d)) continue;
+        assert(d.death == d.hp && d.death_pending == d.hp && d.death_predicted == -(int64_t)d.hp);
         assert(d.max_hp == d.hp && d.ticks == (uint64_t)d.hp && d.hp >= last);
         for (int s = 0; s < LIVE_SLOTS; ++s) assert(d.stacks[s] == d.hp);
         if (d.hp != last) ++changes;

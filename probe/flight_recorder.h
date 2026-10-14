@@ -13,7 +13,7 @@ typedef struct {
 _Static_assert(sizeof(ProbeEvent)==128,"Flight event layout changed");
 _Static_assert(offsetof(FlightRecorder,slots)==64,"Flight header layout changed");
 _Static_assert(sizeof(FlightSlot)==136,"Flight slot layout changed");
-static FlightRecorder *flight_open(const char *folder,uint64_t start,double epoch) {
+static inline FlightRecorder *flight_open(const char *folder,uint64_t start,double epoch) {
     char path[PATH_MAX];
     if(snprintf(path,sizeof path,"%s/hit-flight-%d.bin",folder,getpid())>=(int)sizeof path)return NULL;
     int fd=open(path,O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW,0600);if(fd<0)return NULL;
