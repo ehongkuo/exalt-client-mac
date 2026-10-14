@@ -35,7 +35,7 @@ typedef struct {
 } LiveEvent;
 
 typedef struct {
-    int32_t pid, status, armed, potion, ceiling, nexus;
+    int32_t pid, status, armed, potion, ceiling, nexus; /* nexus is a reserved legacy slot, always zero */
     int32_t map_known, in_nexus, drinking, settled;
     int32_t hp, max_hp;
     float hud_hp;
@@ -75,7 +75,7 @@ typedef struct {
 /* Settings sent by the app. request increases with every change; 0 means none yet. */
 typedef struct {
     uint32_t request;
-    int32_t armed, potion, ceiling, nexus, death;
+    int32_t armed, potion, ceiling, nexus, death; /* legacy nexus values are discarded */
 } LiveControlData;
 
 /* A Join click: the party member to join, by the plain name shown in the game. request
