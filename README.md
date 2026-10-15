@@ -85,6 +85,10 @@ Nexus on death can also run alongside potions. Once a predicted-death escape sta
 
 ## How it works
 
+<img src="docs/architecture.png" width="880" alt="Architecture: the arm64 app and the guard inside the x86_64 game exchange settings, Join requests and live status through guard-live.bin; the guard reads game state, calls the game's potion and Join functions, and redirects hit, damage and HP calls for Nexus on death; the game talks to DECA's server">
+
+Arrows point the way data or a call moves. The game never calls the guard; the source for this diagram is [docs/architecture.html](docs/architecture.html).
+
 The Apple silicon UI loads an Intel C library into Exalt for that launch. The library reads validated game fields through Unity's IL2CPP runtime and calls the game's existing potion, Nexus, and Join functions.
 
 Auto-potions use observed HP. The polling timer requests checks at 1 ms intervals on the game's main thread; actual scheduling varies with game load and is shown in the timing display. Nexus on death runs synchronously in the audited projectile calculation path, before the corresponding hit report.

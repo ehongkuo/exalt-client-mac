@@ -1,0 +1,220 @@
+<title>Exalt Client Mac Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one swimlane per boundary (app, shared file, guard, game code, server); every edge is vertical. */
+:root {
+  --bg: #f4f6f5; --panel: #ffffff; --fg: #1b2124; --muted: #5a6568; --edge: #3b4547; --rule: #cdd4d1;
+  --ours: #1f8a78; --ours-fill: #e2f2ee; --ours-lane: #f2f9f7;
+  --deca: #b7791f; --deca-fill: #f8eedc; --deca-lane: #fdf8ef;
+  --file: #4f63b8; --file-fill: #e6e9f7; --file-lane: #f4f5fc;
+  --sans: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #131719; --panel: #1a1f21; --fg: #e4e9e7; --muted: #9aa5a3; --edge: #b5c0bd; --rule: #333b3d;
+  --ours: #4cc2ac; --ours-fill: #173430; --ours-lane: #162422;
+  --deca: #e0a54d; --deca-fill: #3a2d17; --deca-lane: #221d15;
+  --file: #8b9cf0; --file-fill: #232a4a; --file-lane: #1a1e2e; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #131719; --panel: #1a1f21; --fg: #e4e9e7; --muted: #9aa5a3; --edge: #b5c0bd; --rule: #333b3d;
+  --ours: #4cc2ac; --ours-fill: #173430; --ours-lane: #162422;
+  --deca: #e0a54d; --deca-fill: #3a2d17; --deca-lane: #221d15;
+  --file: #8b9cf0; --file-fill: #232a4a; --file-lane: #1a1e2e; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); }
+main { max-width: 1200px; margin: 0 auto; padding-inline: 16px; padding-block: 32px 48px; display: grid; gap: 16px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 70ch; line-height: 1.5; }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; overflow-x: auto; }
+figure svg { display: block; width: 100%; min-width: 860px; height: auto; }
+figcaption { margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 95ch; }
+code { font-family: var(--mono); font-size: 0.95em; }
+
+/* SVG parts */
+.lane-ours { fill: var(--ours-lane); stroke: var(--ours); stroke-width: 1; }
+.lane-file { fill: var(--file-lane); stroke: var(--file); stroke-width: 1; }
+.lane-deca { fill: var(--deca-lane); stroke: var(--deca); stroke-width: 1; }
+.proc { fill: none; stroke: var(--deca); stroke-width: 1.5; stroke-dasharray: 7 5; }
+.n-ours { fill: var(--ours-fill); stroke: var(--ours); stroke-width: 1.3; }
+.n-file { fill: var(--file-fill); stroke: var(--file); stroke-width: 1.3; }
+.n-deca { fill: var(--deca-fill); stroke: var(--deca); stroke-width: 1.3; }
+.t { fill: var(--fg); font-family: var(--sans); font-size: 14.5px; font-weight: 600; }
+.tm { fill: var(--fg); font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.s { fill: var(--muted); font-family: var(--sans); font-size: 12.5px; }
+.sm { fill: var(--muted); font-family: var(--mono); font-size: 12px; }
+.h { fill: var(--fg); font-family: var(--sans); font-size: 14px; font-weight: 600; }
+.hm { fill: var(--fg); font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
+.hp { fill: var(--deca); font-family: var(--sans); font-size: 14px; font-weight: 600; }
+.e { fill: none; stroke: var(--edge); stroke-width: 1.4; }
+.e-hook { fill: none; stroke: var(--edge); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.el { fill: var(--fg); font-family: var(--sans); font-size: 12px; }
+.ah { fill: var(--edge); }
+.c { text-anchor: middle; }
+.r { text-anchor: end; }
+.sw-ours { fill: var(--ours-fill); stroke: var(--ours); }
+.sw-deca { fill: var(--deca-fill); stroke: var(--deca); }
+.sw-file { fill: var(--file-fill); stroke: var(--file); }
+</style>
+
+<main>
+  <h1>Exalt Client Mac architecture</h1>
+  <p class="lede">How the app, the guard running inside the game, and DECA's server fit together. Each band is a separate boundary, and every arrow crosses exactly one.</p>
+
+  <figure>
+    <svg viewBox="0 0 1160 916" role="img" aria-label="The arm64 app writes settings and Join clicks into a 4 KB shared file and reads live status from it. The guard, loaded into the x86_64 game under Rosetta, reads and writes that file every millisecond, calls the game's own potion, Nexus and Join functions, and redirects eight game functions for Nexus on death. The game talks to DECA's server.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+
+      <!-- Lane 1: app -->
+      <rect class="lane-ours" x="16" y="16" width="1128" height="124" rx="10"/>
+      <text class="h" x="36" y="66">Exalt Client Mac.app</text>
+      <text class="s" x="36" y="85">Swift &#183; arm64</text>
+
+      <rect class="n-ours" x="230" y="40" width="200" height="76" rx="7"/>
+      <text class="t c" x="330" y="66">Settings</text>
+      <text class="s c" x="330" y="86">Armed or Dry Run, potion %,</text>
+      <text class="s c" x="330" y="102">Nexus on death</text>
+
+      <rect class="n-ours" x="460" y="40" width="200" height="76" rx="7"/>
+      <text class="t c" x="560" y="66">Party alerts</text>
+      <text class="s c" x="560" y="86">notification, sound,</text>
+      <text class="s c" x="560" y="102">Join popup</text>
+
+      <rect class="n-ours" x="690" y="40" width="200" height="76" rx="7"/>
+      <text class="t c" x="790" y="66">Live view</text>
+      <text class="s c" x="790" y="86">full window or</text>
+      <text class="s c" x="790" y="102">compact strip</text>
+
+      <rect class="n-ours" x="930" y="40" width="200" height="76" rx="7"/>
+      <text class="t c" x="1030" y="66">Start game</text>
+      <text class="s c" x="1030" y="86">checks the game build hash,</text>
+      <text class="s c" x="1030" y="102">passes saved settings</text>
+
+      <!-- App &#8596; shared file -->
+      <text class="el" x="340" y="174">Apply</text>
+      <text class="el" x="510" y="174">Join click</text>
+      <text class="el c" x="670" y="154">party calls</text>
+      <text class="el" x="840" y="174">status, every refresh</text>
+      <text class="el" x="1010" y="174">launch env</text>
+
+      <!-- Lane 2: shared file -->
+      <rect class="lane-file" x="16" y="206" width="898" height="108" rx="10"/>
+      <text class="hm" x="36" y="246">guard-live.bin</text>
+      <text class="s" x="36" y="265">4 KB shared file,</text>
+      <text class="s" x="36" y="281">one sequence lock</text>
+      <text class="s" x="36" y="297">per block</text>
+
+      <rect class="n-file" x="230" y="222" width="200" height="76" rx="7"/>
+      <text class="tm c" x="330" y="248">LiveControl</text>
+      <text class="s c" x="330" y="268">app &#8594; guard</text>
+      <text class="s c" x="330" y="284">settings on Apply</text>
+
+      <rect class="n-file" x="460" y="222" width="200" height="76" rx="7"/>
+      <text class="tm c" x="560" y="248">LiveJoin</text>
+      <text class="s c" x="560" y="268">app &#8594; guard</text>
+      <text class="s c" x="560" y="284">player to join</text>
+
+      <rect class="n-file" x="690" y="222" width="200" height="76" rx="7"/>
+      <text class="tm c" x="790" y="248">LiveState</text>
+      <text class="s c" x="790" y="268">guard &#8594; app</text>
+      <text class="s c" x="790" y="284">HP, events, calls, hooks</text>
+
+      <rect class="n-deca" x="930" y="222" width="200" height="76" rx="7"/>
+      <text class="t c" x="1030" y="248">DECA launcher</text>
+      <text class="s c" x="1030" y="268">opened with</text>
+      <text class="sm c" x="1030" y="284">DYLD_INSERT_LIBRARIES</text>
+
+      <!-- Process boundary -->
+      <rect class="proc" x="16" y="380" width="1128" height="332" rx="12"/>
+      <text class="hp" x="36" y="404">RotMGExalt</text>
+      <text class="s" x="36" y="421">x86_64 under Rosetta</text>
+
+      <!-- Shared file &#8596; guard -->
+      <text class="el" x="340" y="346">settings</text>
+      <text class="el" x="510" y="346">Join request</text>
+      <text class="el" x="840" y="346">published each check</text>
+      <text class="el" x="1010" y="338">starts the game;</text>
+      <text class="el" x="1010" y="354">dyld loads guard</text>
+
+      <!-- Lane 3: guard -->
+      <rect class="lane-ours" x="28" y="432" width="1104" height="134" rx="10"/>
+      <text class="hm" x="44" y="478">ExaltGuard.dylib</text>
+      <text class="s" x="44" y="497">C, runs inside</text>
+      <text class="s" x="44" y="513">the game</text>
+
+      <rect class="n-ours" x="230" y="448" width="660" height="100" rx="7"/>
+      <text class="x" x="248" y="474"><tspan class="tm">tick()</tspan><tspan class="s" dx="10">every 1 ms on the game's main thread</tspan></text>
+      <text class="s" x="248" y="496">Reads HP, quickslots, map and party chat by name through the IL2CPP runtime API.</text>
+      <text class="s" x="248" y="514"><tspan class="sm">guard_core.h</tspan> decides potions: drink below the trigger, stop above the ceiling,</text>
+      <text class="s" x="248" y="532">wait for each heal (or 1 s), and keep at least 250 ms between potions.</text>
+
+      <rect class="n-ours" x="930" y="448" width="200" height="100" rx="7"/>
+      <text class="t c" x="1030" y="474">Nexus on death</text>
+      <text class="s c" x="1030" y="494">8 hooks, set up in Nexus</text>
+      <text class="s c" x="1030" y="511">damage adds to a budget,</text>
+      <text class="s c" x="1030" y="528">server HP resets it</text>
+
+      <!-- Guard &#8596; game code -->
+      <text class="el" x="340" y="587">calls: use quickslot,</text>
+      <text class="el" x="340" y="603">join dungeon</text>
+      <text class="el" x="630" y="587">HP, quickslots, map, chat</text>
+      <text class="el" x="630" y="603">(read by the guard)</text>
+      <text class="el r" x="952" y="587">hit, damage, HP calls</text>
+      <text class="el r" x="952" y="603">(redirected)</text>
+      <text class="el r" x="1092" y="587">request Nexus,</text>
+      <text class="el r" x="1092" y="603">withhold hits</text>
+
+      <!-- Lane 4: game code -->
+      <rect class="lane-deca" x="28" y="618" width="1104" height="84" rx="10"/>
+      <text class="h" x="44" y="654">DECA's game code</text>
+      <text class="s" x="44" y="673">Unity IL2CPP</text>
+
+      <rect class="n-deca" x="230" y="630" width="900" height="62" rx="7"/>
+      <text class="t" x="248" y="656">The game's own functions</text>
+      <text class="s" x="248" y="676">HP, quickslots, map, party chat, projectile hit reports, damage, HP updates, Nexus, join dungeon</text>
+
+      <!-- Game &#8596; server -->
+      <text class="el" x="685" y="742">hit reports, item use, HP updates, Nexus, Join</text>
+
+      <!-- Lane 5: server -->
+      <text class="h" x="36" y="806">Network</text>
+      <text class="s" x="36" y="825">DECA's servers</text>
+      <rect class="n-deca" x="460" y="780" width="430" height="58" rx="7"/>
+      <text class="t c" x="675" y="804">DECA's game server</text>
+      <text class="s c" x="675" y="824">decides your HP, sends it about every 200 ms</text>
+
+      <!-- Edges, drawn last so lane fills never cover arrowheads -->
+      <line class="e" x1="330" y1="116" x2="330" y2="220" marker-end="url(#ah)"/>
+      <line class="e" x1="500" y1="116" x2="500" y2="220" marker-end="url(#ah)"/>
+      <polyline class="e" points="720,222 720,162 620,162 620,118" marker-end="url(#ah)"/>
+      <line class="e" x1="830" y1="222" x2="830" y2="118" marker-end="url(#ah)"/>
+      <line class="e" x1="1000" y1="116" x2="1000" y2="220" marker-end="url(#ah)"/>
+      <line class="e" x1="330" y1="298" x2="330" y2="446" marker-end="url(#ah)"/>
+      <line class="e" x1="500" y1="298" x2="500" y2="446" marker-end="url(#ah)"/>
+      <line class="e" x1="830" y1="448" x2="830" y2="300" marker-end="url(#ah)"/>
+      <line class="e" x1="1000" y1="298" x2="1000" y2="430" marker-end="url(#ah)"/>
+      <line class="e" x1="330" y1="548" x2="330" y2="628" marker-end="url(#ah)"/>
+      <line class="e" x1="620" y1="630" x2="620" y2="550" marker-end="url(#ah)"/>
+      <line class="e-hook" x1="960" y1="630" x2="960" y2="550" marker-end="url(#ah)"/>
+      <line class="e" x1="1100" y1="548" x2="1100" y2="628" marker-end="url(#ah)"/>
+      <line class="e" x1="675" y1="694" x2="675" y2="778" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+      <!-- Legend -->
+      <g transform="translate(230 872)">
+        <rect class="sw-ours" x="0" y="-10" width="14" height="14" rx="3"/>
+        <text class="s" x="22" y="1">this project</text>
+        <rect class="sw-file" x="120" y="-10" width="14" height="14" rx="3"/>
+        <text class="s" x="142" y="1">shared file</text>
+        <rect class="sw-deca" x="236" y="-10" width="14" height="14" rx="3"/>
+        <text class="s" x="258" y="1">DECA's launcher, game and server</text>
+        <line class="e-hook" x1="490" y1="-3" x2="530" y2="-3"/>
+        <text class="s" x="540" y="1">a game call redirected through the guard</text>
+        <text class="s" x="0" y="26">Arrows point the way data or a call moves. The guard starts every exchange; the game never sees it.</text>
+      </g>
+    </svg>
+    <figcaption>The app (Apple silicon) and the guard (Intel, inside the game under Rosetta) never call each other. They share one memory-mapped file, and each block of it has a single writer. Potions and Join call the same game functions as the keys and the ctrl-click menu. Nexus on death is different: while you're in Nexus it redirects eight game functions, including hit reports, damage and HP updates, through the guard. If the predicted HP reaches zero, it requests Nexus before the hit is reported. Arrows point the way data or a call moves. The guard starts every exchange with the game. The game never calls the guard and doesn't know it's there; even the redirected calls are the game calling its own functions. The app won't start the game if the game build hash doesn't match.</figcaption>
+  </figure>
+</main>
