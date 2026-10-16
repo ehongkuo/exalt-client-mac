@@ -29,10 +29,10 @@ static void hp_audit_wrapper(void *self,int value,const void *info) {
  hp_audit_original(self,value,info);
 }
 static void hp_assignment_test(void) {
- const unsigned char bytes[]={0x55,0x48,0x89,0xe5,0x89,0xb7,0x0c,0x02,0,0,0x48,0x8b,0x07,0x48,0x8b,0x88,0x18,0x07,0,0};
- unsigned char table[0x728]={0};void *table_pointer=table,*callback=(void*)hp_callback,*info=(void*)0x6789;
+ const unsigned char bytes[]={0x55,0x48,0x89,0xe5,0x89,0xb7,0x0c,0x02,0,0,0x48,0x8b,0x07,0x48,0x8b,0x88,0xa8,0x09,0,0};
+ unsigned char table[0x9b8]={0};void *table_pointer=table,*callback=(void*)hp_callback,*info=(void*)0x6789;
  memcpy(hp_object,&table_pointer,sizeof table_pointer);
- memcpy(table+0x718,&callback,sizeof callback);memcpy(table+0x720,&info,sizeof info);
+ memcpy(table+0x9a8,&callback,sizeof callback);memcpy(table+0x9b0,&info,sizeof info);
  int initial=1000;memcpy(hp_object+0x20c,&initial,sizeof initial);
  NativeHook h={0};
  assert(native_hook_install(&h,(void*)hp_assignment_fixture,(void*)hp_audit_wrapper,bytes,sizeof bytes,(void**)&hp_audit_original)==HOOK_OK);

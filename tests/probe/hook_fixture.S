@@ -125,8 +125,8 @@ _hp_assignment_fixture:
  movq %rsp,%rbp
  movl %esi,0x20c(%rdi)
  movq (%rdi),%rax
- movq 0x718(%rax),%rcx
- movq 0x720(%rax),%rsi
+ movq 0x9a8(%rax),%rcx
+ movq 0x9b0(%rax),%rsi
  popq %rbp
  jmpq *%rcx
 .p2align 12
