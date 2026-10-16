@@ -24,8 +24,10 @@ and cross-architecture state checks. The signed diagnostic package builds succes
 guard compiles with warnings treated as errors. All 10 production intervention tests and the synthetic compact/expand UI regression also passed.
 The ground/area report analysis assertions passed again after the final reporting changes.
 
-Live expanded-path verification has not been performed. The minimum is three small-hit checks at full
-actual health using `--verify`, one per audited native family; see [the steps](../docs/damage-testing.md).
+Live X01/X02/X03 checks now show the expected projectile, ground and final radius/AOE cancellation
+sequences and later Nexus arrivals. See [the evidence and capture-lifecycle caveat](../docs/damage-live-validation.md).
+The generated whole-session reports remain inconclusive because quitting does not emit the timed-test
+completion marker. The captured escape sequences do not require repeating the same three wiring checks.
 A local Nexusing flag is not a server acknowledgement, and these checks do not prove universal lethal
 survival. Bleeding, suffocation and frostbite require further source-specific evidence.
 
