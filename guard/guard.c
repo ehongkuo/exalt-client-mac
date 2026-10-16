@@ -24,13 +24,10 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Offsets of the game functions in the inspected GameAssembly build (sha256 ad069824...).
- * The guard refuses to arm if the runtime reports anything else. */
-#define POTION_OFFSET 0x1fe30f0UL  /* EquipmentManager::OnQuickslotHotkeyPressedHandler(Int32) */
-#define NEXUS_OFFSET  0x1841500UL  /* HJMBOMEHGDJ::GGGHNGEJPDE(), run by the Nexus key */
-/* The ctrl-click menu's "Join dungeon" button (PlayerActionPanel::KJFENHHKFOO) runs these two: */
-#define JOIN_OFFSET          0x13e7dc0UL   /* IOPKEEBMGJK::FDOIPKHKGNF(String name): party manager, join a member */
-#define JOIN_COOLDOWN_OFFSET 0x1962b60UL  /* FKALGHJIADI::LMCLHOGGKKG(Int32), called with 1000 on your character */
+#if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
+#define EXALT_PROFILE_HOOK_BYTES
+#endif
+#include "build_profile.h"
 
 enum { RESULT_DRY = 0, RESULT_CALLED = 1, RESULT_EXCEPTION = -1, RESULT_UNAVAILABLE = -2, RESULT_EMPTY = -3 };
 #define MAX_QUICKSLOTS 8
@@ -226,12 +223,12 @@ static int at_offset(const void *method, uintptr_t offset) {
 }
 
 static void prepare_guard(const void *game) {
-    equipment_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers.Equipment", "EquipmentManager");
-    connection_class = il2cpp_class_from_name(game, "", "HJMBOMEHGDJ");
+    equipment_class = il2cpp_class_from_name(game, POTION_OFFSET_NAMESPACE, POTION_OFFSET_OWNER);
+    connection_class = il2cpp_class_from_name(game, NEXUS_OFFSET_NAMESPACE, NEXUS_OFFSET_OWNER);
     quickslot_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers.Equipment", "QuickSlot");
     if (!equipment_class || !connection_class || !quickslot_class) { note("guard_refused\tclasses_missing\n"); return; }
-    potion_method = find_method_named(equipment_class, "OnQuickslotHotkeyPressedHandler", 1, "System.Int32");
-    nexus_method = find_method_named(connection_class, "GGGHNGEJPDE", 0, NULL);
+    potion_method = find_method_named(equipment_class, POTION_OFFSET_NAME, 1, "System.Int32");
+    nexus_method = find_method_named(connection_class, NEXUS_OFFSET_NAME, 0, NULL);
     if (!at_offset(potion_method, POTION_OFFSET) || !at_offset(nexus_method, NEXUS_OFFSET)) {
         note("guard_refused\tmethod_offsets_differ\n"); return;
     }
@@ -268,9 +265,9 @@ static void prepare_guard(const void *game) {
         live_data.chat_status = CHAT_UNAVAILABLE;
         note("guard_chat_unavailable\n");
     }
-    void *party_class = il2cpp_class_from_name(game, "", "IOPKEEBMGJK");
-    if (party_class) join_method = find_method_named(party_class, "FDOIPKHKGNF", 1, "System.String");
-    join_cooldown_method = find_method_named(player_class, "LMCLHOGGKKG", 1, "System.Int32");
+    void *party_class = il2cpp_class_from_name(game, JOIN_OFFSET_NAMESPACE, JOIN_OFFSET_OWNER);
+    if (party_class) join_method = find_method_named(party_class, JOIN_OFFSET_NAME, 1, "System.String");
+    join_cooldown_method = find_method_named(player_class, JOIN_COOLDOWN_OFFSET_NAME, 1, "System.Int32");
     party_manager_field = typed_field(player_class, "EAKILNOKDDC", "IOPKEEBMGJK");
     join_ok = party_manager_field && at_offset(join_method, JOIN_OFFSET) && at_offset(join_cooldown_method, JOIN_COOLDOWN_OFFSET);
     if (!join_ok) note("guard_join_unavailable\n");
@@ -294,9 +291,9 @@ static int prepare(void) {
         if (!strcmp(name, "UnityEngine.CoreModule.dll")) unity = image;
     }
     if (!game || !unity) return 0;
-    gui_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers.GUI", "GuiManager");
+    gui_class = il2cpp_class_from_name(game, DEATH_SCREEN_OFFSET_NAMESPACE, DEATH_SCREEN_OFFSET_OWNER);
     bar_class = il2cpp_class_from_name(game, "DecaGames.RotMG.UI.Helpers", "ProgressBar");
-    player_class = il2cpp_class_from_name(game, "", "FKALGHJIADI");
+    player_class = il2cpp_class_from_name(game, HIT_NOTIFY_OFFSET_NAMESPACE, HIT_NOTIFY_OFFSET_OWNER);
     void *object = il2cpp_class_from_name(unity, "UnityEngine", "Object");
     if (!gui_class || !bar_class || !player_class || !object) return 0;
     find_method = find_method_named(object, "FindObjectOfType", 1, "System.Type");

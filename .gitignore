@@ -2,6 +2,8 @@
 build/
 module-cache/
 *.dSYM/
+__pycache__/
+*.py[cod]
 
 # Runtime data (written to ~/Library/Application Support/Exalt Client Mac, never here)
 *.tsv
