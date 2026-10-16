@@ -3,33 +3,6 @@
 #include "native_hook.h"
 #include <pthread.h>
 
-#define HIT_REPORT_OFFSET 0x1853fb0UL
-#define HIT_NOTIFY_OFFSET 0x1970a90UL
-#define HP_ASSIGN_OFFSET 0x1af1670UL
-#define NEXUS_OFFSET 0x1841500UL
-#define DAMAGE_OFFSET 0x650e90UL
-#define DEATH_SCREEN_OFFSET 0x1f92870UL
-#define UPDATE_OFFSET 0x18496e0UL
-#define STATS_OFFSET 0x184ae90UL
-#define DAMAGE_CALLER 0x6538a2UL
-#define NOTIFY_CALLER 0x653bd0UL
-#define ZERO_HP_CALLER 0x1840e64UL
-static const unsigned char report_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x41,0x89,0xd7};
-static const unsigned char notify_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
-#ifdef HIT_PROBE_TEST
-#define hp_prologue notify_prologue
-#else
-static const unsigned char hp_prologue[]={0x55,0x48,0x89,0xe5,0x89,0xb7,0x0c,0x02,0,0,0x48,0x8b,0x07,0x48,0x8b,0x88,0xa8,0x09,0,0};
-#endif
-static const unsigned char nexus_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x48,0x49,0x89,0xfe};
-static const unsigned char damage_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x18,0xf3,0x0f,0x11,0x45,0xe0};
-#ifdef HIT_PROBE_TEST
-#define death_prologue notify_prologue
-#else
-static const unsigned char death_prologue[]={0x55,0x48,0x89,0xe5,0x48,0x8b,0xbf,0x40,0x01,0,0,0x48,0x85,0xff};
-#endif
-static const unsigned char update_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x28};
-static const unsigned char stats_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x81,0xec,0x98,0,0,0};
 typedef void (*ReportFunction)(void *,uint32_t,int,const void *);
 typedef void (*NotifyFunction)(void *,uint8_t,int,void *,uint8_t,void *,uint8_t,uint8_t,const void *);
 typedef void (*HPFunction)(void *,int,const void *);
@@ -410,7 +383,7 @@ static void probe_install(void) {
 #else
     size_t count=0;const void **assemblies=il2cpp_domain_get_assemblies(il2cpp_domain_get(),&count);
     for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
-        if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))probe_projectile_class=il2cpp_class_from_name(image,"","HBEAKBIHANL");}
+        if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))probe_projectile_class=il2cpp_class_from_name(image,DAMAGE_OFFSET_NAMESPACE,DAMAGE_OFFSET_OWNER);}
     if(fatal_enabled){
         fatal_socket_field=typed_field(connection_class,"NIDFCHODLIH","DecaGames.RotMG.Managers.Net.SocketManager");
         for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
@@ -422,14 +395,14 @@ static void probe_install(void) {
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
     probe_time_field=typed_field(connection_class,"FIAJOKGHGGK","System.UInt32");
     if(!probe_tick_field || !probe_time_field){note("hit_probe_refused\tupdate_fields\n");return;}
-    const void *methods[]={find_method_named(connection_class,"NDACCDPJHBC",2,"System.UInt32"),
-        find_method_named(player_class,"FNEBPDEDIJP",7,"System.Boolean"),
-        find_method_named(ancestor_named(player_class,"LKHPPBEGNOM"),"NIDPCHCNDLJ",1,"System.Int32"),
-        find_method_named(connection_class,"GGGHNGEJPDE",0,NULL),
-        find_method_named(probe_projectile_class,"NGHDFBJLNFI",1,"System.Single"),
-        find_method_named(gui_class,"ShowDeathScreenPanel",1,"LPBNPHKMNNG"),
-        find_method_named(connection_class,"LDKKFMBNOCN",1,"OODFCLBKDJJ"),
-        find_method_named(connection_class,"NAMGODOEDBO",3,"LKHPPBEGNOM")};
+    const void *methods[]={find_method_named(connection_class,HIT_REPORT_OFFSET_NAME,2,"System.UInt32"),
+        find_method_named(player_class,HIT_NOTIFY_OFFSET_NAME,7,"System.Boolean"),
+        find_method_named(ancestor_named(player_class,"LKHPPBEGNOM"),HP_ASSIGN_OFFSET_NAME,1,"System.Int32"),
+        find_method_named(connection_class,NEXUS_OFFSET_NAME,0,NULL),
+        find_method_named(probe_projectile_class,DAMAGE_OFFSET_NAME,1,"System.Single"),
+        find_method_named(gui_class,DEATH_SCREEN_OFFSET_NAME,1,"LPBNPHKMNNG"),
+        find_method_named(connection_class,UPDATE_OFFSET_NAME,1,"OODFCLBKDJJ"),
+        find_method_named(connection_class,STATS_OFFSET_NAME,3,"LKHPPBEGNOM")};
     const char *rtypes[]={"System.UInt32","System.Int32"};
     const char *ntypes[]={"System.Boolean","System.Int32","System.Collections.Generic.List<System.Byte>","System.Boolean","HBEAKBIHANL","System.Boolean","System.Boolean"};
     const char *htypes[]={"System.Int32"};

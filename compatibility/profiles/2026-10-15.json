@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "id": "exalt-macos-intel-2026-10-15",
+  "architecture": "x86_64",
+  "review_state": "native-audited",
+  "game_sha256": "ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f",
+  "il2cpp_metadata_version": 31,
+  "methods": [
+    {
+      "namespace": "DecaGames.RotMG.Managers.Equipment",
+      "owner": "EquipmentManager",
+      "name": "OnQuickslotHotkeyPressedHandler",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1fe30f0",
+      "id": "potion",
+      "entry_prefix": "554889e5",
+      "constant": "POTION_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "GGGHNGEJPDE",
+      "parameters": [],
+      "returns": "void",
+      "offset": "0x1841500",
+      "id": "nexus",
+      "entry_prefix": "554889e541574156534883ec484989fe",
+      "hook": "nexus",
+      "constant": "NEXUS_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "IOPKEEBMGJK",
+      "name": "FDOIPKHKGNF",
+      "parameters": [
+        "string"
+      ],
+      "returns": "void",
+      "offset": "0x13e7dc0",
+      "id": "join",
+      "entry_prefix": "554889e5",
+      "constant": "JOIN_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "LMCLHOGGKKG",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1962b60",
+      "id": "join_cooldown",
+      "entry_prefix": "554889e5",
+      "constant": "JOIN_COOLDOWN_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "NDACCDPJHBC",
+      "parameters": [
+        "uint",
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1853fb0",
+      "id": "report",
+      "entry_prefix": "554889e5415741564154534189d7",
+      "hook": "report",
+      "constant": "HIT_REPORT_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "FNEBPDEDIJP",
+      "parameters": [
+        "bool",
+        "int",
+        "List<byte>",
+        "bool",
+        "HBEAKBIHANL",
+        "bool",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x1970a90",
+      "id": "notify",
+      "entry_prefix": "554889e541574156415541545350",
+      "hook": "notify",
+      "constant": "HIT_NOTIFY_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "NIDPCHCNDLJ",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1af1670",
+      "id": "hp",
+      "entry_prefix": "554889e589b70c020000488b07488b88a8090000",
+      "hook": "hp",
+      "constant": "HP_ASSIGN_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HBEAKBIHANL",
+      "name": "NGHDFBJLNFI",
+      "parameters": [
+        "float"
+      ],
+      "returns": "int",
+      "offset": "0x650e90",
+      "id": "damage",
+      "entry_prefix": "554889e541574156534883ec18f30f1145e0",
+      "hook": "damage",
+      "constant": "DAMAGE_OFFSET"
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.GUI",
+      "owner": "GuiManager",
+      "name": "ShowDeathScreenPanel",
+      "parameters": [
+        "LPBNPHKMNNG"
+      ],
+      "returns": "void",
+      "offset": "0x1f92870",
+      "id": "death",
+      "entry_prefix": "554889e5488bbf400100004885ff",
+      "hook": "death",
+      "constant": "DEATH_SCREEN_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "LDKKFMBNOCN",
+      "parameters": [
+        "OODFCLBKDJJ"
+      ],
+      "returns": "void",
+      "offset": "0x18496e0",
+      "id": "update",
+      "entry_prefix": "554889e54157415641554154534883ec28",
+      "hook": "update",
+      "constant": "UPDATE_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "NAMGODOEDBO",
+      "parameters": [
+        "LKHPPBEGNOM",
+        "List<CGOECEPGBBG>",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x184ae90",
+      "id": "stats",
+      "entry_prefix": "554889e54157415641554154534881ec98000000",
+      "hook": "stats",
+      "constant": "STATS_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HBEAKBIHANL",
+      "name": "GJFKGLJEGKO",
+      "parameters": [
+        "int",
+        "int"
+      ],
+      "returns": "bool",
+      "offset": "0x6534f0",
+      "id": "collision",
+      "entry_prefix": "554889e5"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "NJBIGMOGHPM",
+      "parameters": [
+        "OODFCLBKDJJ"
+      ],
+      "returns": "void",
+      "offset": "0x1840c60",
+      "id": "zero_hp_context",
+      "entry_prefix": "554889e5"
+    }
+  ],
+  "fields": [
+    {
+      "namespace": "",
+      "owner": "CPHENFGHHNA",
+      "name": "DPGEBOCBKEF",
+      "type": "string",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CPHENFGHHNA",
+      "name": "HOAKHDPFALM",
+      "type": "string",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CPHENFGHHNA",
+      "name": "JPDFALDPJCK",
+      "type": "string",
+      "offset": "0x28",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Equipment",
+      "owner": "QuickSlot",
+      "name": "GCKDOJPIMLD",
+      "type": "bool",
+      "offset": "0x1cc",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Equipment",
+      "owner": "QuickSlot",
+      "name": "JFBFHHAJOAK",
+      "type": "int",
+      "offset": "0x1dc",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Chat.UI",
+      "owner": "ChatSlotController",
+      "name": "HPGHGFMACLH",
+      "type": "CPHENFGHHNA",
+      "offset": "0x28",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "DPGEBOCBKEF",
+      "type": "string",
+      "offset": "0x178",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "OADOHPKBPJB",
+      "type": "int",
+      "offset": "0x208",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "ABCPKBGJPEP",
+      "type": "int",
+      "offset": "0x20c",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.GUI",
+      "owner": "GuiManager",
+      "name": "hpProgressBar",
+      "type": "ProgressBar",
+      "offset": "0x68",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.GUI",
+      "owner": "GuiManager",
+      "name": "JLFBFCOFDOF",
+      "type": "FKALGHJIADI",
+      "offset": "0x200",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Equipment",
+      "owner": "EquipmentManager",
+      "name": "FirstQuickslotIndex",
+      "type": "int",
+      "offset": "0x20",
+      "is_static": true
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Equipment",
+      "owner": "EquipmentManager",
+      "name": "quickSlots",
+      "type": "QuickSlot[]",
+      "offset": "0x60",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "DGNPJNFGFPE",
+      "type": "float3",
+      "offset": "0x68",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "EFAGNJBDCOM",
+      "type": "HJMBOMEHGDJ",
+      "offset": "0x90",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "MJGBECCHGIP",
+      "type": "string",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "FHLCMICEGNM",
+      "type": "string",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.UI.Helpers",
+      "owner": "ProgressBar",
+      "name": "BBFODHPMFCC",
+      "type": "float",
+      "offset": "0x50",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.UI.Helpers",
+      "owner": "ProgressBar",
+      "name": "OJAHBHNIGDI",
+      "type": "float",
+      "offset": "0x54",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.UI.Managers",
+      "owner": "ChatManager",
+      "name": "CPEAFDEENOD",
+      "type": "List<ChatSlotController>",
+      "offset": "0xc0",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.UI.Managers",
+      "owner": "RealmQuestsManager",
+      "name": "PNOBIMOELCK",
+      "type": "NCAFKHMPKJC",
+      "offset": "0x80",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "PNIHHODGAEE",
+      "type": "int",
+      "offset": "0x40",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "FIAJOKGHGGK",
+      "type": "uint",
+      "offset": "0xe8",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "NIDFCHODLIH",
+      "type": "SocketManager",
+      "offset": "0x160",
+      "is_static": false
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Net",
+      "owner": "SocketManager",
+      "name": "FCOJPHFICAG",
+      "type": "bool",
+      "offset": "0x40",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "EAKILNOKDDC",
+      "type": "IOPKEEBMGJK",
+      "offset": "0x660",
+      "is_static": false
+    },
+    {
+      "namespace": "UnityEngine",
+      "owner": "Object",
+      "name": "m_CachedPtr",
+      "type": "IntPtr",
+      "offset": "0x10",
+      "is_static": false
+    }
+  ],
+  "callsites": [
+    {
+      "id": "damage_calculation",
+      "constant": "DAMAGE_CALLER",
+      "container": "collision",
+      "target": "damage",
+      "kind": "direct",
+      "return_address": "0x6538a2"
+    },
+    {
+      "id": "projectile_notification",
+      "constant": "NOTIFY_CALLER",
+      "container": "collision",
+      "target": "notify",
+      "kind": "virtual",
+      "return_address": "0x653bd0",
+      "vtable_base": "0x138",
+      "slot_offset": "0x898"
+    },
+    {
+      "id": "zero_hp_assignment",
+      "constant": "ZERO_HP_CALLER",
+      "container": "zero_hp_context",
+      "target": "hp",
+      "kind": "direct",
+      "return_address": "0x1840e64"
+    }
+  ]
+}

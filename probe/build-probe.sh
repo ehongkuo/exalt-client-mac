@@ -3,6 +3,7 @@ set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 out=${1:-"/Users/ehongkuo/Documents/Codex/2026-10-11/can/outputs/exalt-hit-probe"}
 mkdir -p "$out" "$repo_dir/build/probe-tests"
+python3 "$repo_dir/compatibility/manage.py" generate --check
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$repo_dir/tests/probe/hook_tests.c" "$repo_dir/tests/probe/hook_fixture.S" -o "$repo_dir/build/probe-tests/hook-tests"
 "$repo_dir/build/probe-tests/hook-tests"
 python3 "$repo_dir/tests/probe/test_probe.py"
