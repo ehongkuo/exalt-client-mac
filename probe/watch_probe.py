@@ -35,11 +35,21 @@ def main():
                         print('Probe installed. Fatal Nexus intervention is ON.' if 'fatal_intervention=1' in row else 'Probe installed. Observation only; gameplay automation is off.',flush=True)
                     elif row[0]=='hit_probe_refused':
                         print('Probe refused to install: '+' '.join(row[1:]),flush=True)
+                    elif row[0]=='damage_context_ready':
+                        print('Optional context fields (1 available, 0 unavailable): '+' '.join(row[1:]),flush=True)
                     elif row[0]=='guard_config':
                         for cell in row[1:]:
                             if cell.startswith('nexus='):ledger.threshold=int(cell[6:])
                     elif row[0] in ('hit_probe_v2','hit_probe_v3','hit_probe_v4') and len(row) in (21,25):
                         phase=int(row[4])
+                        if phase==29:
+                            mask=int(row[16])
+                            breath=row[10] if mask&2 else 'unavailable'
+                            frostbite=row[9] if mask&4 else 'unavailable'
+                            flags=hex(int(row[15])) if mask&1 else 'unavailable'
+                            print(f'Context | breath {breath} | frostbite {frostbite} | raw flags {flags}',flush=True)
+                        elif phase==4:
+                            print(f'HP sample {row[11]}/{row[12]} | cause not inferred',flush=True)
                         if phase==20:
                             pending_hp=int(row[21]);projected=pending_hp-(1<<64) if pending_hp>=(1<<63) else pending_hp
                             print(f'FATAL PREDICTION | observed HP {row[11]} | damage {row[10]} | retained damage {row[15]} | projected {projected}',flush=True)
@@ -67,7 +77,8 @@ def main():
                         elif phase==7:
                             print('Automatic Nexus function entered.' if row[16]=='1' else 'Manual Nexus function entered.',flush=True)
                         elif phase==12:
-                            print(f'Pre-report damage candidate {row[10]} | HP {row[11]}',flush=True)
+                            kind='Audited projectile calculation' if row[17]=='0' or row[16]=='1' else 'Unmapped calculator caller (player ownership unknown)'
+                            print(f'{kind} {row[10]} | HP {row[11]} | caller {hex(int(row[6]))}',flush=True)
                         elif phase==10:
                             print(f'Notification returned | HP {row[11]}',flush=True)
                         elif phase==13:

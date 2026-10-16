@@ -11,10 +11,10 @@ guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
 class ProbeTests(unittest.TestCase):
- def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False):
+ def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
-   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
+   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if fatal:args.append('-DFATAL_BURST')
    if reconcile:args.append('-DFATAL_RECONCILE')
@@ -26,7 +26,7 @@ class ProbeTests(unittest.TestCase):
    if bad_bytes:args.append('-DBAD_REPORT_BYTES')
    subprocess.run(args,check=True)
    env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'probe.dylib');env['EXALT_GUARD']='armed=1,potion=50,nexus=25'
-   env['EXALT_FATAL_INTERVENTION']='1' if fatal else '0'
+   env['EXALT_FATAL_INTERVENTION']='1' if fatal or unaudited else '0'
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
    time.sleep(1.15)
    if not crash:
@@ -43,6 +43,26 @@ class ProbeTests(unittest.TestCase):
    self.last_log=logfile.read_text()
    self.summary=analysis.analyze(logfile)
    return logfile.read_text()
+ def test_context_round_trips_and_unmapped_calculations_never_intervene(self):
+  log=self.fixture(unaudited=True);events=analysis.read_events(log)
+  contexts=[e for e in events if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['projectile']==1<<45 and e['value']==0 and e['owner']==100 and e['flag0']==15 for e in contexts))
+  self.assertFalse(any(e['phase'] in (20,23,24) for e in events))
+  self.assertEqual(self.summary['damage_calculations'],0)
+  self.assertEqual(len(self.summary['unclassified_damage_calculations']),3)
+  self.assertEqual(self.flight_summary['damage_calculations'],0)
+  self.assertEqual(len(self.flight_summary['unclassified_damage_calculations']),3)
+  self.assertTrue(all(e['conditions_raw']==hex(1<<45) and e['breath']==0 and e['frostbite']==100 for e in self.flight_summary['damage_contexts']))
+  self.assertEqual(self.summary['shadow_ledger']['trace'][-1]['held_damage'],0)
+  self.assertEqual([e['id'] for e in events],sorted(e['id'] for e in events))
+  self.assertTrue(any(e['phase']==9 and e['in_nexus'] for e in events))
+ def test_missing_context_fields_preserve_original_game_calls(self):
+  log=self.fixture(context_missing=True);events=analysis.read_events(log)
+  contexts=[e for e in events if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['flag0']==8 and e['value']==-1 and e['owner']==-1 for e in contexts))
+  self.assertIn('damage_context_ready\tconditions=0\tbreath=0\tfrostbite=0',log)
  def test_incoming_identifiers_are_not_damage(self):
   log=self.fixture();self.assertIn('hit_probe_ready\tv7',log)
   events=analysis.read_events(log)

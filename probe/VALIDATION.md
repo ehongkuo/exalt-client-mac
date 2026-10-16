@@ -1,4 +1,32 @@
-# Fatal-intervention validation, 2026-10-13
+# Diagnostic validation
+
+## Damage discovery milestone, 2026-10-16
+
+This milestone adds observation and reporting, not non-projectile protection. The installed GameAssembly
+hash still matches the reviewed `ad069824...` build. Static verification passed for seven mapped methods,
+five notification dispatch sites, three optional field declarations and the selected native instruction
+evidence. The field declarations were checked against the matching retained metadata dump; the breath
+and frostbite UI readers load the controlled-player reference declared at GUI field `+0xc8`.
+
+Passed the full test-only build: 16 compatibility tests, 33 guard fixtures, 21 diagnostic tests, seven
+production intervention tests, eight shadow-ledger tests, native trampoline/fatal-policy tests, Swift
+model/settings/launch tests, cross-architecture shared-state checks and the synthetic compact/expand UI.
+The new map tests pass all four cases. The session-report tests were rerun after their final additions:
+15 pass, including malformed/incomplete evidence, raw meter context, exact notification correlation, live-process
+refusal, bundle overwrite refusal, invalid samples and death recovery from the binary tail.
+
+The standalone build reran all 21 diagnostic tests against the final recorder/analyzer changes and
+built a signed `ExaltHitProbe.dylib` under `build/damage-diagnostic/`. A separate production guard compile
+with `-Wall -Wextra -Werror` passed. The new native fixtures confirm that unavailable fields preserve
+original calls, raw 64-bit context survives text/flight recovery, and unknown calculator callers never
+request Nexus, suppress damage or enter shadow budgets. Map transitions remain recorded when first
+encountered inside a hook.
+
+No live gameplay tests for terrain, AOE, bleeding, oxygen or frostbite have been executed. There is no
+new evidence of server acceptance, no exhaustive source-coverage claim and no survival guarantee.
+The installed app and game files were not replaced. Follow `docs/damage-testing.md` beginning with D00.
+
+## Earlier projectile validation, 2026-10-13
 
 The active fixture uses 200 observed HP and six same-frame calculated hits of 50. The first three reports and notifications reach the original game functions. Before the fourth report, one Nexus invocation sets the simulated local Nexusing flag. The fourth and later calculations return zero; three report calls and three local notifications are suppressed. The original calculator is still called on all six hits. An off-main report and notification are also suppressed by identity-only checks. Ordinary updates continue, and the simulated Nexus transition resets the latch.
 

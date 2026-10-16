@@ -32,6 +32,7 @@ class ShadowLedger:
         self.hp=hp;self.maximum=maximum
         before_held=hp-self.held_damage;before_debit=hp-self.debit_pending
         damage=event['value'] if event['phase']==12 else 0
+        if event['phase']==12 and event.get('flag1') and not event.get('flag0'):damage=0
         if event['phase']==12 and not 0<=damage<=2147483647:self.invalid_damage+=1;damage=0
         if damage>0:
             self.damage_total+=damage;self.held_damage+=damage;self.debit_pending+=damage;self.hit_count+=1

@@ -10,4 +10,8 @@ The hooks prepare in Nexus and validate method signatures, offsets and complete 
 
 The app integration must be tested live. The earlier five successful projectile escapes do not establish universal death prevention. Other damage sources, stale HP updates, unacknowledged reports, server ordering and interrupted transitions remain unresolved. The edge-case simulation work was deferred when integration was requested; this change does not claim to resolve those races.
 
+The next discovery stage is documented in [damage sources](damage-sources.md) and the
+[in-game diagnostic checklist](damage-testing.md). Its observation build records terrain/area caller
+candidates, HP updates and raw environmental meters. It does not add non-projectile protection.
+
 🤖 Generated with Codex

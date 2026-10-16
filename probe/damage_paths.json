@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "game_sha256": "ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f",
+  "methods": [
+    {
+      "namespace": "",
+      "owner": "HBEAKBIHANL",
+      "name": "GJFKGLJEGKO",
+      "parameters": [
+        "int",
+        "int"
+      ],
+      "returns": "bool",
+      "offset": "0x6534f0",
+      "slot": 5,
+      "path": "projectile",
+      "entry_prefix": "554889e541574156415541545348"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "HOOKEPKHOEB",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x196eb80",
+      "slot": null,
+      "path": "terrain",
+      "entry_prefix": "554889e5415741564154534883ec"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "LFDOGJNGAIG",
+      "parameters": [
+        "OODFCLBKDJJ"
+      ],
+      "returns": "void",
+      "offset": "0x183f290",
+      "slot": null,
+      "path": "area_candidate",
+      "entry_prefix": "554889e541574156415541545348"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "NAMGODOEDBO",
+      "parameters": [
+        "LKHPPBEGNOM",
+        "List<CGOECEPGBBG>",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x184ae90",
+      "slot": null,
+      "path": "incoming_hp",
+      "entry_prefix": "554889e541574156415541545348"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "NIDPCHCNDLJ",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1af1670",
+      "slot": null,
+      "path": "hp_assignment",
+      "entry_prefix": "554889e589b70c020000488b0748"
+    },
+    {
+      "namespace": "",
+      "owner": "CharacterGUIInfoSection",
+      "name": "UpdateBreathBar",
+      "parameters": [],
+      "returns": "void",
+      "offset": "0x1df40a0",
+      "slot": 82,
+      "path": "breath_ui",
+      "entry_prefix": "554889e580bfd000000000743048"
+    },
+    {
+      "namespace": "",
+      "owner": "CharacterGUIInfoSection",
+      "name": "UpdateFrostbiteBar",
+      "parameters": [],
+      "returns": "void",
+      "offset": "0x1df5800",
+      "slot": 8,
+      "path": "frostbite_ui",
+      "entry_prefix": "554889e580bfd000000000743048"
+    }
+  ],
+  "fields": [
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "JJDEDAFLGHC",
+      "type": "ulong",
+      "offset": "0xf8",
+      "is_static": false,
+      "role": "conditions_raw"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "NMLPJEBCBAE",
+      "type": "int",
+      "offset": "0x52c",
+      "is_static": false,
+      "role": "breath"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "DLNIODKGIKA",
+      "type": "int",
+      "offset": "0x530",
+      "is_static": false,
+      "role": "frostbite"
+    }
+  ],
+  "notification_callers": [
+    {
+      "return_address": "0x653bd0",
+      "path": "projectile",
+      "call_bytes": "ff9098080000"
+    },
+    {
+      "return_address": "0x196ed65",
+      "path": "terrain",
+      "call_bytes": "ff9098080000"
+    },
+    {
+      "return_address": "0x183f7be",
+      "path": "area_candidate",
+      "call_bytes": "ff9398080000"
+    },
+    {
+      "return_address": "0x18407cf",
+      "path": "incoming_damage",
+      "call_bytes": "ff9098080000"
+    },
+    {
+      "return_address": "0x18413af",
+      "path": "incoming_damage",
+      "call_bytes": "ff9398080000"
+    }
+  ],
+  "evidence": [
+    {
+      "address": "0x1df40c5",
+      "bytes": "f30f2a802c050000",
+      "finding": "breath UI loads player +0x52c"
+    },
+    {
+      "address": "0x1df5825",
+      "bytes": "f30f2a8030050000",
+      "finding": "frostbite UI loads player +0x530"
+    },
+    {
+      "address": "0x196ecab",
+      "bytes": "80b9f406000000",
+      "finding": "terrain checks ObjectProperties.protectFromGroundDamage +0x6f4"
+    },
+    {
+      "address": "0x196ece3",
+      "bytes": "e80848eeff",
+      "finding": "terrain calls damage-range calculation"
+    },
+    {
+      "address": "0x196ed8b",
+      "bytes": "e8b000edff",
+      "finding": "terrain calls outgoing report helper"
+    },
+    {
+      "address": "0x184c110",
+      "bytes": "e85b552a00",
+      "finding": "incoming stats calls HP assignment"
+    },
+    {
+      "address": "0x65389d",
+      "bytes": "e8eed5ffff",
+      "finding": "projectile calls audited calculator"
+    },
+    {
+      "address": "0x183f6ed",
+      "bytes": "e8ae4d9f00",
+      "finding": "radius-handler calls generic calculation"
+    },
+    {
+      "address": "0x1af197a",
+      "bytes": "89830c020000",
+      "finding": "entity initialization writes HP directly"
+    },
+    {
+      "address": "0x1af978a",
+      "bytes": "89830c020000",
+      "finding": "entity initialization writes HP directly"
+    },
+    {
+      "address": "0x1af6232",
+      "bytes": "41c7870c02000000000000",
+      "finding": "base notification can set HP zero"
+    }
+  ],
+  "limitation": "Static paths only. Source-specific status and environmental damage require live traces; area_candidate is not yet a live-confirmed grenade path. No new intervention is authorized by this map."
+}

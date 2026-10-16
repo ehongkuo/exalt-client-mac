@@ -66,6 +66,9 @@ void death_fixture_body(void *self,void *message,const void *info) {
  assert(self==(void*)20 && message==(void*)0x1234 && info==(void*)0x5678);++death_forwarded;
 }
 void il2cpp_field_get_value(void *o,void *f,void *v) {
+ if(f==(void*)1001){assert(o==(void*)40 || o==(void*)41);*(uint64_t*)v=1ULL<<45;return;}
+ if(f==(void*)1002){assert(o==(void*)40 || o==(void*)41);*(int*)v=0;return;}
+ if(f==(void*)1003){assert(o==(void*)40 || o==(void*)41);*(int*)v=100;return;}
  if(f==(void*)992){assert(o==(void*)70);*(void**)v=(void*)500;return;}
  if(f==(void*)993){assert(o==(void*)500);*(uint8_t*)v=socket_nexusing;return;}
  if(f==(void*)990){assert(o==(void*)70);*(int*)v=update_sequence;return;}

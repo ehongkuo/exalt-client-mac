@@ -32,6 +32,10 @@ static int probe_on_main(void) { return pthread_main_np() || dispatch_get_specif
 static uintptr_t probe_game_base;
 static uint64_t probe_sequence,probe_generation;
 static void *probe_map,*probe_identity;
+#ifdef EXALT_HIT_PROBE
+static void *probe_connection;
+static int probe_nexus=-1;
+#endif
 static int probe_last_hp=-1,probe_last_max=-1;
 static uint64_t probe_last_report,probe_last_report_ns,probe_last_report_generation;
 static uint32_t probe_last_bullet;
@@ -108,7 +112,13 @@ static int probe_active(void) {
 }
 static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
     uint64_t begin=monotonic_ns();
-    if(probe_map!=last_map_info || probe_identity!=player) {
+    int changed=probe_map!=last_map_info || probe_identity!=player;
+#ifdef EXALT_HIT_PROBE
+    void *current_connection=player && connection_field?read_reference(player,connection_field):NULL;
+    changed=changed || current_connection!=probe_connection || probe_nexus!=in_nexus;
+    probe_connection=current_connection;probe_nexus=in_nexus;
+#endif
+    if(changed) {
         probe_map=last_map_info;probe_identity=player;++probe_generation;
         probe_last_report=0;probe_last_hp=-1;probe_last_max=-1;
     }
@@ -124,7 +134,11 @@ static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
         void *connection=read_reference(player,connection_field);
         if(connection){il2cpp_field_get_value(connection,probe_tick_field,&e.tick_sequence);il2cpp_field_get_value(connection,probe_time_field,&e.server_time);}
     }
-    e.work_ns=monotonic_ns()-begin;return e;
+    e.work_ns=monotonic_ns()-begin;
+#ifdef EXALT_HIT_PROBE
+    if(changed){ProbeEvent identity=e;identity.phase=9;probe_emit(identity);e.id=++probe_sequence;}
+#endif
+    return e;
 }
 /* Fatal phases 20-28 use numeric aliases: projectile = retained damage,
  * update_context = signed projected HP, flag1 = blocking. Neither is a pointer. */
@@ -165,6 +179,37 @@ static int fatal_local_nexusing(void *connection) {
     if(!socket || il2cpp_object_get_class(socket)!=fatal_socket_class)return 0;
     uint8_t value=0;il2cpp_field_get_value(socket,fatal_nexusing_field,&value);return value!=0;
 }
+#ifdef EXALT_HIT_PROBE
+static void *damage_conditions_field,*damage_breath_field,*damage_frostbite_field;
+static uint64_t damage_context_next_ns,damage_context_generation,damage_context_bits;
+static int damage_context_breath=-1,damage_context_frostbite=-1,damage_context_nexusing=-1;
+/* Phase 29: projectile is an opaque condition bitset, value/owner are raw breath/frostbite
+ * meters, flag0 is the availability mask (1/2/4/8), flag1 is local Nexusing. */
+static void damage_context_emit(void *player,uint64_t correlation) {
+    if(!probe_active() || !player || player!=probe_player())return;
+    uint64_t now=monotonic_ns();
+    if(!correlation && now<damage_context_next_ns)return;
+    damage_context_next_ns=now+20000000ULL;
+    uint64_t bits=0;int breath=-1,frostbite=-1,nexusing=-1,mask=0;
+    if(damage_conditions_field){il2cpp_field_get_value(player,damage_conditions_field,&bits);mask|=1;}
+    if(damage_breath_field){il2cpp_field_get_value(player,damage_breath_field,&breath);mask|=2;}
+    if(damage_frostbite_field){il2cpp_field_get_value(player,damage_frostbite_field,&frostbite);mask|=4;}
+    void *connection=read_reference(player,connection_field);
+    if(connection && fatal_socket_field && fatal_socket_class && fatal_nexusing_field){
+        void *socket=read_reference(connection,fatal_socket_field);
+        if(socket && il2cpp_object_get_class(socket)==fatal_socket_class){
+            nexusing=fatal_local_nexusing(connection);mask|=8;
+        }
+    }
+    ProbeEvent e=probe_snapshot(29,player,NULL);
+    if(!correlation && damage_context_generation==e.generation && damage_context_bits==bits &&
+       damage_context_breath==breath && damage_context_frostbite==frostbite && damage_context_nexusing==nexusing)return;
+    damage_context_generation=e.generation;damage_context_bits=bits;damage_context_breath=breath;
+    damage_context_frostbite=frostbite;damage_context_nexusing=nexusing;
+    e.projectile=bits;e.value=breath;e.owner=frostbite;e.flag0=mask;e.flag1=nexusing>0;
+    e.correlation=correlation;e.work_ns=monotonic_ns()-now;probe_emit(e);
+}
+#endif
 #ifdef EXALT_CLIENT_FATAL
 static void fatal_record(void *player,int hp,int result) {
     int max=0;il2cpp_field_get_value(player,max_field,&max);
@@ -269,6 +314,9 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
 #endif
         ){e.correlation=probe_last_report;e.bullet=probe_last_bullet;e.owner=probe_last_owner;probe_last_report=0;}
         probe_emit(e);
+#ifdef EXALT_HIT_PROBE
+        damage_context_emit(self,e.id);
+#endif
     }
     notify_original(self,flag0,value,conditions,flag1,projectile,a,b,info);
     if(observe){ProbeEvent after=probe_snapshot(10,self,NULL);after.correlation=e.id;after.projectile=(uintptr_t)projectile;after.value=value;probe_emit(after);}
@@ -277,7 +325,12 @@ static void hp_observed(void *self,int value,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);hp_original(self,value,info);return;}
     int observe=probe_active() && self==probe_player();
     ProbeEvent e={0};
-    if(observe){e=probe_snapshot(5,self,__builtin_return_address(0));e.value=value;if(!e.update_context && e.callsite==ZERO_HP_CALLER)e.update_source=3;probe_emit(e);}
+    if(observe){e=probe_snapshot(5,self,__builtin_return_address(0));e.value=value;if(!e.update_context && e.callsite==ZERO_HP_CALLER)e.update_source=3;
+        probe_emit(e);
+#ifdef EXALT_HIT_PROBE
+        damage_context_emit(self,e.id);
+#endif
+    }
     hp_original(self,value,info);
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
@@ -304,20 +357,27 @@ static int damage_observed(void *raw_arg,float input,const void *raw_info) {
     caller=DAMAGE_CALLER;
 #endif
     void *player=probe_player();
-    int observe=probe_active() && player;
+    int audited=1;
 #if !defined(HIT_PROBE_TEST) || defined(HIT_PROBE_BAD_ARGUMENT_TEST)
-    observe=observe && caller==DAMAGE_CALLER;
+    audited=caller==DAMAGE_CALLER;
+#endif
+#ifdef HIT_PROBE_UNAUDITED_TEST
+    audited=0;
+#endif
+    int observe=probe_active() && player;
+#ifndef EXALT_HIT_PROBE
+    observe=observe && audited;
 #endif
     /* The audited caller does not populate an instance argument. Preserve opaque
      * native arguments, but never inspect them or use them as projectile IDs. */
     ProbeEvent e={0};
-    if(observe){e=probe_snapshot(11,player,NULL);e.callsite=caller;
+    if(observe){e=probe_snapshot(11,player,NULL);e.callsite=caller;e.flag0=audited;e.flag1=1;
         memcpy(&e.flag3,&input,sizeof input);probe_emit(e);}
     int result=damage_original(raw_arg,input,raw_info);
     uint64_t calculation=0;
     if(observe){ProbeEvent after=probe_snapshot(12,player,NULL);after.correlation=e.id;
-        after.value=result;after.flag3=e.flag3;calculation=after.id;probe_emit(after);}
-    return observe && fatal_enabled?fatal_intervene(player,result,calculation):result;
+        after.value=result;after.flag3=e.flag3;after.flag0=audited;after.flag1=1;after.callsite=caller;calculation=after.id;probe_emit(after);}
+    return observe && audited && fatal_enabled?fatal_intervene(player,result,calculation):result;
 }
 static void death_observed(void *self,void *message,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);death_original(self,message,info);return;}
@@ -380,17 +440,26 @@ static void probe_install(void) {
     for(int i=0;i<8;++i)entries[i]=dlsym(RTLD_DEFAULT,names[i]);
     probe_tick_field=(void*)990;probe_time_field=(void*)991;
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
+#if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
+    damage_conditions_field=(void*)1001;damage_breath_field=(void*)1002;damage_frostbite_field=(void*)1003;
+#endif
 #else
     size_t count=0;const void **assemblies=il2cpp_domain_get_assemblies(il2cpp_domain_get(),&count);
     for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
         if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))probe_projectile_class=il2cpp_class_from_name(image,DAMAGE_OFFSET_NAMESPACE,DAMAGE_OFFSET_OWNER);}
-    if(fatal_enabled){
+    if(fatal_enabled || probe_flight){
         fatal_socket_field=typed_field(connection_class,"NIDFCHODLIH","DecaGames.RotMG.Managers.Net.SocketManager");
         for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
             if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))fatal_socket_class=il2cpp_class_from_name(image,"DecaGames.RotMG.Managers.Net","SocketManager");}
         if(fatal_socket_class)fatal_nexusing_field=typed_field(fatal_socket_class,"FCOJPHFICAG","System.Boolean");
-        if(!fatal_socket_field || !fatal_nexusing_field){note("hit_probe_refused\tfatal_nexus_fields\n");return;}
+        if(fatal_enabled && (!fatal_socket_field || !fatal_nexusing_field)){note("hit_probe_refused\tfatal_nexus_fields\n");return;}
     }
+#ifdef EXALT_HIT_PROBE
+    void *entity=ancestor_named(player_class,"KJMONHENJEN");
+    damage_conditions_field=entity?typed_field(entity,"JJDEDAFLGHC","System.UInt64"):NULL;
+    damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
+    damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
+#endif
     if(!probe_projectile_class){note("hit_probe_refused\tprojectile_class\n");return;}
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
     probe_time_field=typed_field(connection_class,"FIAJOKGHGGK","System.UInt32");
@@ -423,6 +492,10 @@ static void probe_install(void) {
     for(int i=0;i<8;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     probe_installed=1;note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+#ifdef EXALT_HIT_PROBE
+    note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
+    note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
+#endif
 }
 static void hit_probe_tick(void *player,uint64_t now) {
 #ifndef EXALT_CLIENT_FATAL
@@ -441,10 +514,11 @@ static void hit_probe_tick(void *player,uint64_t now) {
     live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
     return;
 #endif
-    uint64_t generation=probe_generation;
     ProbeEvent e=probe_snapshot(4,player,NULL);
-    if(generation!=e.generation){e.phase=9;probe_emit(e);}
     if(e.hp!=probe_last_hp || e.max!=probe_last_max){e.phase=4;probe_emit(e);probe_last_hp=e.hp;probe_last_max=e.max;}
+#ifdef EXALT_HIT_PROBE
+    damage_context_emit(player,0);
+#endif
 }
 static void hit_probe_drain(void) {
 #ifdef EXALT_CLIENT_FATAL

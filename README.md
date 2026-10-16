@@ -164,6 +164,10 @@ The integration uses the reviewed profile selected by `compatibility/active-prof
 
 ## Development
 
+For damage-source discovery, see the [native coverage map](docs/damage-sources.md) and
+[in-game test checklist](docs/damage-testing.md). `sh probe/build-probe.sh` builds an observation-first
+diagnostic under `build/damage-diagnostic/`, with isolated session bundles and no installed-app replacement.
+
 ```sh
 ./build.sh --test-only   # runs the checks, including a brief synthetic UI test
 ./build.sh --app-only    # builds and installs without running tests

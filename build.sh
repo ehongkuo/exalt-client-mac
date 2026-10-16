@@ -20,11 +20,14 @@ python3 "$src/compatibility/manage.py" generate --check
 game_binary="$HOME/.local/share/RealmOfTheMadGod/Production/RotMGExalt.app/Contents/Frameworks/GameAssembly.dylib"
 if [[ -f "$game_binary" ]]; then
     python3 "$src/tests/verify_game_build.py" "$game_binary"
+    python3 "$src/probe/map_damage.py" --binary "$game_binary"
 fi
 
 if [[ "${1:-}" != --app-only ]]; then
 print '== Tests'
 python3 "$src/tests/compatibility/test_profiles.py"
+python3 "$src/tests/probe/test_damage_map.py"
+python3 "$src/tests/probe/test_damage_session.py"
 clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests" && "$tests/core-tests"
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests" && "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86" && "$tests/live-tests-x86"

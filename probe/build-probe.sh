@@ -1,9 +1,12 @@
 #!/bin/sh
 set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-out=${1:-"/Users/ehongkuo/Documents/Codex/2026-10-11/can/outputs/exalt-hit-probe"}
+out=${1:-"$repo_dir/build/damage-diagnostic"}
 mkdir -p "$out" "$repo_dir/build/probe-tests"
 python3 "$repo_dir/compatibility/manage.py" generate --check
+python3 "$repo_dir/probe/map_damage.py"
+python3 "$repo_dir/tests/probe/test_damage_map.py"
+python3 "$repo_dir/tests/probe/test_damage_session.py"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$repo_dir/tests/probe/hook_tests.c" "$repo_dir/tests/probe/hook_fixture.S" -o "$repo_dir/build/probe-tests/hook-tests"
 "$repo_dir/build/probe-tests/hook-tests"
 python3 "$repo_dir/tests/probe/test_probe.py"
@@ -17,7 +20,8 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib -DEXALT_HIT_PROBE -DSES
 codesign --force --sign - "$temp"
 codesign --verify --strict "$temp"
 mv "$temp" "$out/ExaltHitProbe.dylib"
-cp "$repo_dir/guard/game-build.sha256" "$repo_dir/probe/Start Hit Diagnostic.command" "$repo_dir/probe/analyze.py" "$repo_dir/probe/watch_probe.py" "$repo_dir/probe/recover_flight.py" "$repo_dir/probe/shadow_ledger.py" "$repo_dir/probe/README.md" "$repo_dir/probe/VALIDATION.md" "$out/"
+cp "$repo_dir/guard/game-build.sha256" "$repo_dir/probe/Start Hit Diagnostic.command" "$repo_dir/probe/analyze.py" "$repo_dir/probe/watch_probe.py" "$repo_dir/probe/recover_flight.py" "$repo_dir/probe/shadow_ledger.py" "$repo_dir/probe/damage_session.py" "$repo_dir/probe/damage_paths.json" "$repo_dir/probe/VALIDATION.md" "$repo_dir/docs/damage-testing.md" "$repo_dir/docs/damage-sources.md" "$out/"
+sed 's|\.\./docs/|./|g' "$repo_dir/probe/README.md" > "$out/README.md"
 chmod +x "$out/Start Hit Diagnostic.command"
 zsh -o NO_BG_NICE -n "$out/Start Hit Diagnostic.command"
-printf '%s\n' "Built fatal-intervention prototype in $out"
+printf '%s\n' "Built damage diagnostic in $out (observation by default)"
