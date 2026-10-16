@@ -9,6 +9,7 @@
  *   2.80-      player 41 at 100/1000, in the Nexus (or on the beach with BEACH_AFTER)
  * The guard finds the HUD about 0.5 s in and then waits 0.5 s for max HP to settle.
  * Objects are small integers; class = object / 10. */
+#include "../guard/build_profile.h"
 #include <dispatch/dispatch.h>
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -113,8 +114,8 @@ const void *il2cpp_class_get_methods(void *c,void **it) {
  *it=m;return m;
 }
 const char *il2cpp_method_get_name(const void *m) {
- return m==&find_method?"FindObjectOfType":m==&potion_method?"OnQuickslotHotkeyPressedHandler":
-  m==&join_method?"FDOIPKHKGNF":m==&join_cooldown_method?"LMCLHOGGKKG":"GGGHNGEJPDE";
+ return m==&find_method?"FindObjectOfType":m==&potion_method?POTION_OFFSET_NAME:
+  m==&join_method?JOIN_OFFSET_NAME:m==&join_cooldown_method?JOIN_COOLDOWN_OFFSET_NAME:NEXUS_OFFSET_NAME;
 }
 uint32_t il2cpp_method_get_param_count(const void *m) { return m==&nexus_method?0:1; }
 const void *il2cpp_method_get_param(const void *m,uint32_t i) {
@@ -259,17 +260,17 @@ int main(void) {
  char *base=self.dli_fbase;
  find_method.pointer=base+0x100;
 #ifdef BAD_OFFSET
- potion_method.pointer=base+0x1fe3100;
+ potion_method.pointer=base+POTION_OFFSET+16;
 #else
- potion_method.pointer=base+0x1fe30f0;
+ potion_method.pointer=base+POTION_OFFSET;
 #endif
- nexus_method.pointer=base+0x1841500;
+ nexus_method.pointer=base+NEXUS_OFFSET;
 #ifdef JOIN_BAD_OFFSET
- join_method.pointer=base+0x13e7dd0;
+ join_method.pointer=base+JOIN_OFFSET+16;
 #else
- join_method.pointer=base+0x13e7dc0;
+ join_method.pointer=base+JOIN_OFFSET;
 #endif
- join_cooldown_method.pointer=base+0x1962b60;
+ join_cooldown_method.pointer=base+JOIN_COOLDOWN_OFFSET;
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),NULL,stop);
  dispatch_main();
 }

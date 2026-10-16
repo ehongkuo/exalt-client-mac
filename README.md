@@ -160,7 +160,7 @@ Live tests have demonstrated predicted-death escapes both in the standalone diag
 
 This is experimental protection. It currently covers the audited projectile path, and does not guarantee survival from every damage source or network condition. A delayed HP update can clear damage still in flight; previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
 
-The integration is specific to the game build recorded in `guard/game-build.sha256`. Method signatures, field types, offsets, and native entry bytes are validated before the death hooks are installed in Nexus. Readiness failures are shown in the app.
+The integration uses the reviewed profile selected by `compatibility/active-profile.txt`. That profile generates `guard/build_profile.h` and `guard/game-build.sha256`; see [build compatibility](compatibility/README.md) for the read-only update-analysis command. Method signatures, field types, offsets, and native entry bytes are validated before the death hooks are installed in Nexus. Readiness failures are shown in the app.
 
 ## Development
 
