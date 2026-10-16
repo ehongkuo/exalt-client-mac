@@ -111,11 +111,12 @@ def analyze(path,threshold=None):
         request_results=[{'event_id':e['id'],'ns':e['ns'],'calculation_id':e['correlation'],'local_nexusing':bool(e['flag0']),
             'exception_or_handle_error':e['flag2']} for e in events if e['phase']==22],
         suppressed_reports=[{'event_id':e['id'],'ns':e['ns'],'bullet':e['bullet'],'owner':e['owner']} for e in events if e['phase']==23],
+        suppressed_secondary_reports=[{'event_id':e['id'],'ns':e['ns'],'caller':hex(e['callsite'])} for e in events if e['phase']==30],
         server_hp_resets=[{'event_id':e['id'],'hp':e['hp'],'blocking':bool(e['flag1'])} for e in events if e['phase']==28],
         suppressed_notifications=sum(e['phase']==24 for e in events),
         observed_transitions=[{'event_id':e['id'],'ns':e['ns'],'reason':e['flag0'],'was_blocking':bool(e['value'])} for e in events if e['phase']==25],
         deaths_while_blocking=[e['id'] for e in events if e['phase']==26],counters=fatal_counters,
-        limitation='A local Nexusing flag is not server acceptance. Suppression covers the audited projectile calculation, player-hit report and local notification paths. The retained-damage model can escape early and does not establish true HP.')
+        limitation='A local Nexusing flag is not server acceptance. Suppression covers audited projectile, ground and radius/AOE paths. Other HP-loss mechanisms are unproven. The retained-damage model can escape early and does not establish true HP.')
     return {'schema':4,'fatal_intervention':fatal,'shadow_ledger':({'trace':[],'limitation':'Live intervention changed damage handling; the legacy observation-only hypotheses are not replayed for this session.'} if fatal['decisions'] or any(e['phase']==27 for e in events) else shadow.replay(events,threshold)),'update_boundaries':updates,
         'hp_update_contexts':[{'event_id':e['id'],'hp':e['hp'],'context':e['update_context'],'source':e['update_source']} for e in events if e['phase']==6],'damage_calculations':len(damage),'pre_report_damage_pairs':damage_pairs,
         'unclassified_damage_calculations':[{'id':e['id'],'caller':hex(e['callsite']),'value':e['value']} for e in unclassified_damage],

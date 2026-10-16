@@ -1,4 +1,4 @@
-# Damage-path in-game checklist
+# Damage-path verification
 
 This build collects evidence. Double-clicking its launcher starts **observation only**. It does not
 provide the integrated app's auto-potions or Nexus protection. Use a disposable character and leave
@@ -21,7 +21,43 @@ Quit Exalt and DECA's launcher first. When prompted, enter the test ID below and
 enter Nexus, and wait for **Probe installed. Observation only**. The terminal also reports which optional
 context fields are available. A missing field is not a zero meter reading. Stop if installation is refused.
 
-## First round: one source per session
+## Minimum check for the expanded protection
+
+Automated fixtures exercise damage accumulation, fatal crossings, repeated hits, successful and failed
+Nexus requests, Dry Run, disabled protection, and matching versus unrelated sockets/messages.
+They cannot demonstrate that the live server accepted an escape or that a named game attack uses a
+particular native path. One example per distinct interception boundary is sufficient for this check.
+
+1. Quit the game, double-click `Verify Damage Protection.command` in the built package, then enter Nexus and wait for readiness.
+2. At full health with a disposable character, take one small familiar projectile hit (X01).
+3. In separate sessions, take one small damaging-ground tick (X02), then one small radius/AOE hit (X03).
+4. After each escape, wait five seconds in Nexus and quit normally. Send the three printed session directories
+   and the enemy or hazard names. The launcher bundles the logs automatically.
+
+Verification mode calculates against **1 HP without changing actual game HP**, so the first positive
+hit on a protected path should trigger the real escape and report cancellation while the character
+still has ample actual health. Automated tests cover the real lethal arithmetic. This checks live
+wiring and Nexus arrival without deliberately approaching death. It cannot prove server-side lethal survival.
+
+Do not use a valuable character to establish an unverified escape. Stop after a refused hook, failed
+request, or missing Nexus transition. These are validation attempts, not a guarantee of survival.
+There is no need to repeat different enemies or ground tiles once their traces show the same boundary.
+A report containing only incoming HP updates does not demonstrate that a new damage source is protected.
+
+The reason for three examples is native ordering, not the number of damage sources:
+
+| Family | Interception and cancellation |
+|---|---|
+| Projectile | Calculator return `0x6538a2`, existing player-hit report hook |
+| Ground | Notification return `0x196ed65`, report helper tail-call retains return `0x196ed90` |
+| Radius/AOE | Notification return `0x183f7be`, outgoing report return `0x183f880` |
+
+All three use the same pending-damage policy and Nexus request. Different native call sites and report
+orders require separate wiring; fixture success cannot establish the live attack identity or server result.
+Bleeding, oxygen loss and frostbite are **not claimed covered**. Their live investigation remains optional
+below; there is no reason to test every dungeon before reviewing the implemented protection.
+
+## Optional investigation: one source per session
 
 | ID | Action | Evidence needed |
 |---|---|---|
@@ -91,14 +127,13 @@ Every report keeps `lethal_prevention_proven: false`. A test label, nearby notif
 meter or empty breath meter is not itself proof of damage cause. Server HP assignments cannot identify
 the processed hit reports. Review raw events before deciding the next intervention.
 
-## Later: existing projectile intervention control
-
-After D00/D01 observation is reviewed, the existing projectile protection can be tested explicitly:
+## Launch verification explicitly
 
 ```sh
-'build/damage-diagnostic/Start Hit Diagnostic.command' --intervene
+open 'build/damage-diagnostic/Verify Damage Protection.command'
 ```
 
-Use test ID X01 and a disposable character. This enables the existing audited projectile escape only.
-New terrain, AOE, bleeding, oxygen and frostbite protection has not been implemented. Double-clicking
-the launcher again returns to observation mode. Restarting the game normally removes the diagnostic.
+This enables audited projectile, ground and radius/AOE intervention using the diagnostic 1-HP prediction.
+Use `--intervene` only for ordinary real-HP prediction. The production client always uses real HP. Double-clicking the launcher uses
+observation mode. Restarting the game normally removes the diagnostic. The new code is also compiled
+into the integrated client, but building this diagnostic does not replace the installed client app.

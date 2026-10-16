@@ -25,7 +25,16 @@ static StatsFunction stats_original;
 static void *probe_tick_field,*probe_time_field;
 static uint64_t probe_update_context;
 static int probe_update_source;
-static NativeHook probe_hooks[8];
+static NativeHook probe_hooks[9];
+typedef void (*SendFunction)(void *,void *,const void *);
+static SendFunction send_original;
+/* Audited only for EXALT_GAME_SHA256 in damage_paths.json. */
+#define TERRAIN_NOTIFY_CALLER 0x196ed65UL
+#define AREA_NOTIFY_CALLER 0x183f7beUL
+#define TERRAIN_SEND_CALLER 0x196ed90UL /* report helper tail-calls SendMessage */
+#define AREA_SEND_CALLER 0x183f880UL
+#define SEND_OFFSET 0x199e310UL
+static _Atomic uintptr_t fatal_block_socket;
 static int probe_installed,probe_attempted;
 static char probe_main_key;
 static int probe_on_main(void) { return pthread_main_np() || dispatch_get_specific(&probe_main_key)==&probe_main_key; }
@@ -55,8 +64,11 @@ typedef struct {
 #include "fatal_policy.h"
 static FatalPolicy fatal_policy;
 static int fatal_enabled,fatal_invoking,fatal_death_logged;
+#ifdef EXALT_HIT_PROBE
+static int fatal_verify_hp;
+#endif
 static void *fatal_socket_class,*fatal_socket_field,*fatal_nexusing_field;
-static void *fatal_player_handle,*fatal_connection_handle;
+static void *fatal_player_handle,*fatal_connection_handle,*fatal_socket_handle;
 static _Atomic uintptr_t fatal_block_player,fatal_block_connection;
 static _Atomic uint64_t fatal_off_main_reports,fatal_off_main_notifications;
 static _Atomic uint64_t fatal_requests,fatal_reports_dropped,fatal_notifications_dropped;
@@ -69,6 +81,11 @@ static void hit_probe_open(const char *folder) {
     (void)folder;fatal_enabled=1;
 #else
     const char *active=getenv("EXALT_FATAL_INTERVENTION");fatal_enabled=active && !strcmp(active,"1");
+    /* Diagnostic-only synthetic lethal threshold. Never writes game HP and is
+     * deliberately unavailable in the production client. */
+    const char *verify=getenv("EXALT_VERIFY_ONE_HP");
+    fatal_verify_hp=fatal_enabled && verify && !strcmp(verify,"1");
+    if(fatal_verify_hp)note("damage_verification\teffective_hp=1\tgame_hp_unchanged=1\n");
     probe_flight=flight_open(folder,start_ns,start_epoch);
     if(!probe_flight)note("hit_probe_refused\tflight_recorder\n");
 #endif
@@ -150,9 +167,10 @@ static void fatal_emit(int phase,void *player,uint64_t correlation,int value,int
 static void fatal_clear(void *player,int reason) {
     int was_blocking=fatal_policy.blocking;
     if(fatal_policy.player)fatal_emit(25,player,0,was_blocking,reason,0);
+    atomic_store_explicit(&fatal_block_socket,0,memory_order_release);
     atomic_store_explicit(&fatal_block_connection,0,memory_order_release);
     atomic_store_explicit(&fatal_block_player,0,memory_order_release);
-    release(&fatal_player_handle);release(&fatal_connection_handle);
+    release(&fatal_player_handle);release(&fatal_connection_handle);release(&fatal_socket_handle);
     fatal_policy=(FatalPolicy){0};fatal_death_logged=0;
 #ifdef EXALT_CLIENT_FATAL
     live_data.death_blocking=0;live_data.death_pending=0;live_data.death_predicted=0;
@@ -224,7 +242,11 @@ static void fatal_record(void *player,int hp,int result) {
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
     if(!fatal_sync(player))return damage;
     int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
-    int decision=fatal_damage(&fatal_policy,hp,damage);
+    int prediction_hp=hp;
+#ifdef EXALT_HIT_PROBE
+    if(fatal_verify_hp && hp>0)prediction_hp=1;
+#endif
+    int decision=fatal_damage(&fatal_policy,prediction_hp,damage);
     if(decision==FATAL_REQUEST) {
         fatal_emit(20,player,calculation,damage,decision,0);
 #ifdef EXALT_CLIENT_FATAL
@@ -233,8 +255,10 @@ static int fatal_intervene(void *player,int damage,uint64_t calculation) {
         void *connection=(void*)fatal_policy.connection;
         fatal_player_handle=il2cpp_gchandle_new(player,0);
         fatal_connection_handle=il2cpp_gchandle_new(connection,0);
-        if(!fatal_player_handle || !fatal_connection_handle){
-            release(&fatal_player_handle);release(&fatal_connection_handle);
+        void *socket=read_reference(connection,fatal_socket_field);
+        if(socket && il2cpp_object_get_class(socket)==fatal_socket_class)fatal_socket_handle=il2cpp_gchandle_new(socket,0);
+        if(!fatal_player_handle || !fatal_connection_handle || !fatal_socket_handle){
+            release(&fatal_player_handle);release(&fatal_connection_handle);release(&fatal_socket_handle);
             fatal_emit(22,player,calculation,damage,0,2);
 #ifdef EXALT_CLIENT_FATAL
             fatal_record(player,hp,RESULT_UNAVAILABLE);
@@ -245,12 +269,13 @@ static int fatal_intervene(void *player,int damage,uint64_t calculation) {
         fatal_emit(21,player,calculation,damage,already,0);
         if(!already){++fatal_requests;fatal_invoking=1;
             il2cpp_runtime_invoke(nexus_method,connection,NULL,&exception);fatal_invoking=0;}
-        int local=!exception && fatal_local_nexusing(connection);
+        int local=!exception && socket==read_reference(connection,fatal_socket_field) && fatal_local_nexusing(connection);
         fatal_requested(&fatal_policy,local);
         if(local){
+            atomic_store_explicit(&fatal_block_socket,(uintptr_t)socket,memory_order_release);
             atomic_store_explicit(&fatal_block_player,(uintptr_t)player,memory_order_release);
             atomic_store_explicit(&fatal_block_connection,(uintptr_t)connection,memory_order_release);
-        } else {release(&fatal_player_handle);release(&fatal_connection_handle);}
+        } else {release(&fatal_player_handle);release(&fatal_connection_handle);release(&fatal_socket_handle);}
         fatal_emit(22,player,calculation,damage,local,exception!=NULL);
 #ifdef EXALT_CLIENT_FATAL
         live_data.death_blocking=fatal_policy.blocking;
@@ -284,21 +309,44 @@ static void report_observed(void *self,uint32_t bullet,int owner,const void *inf
     report_original(self,bullet,owner,info);
     if(observe){ProbeEvent returned=probe_snapshot(2,player,NULL);returned.correlation=e.id;returned.bullet=bullet;returned.owner=owner;probe_emit(returned);}
 }
+static void send_observed(void *self,void *message,const void *info) {
+    uint64_t caller=probe_callsite(__builtin_return_address(0));
+#ifdef HIT_PROBE_BOUNDARY_TEST
+    if(info==(void*)0x5678)caller=HIT_PROBE_BOUNDARY_TEST;
+#endif
+    /* Exact caller and retained socket only. Nexus and all other messages pass.
+     * No IL2CPP access off-main; the atomic latch is published after acceptance. */
+    if((caller==TERRAIN_SEND_CALLER || caller==AREA_SEND_CALLER) && self &&
+       atomic_load_explicit(&fatal_block_socket,memory_order_acquire)==(uintptr_t)self){
+        if(probe_on_main()){
+            ProbeEvent e=probe_snapshot(30,probe_player(),NULL);e.callsite=caller;probe_emit(e);
+        }
+        return;
+    }
+    send_original(self,message,info);
+}
 static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,uint8_t flag1,void *projectile,uint8_t a,uint8_t b,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);
-        int local=probe_callsite(__builtin_return_address(0))==NOTIFY_CALLER;
+        uint64_t caller=probe_callsite(__builtin_return_address(0));
+        int local=caller==NOTIFY_CALLER || caller==TERRAIN_NOTIFY_CALLER || caller==AREA_NOTIFY_CALLER;
 #ifdef HIT_PROBE_TEST
         local=1;
 #endif
         if(self && local && atomic_load_explicit(&fatal_block_player,memory_order_acquire)==(uintptr_t)self){atomic_fetch_add(&fatal_off_main_notifications,1);return;}
         notify_original(self,flag0,value,conditions,flag1,projectile,a,b,info);return;}
     uint64_t caller=probe_callsite(__builtin_return_address(0));
-#ifdef HIT_PROBE_TEST
+#ifdef HIT_PROBE_BOUNDARY_TEST
+    caller=HIT_PROBE_BOUNDARY_TEST==TERRAIN_SEND_CALLER?TERRAIN_NOTIFY_CALLER:AREA_NOTIFY_CALLER;
+#endif
+#if defined(HIT_PROBE_TEST) && !defined(HIT_PROBE_BOUNDARY_TEST)
     int local_projectile=1;
 #else
     int local_projectile=caller==NOTIFY_CALLER;
 #endif
-    if(self && local_projectile && atomic_load_explicit(&fatal_block_player,memory_order_acquire)==(uintptr_t)self){
+    int local_boundary=caller==TERRAIN_NOTIFY_CALLER || caller==AREA_NOTIFY_CALLER;
+    if(probe_active() && self==probe_player() && local_boundary && fatal_enabled)
+        (void)fatal_intervene(self,value,0); /* Final damage, before HP effects and report. */
+    if(self && (local_projectile || local_boundary) && atomic_load_explicit(&fatal_block_player,memory_order_acquire)==(uintptr_t)self){
         ++fatal_notifications_dropped;ProbeEvent blocked=probe_snapshot(24,self,NULL);blocked.callsite=caller;
         blocked.value=value;blocked.flag1=1;probe_emit(blocked);return;
     }
@@ -434,10 +482,10 @@ static void probe_install(void) {
     if(!dladdr((const void*)il2cpp_domain_get,&image) || !image.dli_fbase)return;
     probe_game_base=(uintptr_t)image.dli_fbase;probe_attempted=1;
     dispatch_queue_set_specific(dispatch_get_main_queue(),&probe_main_key,&probe_main_key,NULL);
-    void *entries[8]={0};
+    void *entries[9]={0};
 #ifdef HIT_PROBE_TEST
-    const char *names[]={"incoming_fixture","notify_fixture","hp_fixture","nexus_fixture","damage_fixture","death_fixture","update_fixture","stats_fixture"};
-    for(int i=0;i<8;++i)entries[i]=dlsym(RTLD_DEFAULT,names[i]);
+    const char *names[]={"incoming_fixture","notify_fixture","hp_fixture","nexus_fixture","damage_fixture","death_fixture","update_fixture","stats_fixture","send_fixture"};
+    for(int i=0;i<9;++i)entries[i]=dlsym(RTLD_DEFAULT,names[i]);
     probe_tick_field=(void*)990;probe_time_field=(void*)991;
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
 #if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
@@ -471,26 +519,47 @@ static void probe_install(void) {
         find_method_named(probe_projectile_class,DAMAGE_OFFSET_NAME,1,"System.Single"),
         find_method_named(gui_class,DEATH_SCREEN_OFFSET_NAME,1,"LPBNPHKMNNG"),
         find_method_named(connection_class,UPDATE_OFFSET_NAME,1,"OODFCLBKDJJ"),
-        find_method_named(connection_class,STATS_OFFSET_NAME,3,"LKHPPBEGNOM")};
+        find_method_named(connection_class,STATS_OFFSET_NAME,3,"LKHPPBEGNOM"),
+        find_method_named(fatal_socket_class,"SendMessage",1,"DCBCCBKEIHN")};
     const char *rtypes[]={"System.UInt32","System.Int32"};
     const char *ntypes[]={"System.Boolean","System.Int32","System.Collections.Generic.List<System.Byte>","System.Boolean","HBEAKBIHANL","System.Boolean","System.Boolean"};
     const char *htypes[]={"System.Int32"};
     const char *dtypes[]={"System.Single"},*stypes[]={"LPBNPHKMNNG"};
     const char *utypes[]={"OODFCLBKDJJ"},*atypes[]={"LKHPPBEGNOM","System.Collections.Generic.List<CGOECEPGBBG>","System.Boolean"};
-    const uintptr_t offsets[]={HIT_REPORT_OFFSET,HIT_NOTIFY_OFFSET,HP_ASSIGN_OFFSET,NEXUS_OFFSET,DAMAGE_OFFSET,DEATH_SCREEN_OFFSET,UPDATE_OFFSET,STATS_OFFSET};
+    const uintptr_t offsets[]={HIT_REPORT_OFFSET,HIT_NOTIFY_OFFSET,HP_ASSIGN_OFFSET,NEXUS_OFFSET,DAMAGE_OFFSET,DEATH_SCREEN_OFFSET,UPDATE_OFFSET,STATS_OFFSET,SEND_OFFSET};
     if(!probe_signature(methods[0],rtypes,2)||!probe_signature(methods[1],ntypes,7)||
-       !probe_signature(methods[2],htypes,1)||!probe_signature(methods[3],NULL,0)||!probe_signature(methods[4],dtypes,1)||!probe_signature(methods[5],stypes,1)||!probe_signature(methods[6],utypes,1)||!probe_signature(methods[7],atypes,3)) {
+       !probe_signature(methods[2],htypes,1)||!probe_signature(methods[3],NULL,0)||!probe_signature(methods[4],dtypes,1)||!probe_signature(methods[5],stypes,1)||!probe_signature(methods[6],utypes,1)||!probe_signature(methods[7],atypes,3)||!probe_signature(methods[8],(const char*[]){"DCBCCBKEIHN"},1)) {
         note("hit_probe_refused\tmethod_validation\n");return;
     }
-    for(int i=0;i<8;++i){if(!at_offset(methods[i],offsets[i])){note("hit_probe_refused\tmethod_offset\n");return;}entries[i]=*(void *const*)methods[i];}
+    for(int i=0;i<9;++i){if(!at_offset(methods[i],offsets[i])){note("hit_probe_refused\tmethod_offset\n");return;}entries[i]=*(void *const*)methods[i];}
 #endif
-    const unsigned char *bytes[]={report_prologue,notify_prologue,hp_prologue,nexus_prologue,damage_prologue,death_prologue,update_prologue,stats_prologue};
-    size_t lengths[]={sizeof report_prologue,sizeof notify_prologue,sizeof hp_prologue,sizeof nexus_prologue,sizeof damage_prologue,sizeof death_prologue,sizeof update_prologue,sizeof stats_prologue};
-    void *replacements[]={(void*)report_observed,(void*)notify_observed,(void*)hp_observed,(void*)nexus_observed,(void*)damage_observed,(void*)death_observed,(void*)update_observed,(void*)stats_observed};
-    void **originals[]={(void**)&report_original,(void**)&notify_original,(void**)&hp_original,(void**)&nexus_original,(void**)&damage_original,(void**)&death_original,(void**)&update_original,(void**)&stats_original};
-    for(int i=0;i<8;++i)if(!entries[i]||memcmp(entries[i],bytes[i],lengths[i])){note("hit_probe_refused\tentry_bytes\tindex=%d\n",i);return;}
-    for(int i=0;i<8;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
+#ifdef HIT_PROBE_TEST
+#define send_prologue notify_prologue
+#else
+    static const unsigned char send_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x49,0x89,0xf6,0x48,0x89,0xfb,0x48,0x8b,0x47,0x28};
+    /* New boundaries must match in full before ANY hook is installed. */
+    static const unsigned char terrain_report_call[]={0xe8,0xb0,0x00,0xed,0xff};
+    static const unsigned char terrain_send_tail[]={0xe9,0xf0,0xf3,0x15,0x00};
+    static const unsigned char area_send_call[]={0xe8,0x90,0xea,0x15,0x00};
+    if(memcmp((void*)(probe_game_base+TERRAIN_SEND_CALLER-5),terrain_report_call,5) ||
+       memcmp((void*)(probe_game_base+0x183ef1bUL),terrain_send_tail,5) ||
+       memcmp((void*)(probe_game_base+AREA_SEND_CALLER-5),area_send_call,5)){
+        note("hit_probe_refused\treport_boundary_bytes\n");return;
+    }
+    const uintptr_t sites[]={TERRAIN_NOTIFY_CALLER,AREA_NOTIFY_CALLER};
+    const unsigned char dispatches[][6]={{0xff,0x90,0x98,8,0,0},{0xff,0x93,0x98,8,0,0}};
+    for(int i=0;i<2;++i)if(memcmp((void*)(probe_game_base+sites[i]-6),dispatches[i],6)){
+        note("hit_probe_refused\tboundary_bytes\n");return;
+    }
+#endif
+    const unsigned char *bytes[]={report_prologue,notify_prologue,hp_prologue,nexus_prologue,damage_prologue,death_prologue,update_prologue,stats_prologue,send_prologue};
+    size_t lengths[]={sizeof report_prologue,sizeof notify_prologue,sizeof hp_prologue,sizeof nexus_prologue,sizeof damage_prologue,sizeof death_prologue,sizeof update_prologue,sizeof stats_prologue,sizeof send_prologue};
+    void *replacements[]={(void*)report_observed,(void*)notify_observed,(void*)hp_observed,(void*)nexus_observed,(void*)damage_observed,(void*)death_observed,(void*)update_observed,(void*)stats_observed,(void*)send_observed};
+    void **originals[]={(void**)&report_original,(void**)&notify_original,(void**)&hp_original,(void**)&nexus_original,(void**)&damage_original,(void**)&death_original,(void**)&update_original,(void**)&stats_original,(void**)&send_original};
+    for(int i=0;i<9;++i)if(!entries[i]||memcmp(entries[i],bytes[i],lengths[i])){note("hit_probe_refused\tentry_bytes\tindex=%d\n",i);return;}
+    for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
+    #undef send_prologue
     probe_installed=1;note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);

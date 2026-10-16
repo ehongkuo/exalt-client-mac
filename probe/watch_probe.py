@@ -54,8 +54,9 @@ def main():
                             pending_hp=int(row[21]);projected=pending_hp-(1<<64) if pending_hp>=(1<<63) else pending_hp
                             print(f'FATAL PREDICTION | observed HP {row[11]} | damage {row[10]} | retained damage {row[15]} | projected {projected}',flush=True)
                         elif phase==22:
-                            print('Nexus requested locally. Projectile suppression is ON; awaiting map transition.' if row[16]=='1' else 'Nexus request FAILED locally. Damage remains enabled. Stop this test and report the result.',flush=True)
+                            print('Nexus requested locally. Audited damage suppression is ON; awaiting map transition.' if row[16]=='1' else 'Nexus request FAILED locally. Damage remains enabled. Stop this test and report the result.',flush=True)
                         elif phase==23:print(f'Withheld projectile report | bullet {row[8]} | owner {row[9]}',flush=True)
+                        elif phase==30:print(f'Withheld ground/area report | caller {hex(int(row[6]))}',flush=True)
                         elif phase==25:print('Nexus map observed; fatal budget reset.' if row[16]=='1' else 'Player/map changed; fatal budget reset.',flush=True)
                         elif phase==26:print('Server/client HP reached zero while escape was pending. Intervention did not protect this case.',flush=True)
                         elif phase==28:

@@ -91,6 +91,19 @@
       "slot": 8,
       "path": "frostbite_ui",
       "entry_prefix": "554889e580bfd000000000743048"
+    },
+    {
+      "namespace": "DecaGames.RotMG.Managers.Net",
+      "owner": "SocketManager",
+      "name": "SendMessage",
+      "parameters": [
+        "DCBCCBKEIHN"
+      ],
+      "returns": "void",
+      "offset": "0x199e310",
+      "slot": null,
+      "path": "damage_report_send",
+      "entry_prefix": "554889e54156534989f64889fb488b4728"
     }
   ],
   "fields": [
@@ -204,7 +217,17 @@
       "address": "0x1af6232",
       "bytes": "41c7870c02000000000000",
       "finding": "base notification can set HP zero"
+    },
+    {
+      "address": "0x183ef1b",
+      "bytes": "e9f0f31500",
+      "finding": "terrain report helper tail-calls SendMessage; return address remains 0x196ed90"
+    },
+    {
+      "address": "0x183f87b",
+      "bytes": "e890ea1500",
+      "finding": "area notification precedes report SendMessage; return address 0x183f880"
     }
   ],
-  "limitation": "Static paths only. Source-specific status and environmental damage require live traces; area_candidate is not yet a live-confirmed grenade path. No new intervention is authorized by this map."
+  "limitation": "Terrain and radius-area notification/report boundaries have static intervention coverage. No universal client-side boundary is proven for server-driven HP changes, bleeding, suffocation or frostbite. Radius-area identity is not live-confirmed as a particular grenade."
 }

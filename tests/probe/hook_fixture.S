@@ -227,3 +227,43 @@ _stats_fixture:
  popq %rbp
  retq
 .p2align 12
+
+.globl _send_fixture
+.p2align 12
+_send_fixture:
+ pushq %rbp
+ movq %rsp, %rbp
+ pushq %r15
+ pushq %r14
+ pushq %r13
+ pushq %r12
+ pushq %rbx
+ pushq %rax
+ callq _send_fixture_body
+ popq %rax
+ popq %rbx
+ popq %r12
+ popq %r13
+ popq %r14
+ popq %r15
+ popq %rbp
+ retq
+
+.globl _send_audit_fixture
+.p2align 12
+_send_audit_fixture:
+ pushq %rbp
+ movq %rsp,%rbp
+ pushq %r14
+ pushq %rbx
+ movq %rsi,%r14
+ movq %rdi,%rbx
+ movq 0x28(%rdi),%rax
+ callq _send_audit_body
+ popq %rbx
+ popq %r14
+ popq %rbp
+ retq
+
+// Keep linker stubs off the patched fixture page: patching temporarily removes execute permission.
+.p2align 12

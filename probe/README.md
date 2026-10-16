@@ -2,8 +2,9 @@
 
 The diagnostic records player HP, incoming updates, projectile calculations, notification callers,
 raw entity flags, breath and frostbite meters, Nexus requests, map transitions and death-screen events.
-Its purpose is to map damage sources before extending protection. New non-projectile intervention
-is not included. Start with the [in-game checklist](../docs/damage-testing.md) and
+It includes audited projectile, ground and radius/AOE intervention. Bleeding, oxygen and frostbite
+protection remain unproven. Use `--verify` to check an escape on a small hit using a synthetic 1-HP
+prediction; actual game HP is unchanged. Start with the [in-game checklist](../docs/damage-testing.md) and
 [damage-source map](../docs/damage-sources.md).
 
 ## Build and run
@@ -39,12 +40,12 @@ Only after the observation control is reviewed:
 'build/damage-diagnostic/Start Hit Diagnostic.command' --intervene
 ```
 
-This explicitly enables the existing fatal-projectile intervention. It estimates possible lethal damage,
+This explicitly enables the audited projectile, ground and radius/AOE intervention. It estimates possible lethal damage,
 requests the normal Nexus function before the fatal hit report, and suppresses the audited projectile
 path only after confirming the local Nexusing flag. That flag does not establish server acceptance.
 
 ```text
-projected HP = observed player HP - retained audited projectile damage
+projected HP = observed player HP - retained audited damage
 request Nexus when projected HP <= 0
 ```
 
@@ -78,6 +79,6 @@ setter/notification/sampling boundary, without inferring the cause from a test l
 Native caller labels require the recorded build fingerprint. A death event overrides a successful
 escape, including deaths found in the binary tail. Every report says lethal prevention is unproven.
 
-The binary fingerprint, seven mapped method entries, five notification dispatch sites, three optional
+The binary fingerprint, eight mapped method entries, five notification dispatch sites, three optional
 field declarations and selected instruction evidence live in `damage_paths.json`. `map_damage.py`
 verifies those facts without changing runtime approval. No live tests for the new sources have yet run.

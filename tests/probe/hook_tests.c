@@ -61,7 +61,23 @@ static void death_prefix_test(void) {
  assert(native_hook_remove(&h)==HOOK_OK);
  puts("Death-screen prefix: test flags and both branch outcomes preserved");
 }
+extern void send_audit_fixture(void *,void *,const void *);
+static void (*send_audit_original)(void *,void *,const void *);
+static int send_audit_calls;
+void send_audit_body(void *self,void *message,const void *info){
+ assert(self && message==(void*)3 && info==(void*)4);++send_audit_calls;
+}
+static void send_audit_wrapper(void *self,void *message,const void *info){send_audit_original(self,message,info);}
+static void test_send_prologue(void){
+ unsigned char object[64]={0};
+ const unsigned char bytes[]={0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x49,0x89,0xf6,0x48,0x89,0xfb,0x48,0x8b,0x47,0x28};
+ NativeHook hook={0};
+ assert(native_hook_install(&hook,(void*)send_audit_fixture,(void*)send_audit_wrapper,bytes,sizeof bytes,(void**)&send_audit_original)==HOOK_OK);
+ send_audit_fixture(object,(void*)3,(void*)4);assert(send_audit_calls==1);
+ assert(native_hook_remove(&hook)==HOOK_OK);
+}
 int main(void) {
+ test_send_prologue();
  setbuf(stdout,NULL);puts("test started");hp_assignment_test();death_prefix_test();
  NativeHook hook={0};
  unsigned char wrong[sizeof prologue];memcpy(wrong,prologue,sizeof wrong);wrong[0]^=1;
@@ -89,3 +105,5 @@ void death_fixture_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}
 
 void update_fixture_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}
 void stats_fixture_body(void *a,void *b,void *c,unsigned char d,const void *e){(void)a;(void)b;(void)c;(void)d;(void)e;}
+
+void send_fixture_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}

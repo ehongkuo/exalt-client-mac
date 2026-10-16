@@ -104,11 +104,34 @@ void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,ui
 #else
 #define DAMAGE_ARGUMENT ((void*)0x3456)
 #endif
+extern void send_fixture(void *,void *,const void *);
+static unsigned boundary_sent,other_sent;
+void send_fixture_body(void *self,void *message,const void *info) {
+ assert(message==(void*)3);
+ if(self==(void*)500 && info==(void*)0x5678)++boundary_sent;
+ else ++other_sent;
+}
 static void burst(void *unused) {
  (void)unused;
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
+#ifdef FATAL_BOUNDARY_BURST
+ for(int i=0;i<6;++i){
+  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+  send_fixture((void*)500,(void*)3,(void*)0x5678);
+  send_fixture((void*)500,(void*)3,(void*)0x9876); /* unrelated callsite */
+  send_fixture((void*)501,(void*)3,(void*)0x5678); /* unrelated socket */
+ }
+ assert(other_sent==12);
+#if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION) || defined(BOUNDARY_PASS)
+ assert(boundary_sent==6 && notify_forwarded==6);
+#else
+ assert(boundary_sent==3 && notify_forwarded==3);
+#endif
+ printf("boundary_sent=%u other_sent=%u\n",boundary_sent,other_sent);
+ return;
+#endif
 #ifdef FATAL_RECONCILE
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
@@ -120,7 +143,11 @@ static void burst(void *unused) {
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
   assert(actual==50);
 #else
+  #ifdef VERIFY_EARLY
+  assert(actual==0);
+#else
   assert(actual==(i<3?50:0));
+#endif
 #endif
 #ifdef FATAL_RECONCILE
   if(i==3){next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);}
@@ -173,13 +200,20 @@ static void late_blocked_hit(void *unused) {
 static void verify_forwarding(void *unused) {
  (void)unused;
 #ifdef FATAL_BURST
+#ifdef FATAL_BOUNDARY_BURST
+ return;
+#endif
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
  assert(report_forwarded==7 && notify_forwarded==7 && assigned_hp==0);
 #else
  #ifdef FATAL_RECONCILE
  assert(report_forwarded==4 && notify_forwarded==4 && assigned_hp==200);
 #else
+ #ifdef VERIFY_EARLY
+ assert(report_forwarded==0 && notify_forwarded==0 && assigned_hp==200);
+#else
  assert(report_forwarded==3 && notify_forwarded==3 && assigned_hp==200);
+#endif
 #endif
 #endif
  #if defined(FATAL_RECONCILE) || defined(FATAL_CLIENT_TOGGLE)
@@ -207,3 +241,5 @@ int main(void) {
 }
 
 void death_audit_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}
+
+void send_audit_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}

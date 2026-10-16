@@ -1,8 +1,39 @@
-# Diagnostic validation
+# Expanded damage protection validation
 
-## Damage discovery milestone, 2026-10-16
+The expanded implementation covers audited projectile, ground and radius/AOE boundaries. It shares
+one fatal-damage policy and normal Nexus request, retains player/connection/socket handles through
+escape, and suppresses only matching reports after local Nexusing is confirmed. Incoming authoritative
+HP updates and unresolved status/meter damage are not claimed covered.
 
-This milestone adds observation and reporting, not non-projectile protection. The installed GameAssembly
+The new SendMessage hook uses a 17-byte whole-instruction prologue. An Intel native fixture executes
+that exact prologue through its trampoline and checks argument forwarding. Runtime installation
+validates its typed method, offset, prologue, both new notification dispatches and outgoing report
+instructions before installing hooks. The new map is specific to the reviewed October 15 game hash.
+Changing compatibility profiles requires re-auditing these additional boundaries.
+
+Production fixtures exercise both ground and area routing, cumulative fatal thresholds, repeated
+hits during escape, denied and exception-throwing requests, unrelated call sites, unrelated sockets,
+Dry Run and disabled protection. The diagnostic-only `--verify` mode uses a synthetic 1-HP prediction
+without writing actual HP. A native diagnostic fixture checks escape on the first 50-damage hit while
+actual HP remains 200; production tests set the same environment variable and still require the normal
+200-HP threshold, demonstrating that the override is unavailable in the client.
+
+Validation passed: 16 compatibility tests, four native-map tests, 15 reporting tests, 33 guard fixtures,
+22 diagnostic tests, native trampolines and fatal-policy checks, Swift model/settings/launch checks,
+and cross-architecture state checks. The signed diagnostic package builds successfully; the production
+guard compiles with warnings treated as errors. All 10 production intervention tests and the synthetic compact/expand UI regression also passed.
+The ground/area report analysis assertions passed again after the final reporting changes.
+
+Live expanded-path verification has not been performed. The minimum is three small-hit checks at full
+actual health using `--verify`, one per audited native family; see [the steps](../docs/damage-testing.md).
+A local Nexusing flag is not a server acknowledgement, and these checks do not prove universal lethal
+survival. Bleeding, suffocation and frostbite require further source-specific evidence.
+
+## Diagnostic validation
+
+## Prior damage discovery milestone, 2026-10-16
+
+The prior milestone added observation and reporting, without non-projectile protection. The installed GameAssembly
 hash still matches the reviewed `ad069824...` build. Static verification passed for seven mapped methods,
 five notification dispatch sites, three optional field declarations and the selected native instruction
 evidence. The field declarations were checked against the matching retained metadata dump; the breath

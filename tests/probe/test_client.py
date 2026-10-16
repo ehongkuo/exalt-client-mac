@@ -11,21 +11,24 @@ sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
-   subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
+   subprocess.run(['clang',*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
     '-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DSESSION_NS=3500000000ULL',
     f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if boundary:
+    args.append('-DFATAL_BOUNDARY_BURST')
+    if 'armed=0' in settings or 'death=0' in settings:args.append('-DBOUNDARY_PASS')
    if denied:args.append('-DNEXUS_REQUEST_DENIED')
    if exception:args.append('-DNEXUS_REQUEST_EXCEPTION')
    if reconcile:args.append('-DFATAL_RECONCILE')
    if toggle:args.append('-DFATAL_CLIENT_TOGGLE')
    subprocess.run(args,check=True)
-   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings
+   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings;env['EXALT_VERIFY_ONE_HP']='1' # production must ignore diagnostic threshold
    process=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
    if toggle:
     tool=p/'control'
@@ -43,12 +46,35 @@ class ClientInterventionTests(unittest.TestCase):
    self.output=result.stdout
    self.log=next(p.glob('guard-*.tsv')).read_text()
    self.events=analyze.read_events(self.log)
+   self.secondary_reports=analyze.analyze(next(p.glob('guard-*.tsv')))['fatal_intervention']['suppressed_secondary_reports']
    self.assertFalse(list(p.glob('hit-flight-*.bin')),'client does not write diagnostic flight files')
    self.assertFalse(any(e['phase']<20 and e['phase']!=15 for e in self.events),'client records intervention and nonpositive-HP events')
    dump=p/'dump'
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+ def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
+  for boundary in ('0x196ed90UL','0x183f880UL'):
+   with self.subTest(boundary=boundary):
+    self.run_client('armed=1,potion=0,death=1',boundary=boundary)
+    self.assertIn('boundary_sent=3 other_sent=12',self.output)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertEqual(sum(e['phase']==30 for e in self.events),3)
+    self.assertEqual([e['caller'] for e in self.secondary_reports],[boundary[:-2]]*3)
+ def test_boundary_dry_run_and_disabled_mode_preserve_damage(self):
+  for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
+   with self.subTest(settings=settings):
+    self.run_client(settings,boundary='0x196ed90UL')
+    self.assertIn('boundary_sent=6 other_sent=12',self.output)
+    self.assertIn('nexus_calls=0',self.output)
+    self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
+ def test_boundary_request_failure_preserves_notifications_and_reports(self):
+  for boundary in ('0x196ed90UL','0x183f880UL'):
+   for failure in ('denied','exception'):
+    with self.subTest(boundary=boundary,failure=failure):
+     self.run_client('armed=1,potion=0,death=1',boundary=boundary,**{failure:True})
+     self.assertIn('boundary_sent=6 other_sent=12',self.output)
+     self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
  def test_armed_toggle_protects_burst_with_legacy_nexus_ignored(self):
   self.run_client('armed=1,potion=50,ceiling=80,nexus=25,death=1')
   self.assertIn('nexus_calls=1',self.output);self.assertIn('potion_calls=0',self.output)

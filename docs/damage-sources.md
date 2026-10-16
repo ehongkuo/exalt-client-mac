@@ -1,7 +1,8 @@
 # Player HP loss: discovery map
 
-This is the first discovery milestone, not broader death protection. All newly mapped paths still
-need in-game observation. The existing projectile intervention remains the only active protection.
+The implementation now protects audited projectile, ground and radius/AOE boundaries using a shared
+escape policy. Newly added paths have native and fixture evidence; live verification is still pending.
+Status and meter damage remain unresolved. See the [minimal verification process](damage-testing.md).
 
 ## Evidence levels
 
@@ -17,7 +18,7 @@ that every possible lethal cause has been enumerated. Unattributed HP decreases 
 
 | Mechanism | Current evidence | Recorded path | Test |
 |---|---|---|---|
-| Enemy projectiles, overlapping hits, armor-piercing variants | Existing audited path; variants need individual live confirmation | Calculator `0x650e90`, collision `0x6534f0`, notification caller `0x653bd0` | D01 |
+| Enemy projectiles, overlapping hits, armor-piercing variants | Existing audited path; variants sharing this route need no separate test | Calculator `0x650e90`, collision `0x6534f0`, notification caller `0x653bd0` | D01 |
 | Grenades, explosions and other radial attacks | Static area/radius-handler candidate; not yet a live-confirmed grenade | Handler `0x183f290`, generic calculation call `0x183f6ed`, notification caller `0x183f7be` | D02 |
 | Bleeding and other player damage-over-time effects | Candidate; source-specific tick function unresolved | Raw entity flags, HP assignments and sampled changes | D03 |
 | Lava and damaging ground | Static terrain path; individual tile rules need live confirmation | Terrain routine `0x196eb80`, notification caller `0x196ed65`, report call `0x196ed8b` | D04 |
@@ -50,7 +51,7 @@ checks unambiguous metadata identities and field type/storage/offset. It never a
 | Projectile calculator | Direct call at `0x65389d`, returns `0x6538a2` | Existing intervention boundary, before player-hit reporting |
 | Terrain guard | `0x196ecab` tests `ObjectProperties.protectFromGroundDamage` at `+0x6f4` | Confirms terrain-related logic, not every tile's behavior |
 | Terrain calculation and report | `0x196ece3` calls `PGILJGPLGHJ(UInt32, UInt32)`; `0x196ed5f` dispatches notification; `0x196ed8b` calls `OHCGGNLKLGF(Int32, Vector2)` | Separate from the audited projectile calculator; notification value is an observation, not a server acknowledgement |
-| Radius handler | `HJMBOMEHGDJ.LFDOGJNGAIG` at `0x183f290` uses a position/radius comparison, calls `KJMONHENJEN.LPEDCDIDDLM` at `0x183f6ed`, and dispatches notification at `0x183f7b8` | Candidate grenade/AOE path; projectile intervention does not cover it |
+| Radius handler | `HJMBOMEHGDJ.LFDOGJNGAIG` at `0x183f290` uses a position/radius comparison, calls `KJMONHENJEN.LPEDCDIDDLM` at `0x183f6ed`, and dispatches notification at `0x183f7b8` | Radius/AOE path now guarded before notification effects and its separate report |
 | Shared incoming damage notifications | Returns `0x18407cf` and `0x18413af` | Incoming handler branches; source and controlled-player identity require live evidence |
 | HP baseline replacement | Call at `0x184c110` from `NAMGODOEDBO` to `NIDPCHCNDLJ` | Incoming stat application; does not identify which pending hits the server processed |
 | Breath meter | `CharacterGUIInfoSection.UpdateBreathBar` reads player `+0x52c` at `0x1df40c5` | Raw meter value, not a confirmed damage prediction |
@@ -91,3 +92,16 @@ observed Nexus map are separate facts. Even a successful escape does not establi
 The next protection PR should select only source paths whose player identity, ABI, ordering and
 pre-commit boundary are established. Sources observed only through incoming lethal HP updates may
 require earlier preventive escape instead of waiting for predicted zero.
+
+## Expanded protection
+
+Final ground and radius/AOE notification values enter the same `FatalPolicy` as projectile calculations.
+Projectile notifications are never charged again. Only a confirmed local Nexus request publishes the
+retained player/connection/socket latch. Ground report helpers tail-call `SendMessage`, preserving
+return `0x196ed90`; area reports call it at `0x183f87b` and return `0x183f880`. The send hook checks these
+exact callers and socket identity, and preserves every other message. Phase 30 records a blocked
+non-projectile report on the main thread. Failed requests and disabled protection preserve damage.
+
+The breath setter call at `0x184cb6f` and frostbite setter call at `0x184c7da` belong to the incoming
+stat handler. This proves how meter values arrive, not whether their HP loss is locally predictable.
+We have not established a universal pre-damage boundary for status/environmental effects.

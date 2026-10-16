@@ -6,7 +6,7 @@ A local macOS companion for Realm of the Mad God Exalt. It launches the game thr
 
 | Feature | Behavior |
 | --- | --- |
-| **Nexus on death** | Predicts lethal projectile damage and requests Nexus before reporting the fatal hit. Once the game confirms the local Nexus state, the fatal and subsequent projectile reports are withheld during escape. Optional and off by default. |
+| **Nexus on death** | Predicts lethal audited projectile, ground and radius/AOE damage and requests Nexus before reporting the fatal hit. Once the game confirms the local Nexus state, the fatal and subsequent projectile reports are withheld during escape. Optional and off by default. |
 | **Auto-potion** | Starts drinking at the potion trigger and continues until HP exceeds the ceiling. Uses quickslots in order and waits for healing before drinking again. |
 | **Party-call alerts and Join** | Alerts when another party member calls “j” or “join” while you are in a waiting area. Offers a one-click Join button in the main window, popup, and compact strip. |
 | **Live display** | Shows HP, map, quickslots, recent actions, session totals, and timing measurements. Switch between the full window and an always-on-top compact strip. |
@@ -70,7 +70,7 @@ The defaults are a 50% potion trigger and an 80% potion ceiling, with Nexus on d
 
 - **Potion trigger:** start drinking at or below this percentage. Off disables automatic potions.
 - **Ceiling:** continue drinking until HP is above this percentage. Off stops drinking above the potion trigger. If the potion trigger is Off, the ceiling must also be Off.
-- **Nexus on death:** enable predicted lethal-projectile intervention, the only automatic Nexus mode. Requires Armed and prepared hooks.
+- **Nexus on death:** enable predicted lethal-damage intervention, the only automatic Nexus mode. Requires Armed and prepared hooks.
 
 To use **only Nexus on death**:
 
@@ -91,9 +91,9 @@ Arrows point the way data or a call moves. The game never calls the guard; the s
 
 The Apple silicon UI loads an Intel C library into Exalt for that launch. The library reads validated game fields through Unity's IL2CPP runtime and calls the game's existing potion, Nexus, and Join functions.
 
-Auto-potions use observed HP. The polling timer requests checks at 1 ms intervals on the game's main thread; actual scheduling varies with game load and is shown in the timing display. Nexus on death runs synchronously in the audited projectile calculation path, before the corresponding hit report.
+Auto-potions use observed HP. The polling timer requests checks at 1 ms intervals on the game's main thread; actual scheduling varies with game load and is shown in the timing display. Nexus on death runs synchronously at audited projectile calculations and ground/area notifications, before their corresponding reports.
 
-Incoming player HP assignments replace the prediction baseline and clear retained damage. Calculated projectile damage accumulates between those assignments. A predicted HP of zero or below requests Nexus. Suppression begins only after the local Nexusing flag is confirmed. Failed requests preserve the original damage path and are logged.
+Incoming player HP assignments replace the prediction baseline and clear retained damage. Audited damage accumulates between those assignments. A predicted HP of zero or below requests Nexus. Suppression begins only after the local Nexusing flag is confirmed. Failed requests preserve the original damage path and are logged.
 
 The app and library exchange state, settings, and Join requests through a small shared-memory file. Installed game files are unchanged. See [the architecture walkthrough](docs/how-it-works.md) and [the intervention notes](docs/nexus-on-death.md) for more detail.
 
@@ -158,7 +158,7 @@ Every box is a real file on your Mac, except the server. Green is installed by t
 
 Live tests have demonstrated predicted-death escapes both in the standalone diagnostic and in the integrated app with potions disabled. Tested cases include low-HP crossings and rapid multi-shot bursts. The integrated app has automated coverage for Armed, Dry Run, toggle off, HP resets, denied requests, exceptions, changing settings during escape, and legacy settings without any percentage Nexus fallback.
 
-This is experimental protection. It currently covers the audited projectile path, and does not guarantee survival from every damage source or network condition. A delayed HP update can clear damage still in flight; previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
+This is experimental protection. It covers audited projectile, ground and radius/AOE paths, and does not guarantee survival from every damage source or network condition. A delayed HP update can clear damage still in flight; previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
 
 The integration uses the reviewed profile selected by `compatibility/active-profile.txt`. That profile generates `guard/build_profile.h` and `guard/game-build.sha256`; see [build compatibility](compatibility/README.md) for the read-only update-analysis command. Method signatures, field types, offsets, and native entry bytes are validated before the death hooks are installed in Nexus. Readiness failures are shown in the app.
 

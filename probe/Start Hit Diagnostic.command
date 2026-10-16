@@ -22,18 +22,26 @@ if [[ "${actual%% *}" != "$expected" ]]; then
     exit 1
 fi
 fatal_mode=0
+verify_mode=0
 if [[ "${1:-}" == '--intervene' ]]; then
     fatal_mode=1
+elif [[ "${1:-}" == '--verify' ]]; then
+    fatal_mode=1
+    verify_mode=1
 elif [[ "${1:-}" == '--observe' ]]; then
     fatal_mode=0
 elif [[ -n "${1:-}" ]]; then
-    print 'Usage: Start Hit Diagnostic.command [--observe | --intervene]'
+    print 'Usage: Start Hit Diagnostic.command [--observe | --verify | --intervene]'
     exit 1
 fi
 print 'Exalt damage-path diagnostic'
-if [[ "$fatal_mode" == 1 ]]; then
-    print 'LIVE INTERVENTION: predicted lethal projectile damage requests Nexus before its hit report.'
-    print 'After the local Nexusing flag is set, the fatal and subsequent projectile reports are withheld.'
+if [[ "$verify_mode" == 1 ]]; then
+    print 'VERIFICATION: prediction uses 1 HP; actual game HP is unchanged.'
+    print 'One small positive hit on an audited path should request Nexus.'
+    print 'Start at full health. Do not approach lethal HP.'
+elif [[ "$fatal_mode" == 1 ]]; then
+    print 'LIVE INTERVENTION: predicted lethal projectile, ground and radius/AOE damage requests Nexus before reporting.'
+    print 'After the local Nexusing flag is set, the audited fatal and subsequent damage reports are withheld.'
     print 'No percentage threshold is used. Server HP assignments reset the pending damage budget.'
     print 'Other damage sources are not covered by this prototype.'
 else
@@ -54,7 +62,7 @@ fi
 read -r '?Press Return to open the launcher, or Control-C to cancel.'
 mkdir -p "$here/data/sessions"
 session_dir="$(mktemp -d "$here/data/sessions/$test_id-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
-EXALT_FATAL_INTERVENTION="$fatal_mode" EXALT_GUARD='armed=0,potion=0,nexus=0' EXALT_GUARD_DIR="$session_dir" \
+EXALT_VERIFY_ONE_HP="$verify_mode" EXALT_FATAL_INTERVENTION="$fatal_mode" EXALT_GUARD='armed=0,potion=0,nexus=0' EXALT_GUARD_DIR="$session_dir" \
 DYLD_INSERT_LIBRARIES="$here/ExaltHitProbe.dylib" "$launcher" >/dev/null 2>&1 &!
 print "Session: $session_dir"
 print 'Return to the chat after a damage test. The game can be quit normally.'
