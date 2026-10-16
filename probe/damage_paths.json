@@ -104,6 +104,97 @@
       "slot": null,
       "path": "damage_report_send",
       "entry_prefix": "554889e54156534989f64889fb488b4728"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "BGBDEGJBBEB",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x196c150",
+      "slot": null,
+      "path": "breath_assignment",
+      "entry_prefix": "554889e54156534189f64889fb803de5"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "IJHLJACNFIA",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1979920",
+      "slot": null,
+      "path": "frostbite_assignment",
+      "entry_prefix": "554889e541574156535089f34989ff80"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "NCFKIODMDND",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1af1380",
+      "slot": null,
+      "path": "condition_word0_assignment",
+      "entry_prefix": "554889e5488b87500200004885c0740b"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "MENCFBJNNCG",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1aeda90",
+      "slot": null,
+      "path": "condition_word1_assignment",
+      "entry_prefix": "554889e5488b87500200004885c0742f"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "EFELAKFKIHJ",
+      "parameters": [],
+      "returns": "bool",
+      "offset": "0x1aed0f0",
+      "slot": null,
+      "path": "condition_mask_reader",
+      "entry_prefix": "554889e54156534889fb803dfced5203"
+    },
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "GIJCFPMAHEP",
+      "parameters": [
+        "IPKAMAAPAGA",
+        "ViewHandler"
+      ],
+      "returns": "void",
+      "offset": "0x2233620",
+      "slot": null,
+      "path": "sprite_key_assignment",
+      "entry_prefix": "554889e54156534885f674544889f348"
+    },
+    {
+      "namespace": "",
+      "owner": "FKALGHJIADI",
+      "name": "KFCLEPFKFAL",
+      "parameters": [
+        "int",
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x1964c30",
+      "slot": null,
+      "path": "player_condition_assignment",
+      "entry_prefix": "554889e5415653488b87300700004885"
     }
   ],
   "fields": [
@@ -114,7 +205,7 @@
       "type": "ulong",
       "offset": "0xf8",
       "is_static": false,
-      "role": "conditions_raw"
+      "role": "legacy_sprite_key_not_conditions"
     },
     {
       "namespace": "",
@@ -133,6 +224,15 @@
       "offset": "0x530",
       "is_static": false,
       "role": "frostbite"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "COHCKAPOLCA",
+      "type": "int[]",
+      "offset": "0x250",
+      "is_static": false,
+      "role": "condition_masks"
     }
   ],
   "notification_callers": [
@@ -227,7 +327,138 @@
       "address": "0x183f87b",
       "bytes": "e890ea1500",
       "finding": "area notification precedes report SendMessage; return address 0x183f880"
+    },
+    {
+      "address": "0x184b1be",
+      "bytes": "458b7714410fb65f108d43800fb6c0488d0da8240000486304814801c8ffe0",
+      "finding": "server stat value/id load and rotated jump dispatch"
+    },
+    {
+      "address": "0x184c7da",
+      "bytes": "e841d11200",
+      "finding": "frostbite assignment call"
+    },
+    {
+      "address": "0x184cb6f",
+      "bytes": "e8dcf51100",
+      "finding": "breath assignment call"
+    },
+    {
+      "address": "0x1af1384",
+      "bytes": "488b8750020000",
+      "finding": "condition word setter loads Int32 array +0x250"
+    },
+    {
+      "address": "0x1af1396",
+      "bytes": "897020",
+      "finding": "condition word zero store at array +0x20"
+    },
+    {
+      "address": "0x1aedaa9",
+      "bytes": "897024",
+      "finding": "condition word one store at array +0x24"
+    },
+    {
+      "address": "0x1aed116",
+      "bytes": "488b8350020000",
+      "finding": "condition predicate reads Int32 array +0x250"
+    },
+    {
+      "address": "0x1aed128",
+      "bytes": "8b5820",
+      "finding": "condition predicate reads first Int32 word"
+    },
+    {
+      "address": "0x223362f",
+      "bytes": "488b4630483b87f800000074444989d6488987f8000000",
+      "finding": "sprite-key transfer reads IPKAMAAPAGA +0x30 and stores entity +0xf8"
+    },
+    {
+      "address": "0x196c179",
+      "bytes": "4489b32c050000",
+      "finding": "breath setter stores +0x52c"
+    },
+    {
+      "address": "0x197995f",
+      "bytes": "41899f30050000",
+      "finding": "frostbite setter stores +0x530"
+    },
+    {
+      "address": "0x184d880",
+      "bytes": "88eaffff",
+      "finding": "stat 1 dispatches HP"
+    },
+    {
+      "address": "0x184d8f0",
+      "bytes": "9beeffff",
+      "finding": "stat 29 dispatches condition_word0"
+    },
+    {
+      "address": "0x184d990",
+      "bytes": "dcf3ffff",
+      "finding": "stat 69 dispatches condition_word1"
+    },
+    {
+      "address": "0x184d97c",
+      "bytes": "e1f4ffff",
+      "finding": "stat 64 dispatches breath"
+    },
+    {
+      "address": "0x184d6d4",
+      "bytes": "4cf1ffff",
+      "finding": "stat 150 dispatches frostbite"
+    },
+    {
+      "address": "0x1964c9d",
+      "bytes": "e9dec61800",
+      "finding": "controlled-player condition word0 tail-call to base setter"
+    },
+    {
+      "address": "0x1964cd1",
+      "bytes": "e9ba8d1800",
+      "finding": "controlled-player condition word1 tail-call to base setter"
+    },
+    {
+      "address": "0x18407a5",
+      "bytes": "450fb64524498b4d18418b5520",
+      "finding": "incoming message supplies notification lethal flag and damage amount"
+    },
+    {
+      "address": "0x1841385",
+      "bytes": "450fb64524498b4d18418b5520",
+      "finding": "alternate incoming message supplies notification lethal flag and damage amount"
     }
   ],
-  "limitation": "Terrain and radius-area notification/report boundaries have static intervention coverage. No universal client-side boundary is proven for server-driven HP changes, bleeding, suffocation or frostbite. Radius-area identity is not live-confirmed as a particular grenade."
+  "limitation": "Build-specific static and live projectile/terrain/area evidence. HP, breath, frostbite and two condition words are applied by incoming stat dispatch; no local cancellable DOT calculation is established. Legacy entity +0xf8 context is a sprite key, not status flags. Condition context now reads the first two Int32 mask words at +0x250 with explicit provenance.",
+  "stat_dispatch": {
+    "table": "0x184d67c",
+    "rotation": 128,
+    "cases": [
+      {
+        "stat": 1,
+        "handler": "0x184c104",
+        "role": "HP"
+      },
+      {
+        "stat": 29,
+        "handler": "0x184c517",
+        "role": "condition_word0"
+      },
+      {
+        "stat": 69,
+        "handler": "0x184ca58",
+        "role": "condition_word1"
+      },
+      {
+        "stat": 64,
+        "handler": "0x184cb5d",
+        "role": "breath"
+      },
+      {
+        "stat": 150,
+        "handler": "0x184c7c8",
+        "role": "frostbite"
+      }
+    ]
+  }
 }

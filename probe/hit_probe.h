@@ -200,7 +200,7 @@ static int fatal_local_nexusing(void *connection) {
 #ifdef EXALT_HIT_PROBE
 static void *damage_conditions_field,*damage_breath_field,*damage_frostbite_field;
 static uint64_t damage_context_next_ns,damage_context_generation,damage_context_bits;
-static int damage_context_breath=-1,damage_context_frostbite=-1,damage_context_nexusing=-1;
+static int damage_context_breath=-1,damage_context_frostbite=-1,damage_context_nexusing=-1,damage_context_mask=-1;
 /* Phase 29: projectile is an opaque condition bitset, value/owner are raw breath/frostbite
  * meters, flag0 is the availability mask (1/2/4/8), flag1 is local Nexusing. */
 static void damage_context_emit(void *player,uint64_t correlation) {
@@ -209,7 +209,14 @@ static void damage_context_emit(void *player,uint64_t correlation) {
     if(!correlation && now<damage_context_next_ns)return;
     damage_context_next_ns=now+20000000ULL;
     uint64_t bits=0;int breath=-1,frostbite=-1,nexusing=-1,mask=0;
-    if(damage_conditions_field){il2cpp_field_get_value(player,damage_conditions_field,&bits);mask|=1;}
+    if(damage_conditions_field){
+        void *array=read_reference(player,damage_conditions_field);
+        /* Audited Intel IL2CPP Int32[]: length API plus elements at +0x20. */
+        if(array && il2cpp_array_length(array)>=2){
+            uint32_t words[2];memcpy(words,(char*)array+0x20,sizeof words);
+            bits=(uint64_t)words[0] | ((uint64_t)words[1]<<32);mask|=1;
+        }
+    }
     if(damage_breath_field){il2cpp_field_get_value(player,damage_breath_field,&breath);mask|=2;}
     if(damage_frostbite_field){il2cpp_field_get_value(player,damage_frostbite_field,&frostbite);mask|=4;}
     void *connection=read_reference(player,connection_field);
@@ -220,10 +227,11 @@ static void damage_context_emit(void *player,uint64_t correlation) {
         }
     }
     ProbeEvent e=probe_snapshot(29,player,NULL);
-    if(!correlation && damage_context_generation==e.generation && damage_context_bits==bits &&
+    if(!correlation && damage_context_generation==e.generation && damage_context_mask==mask && damage_context_bits==bits &&
        damage_context_breath==breath && damage_context_frostbite==frostbite && damage_context_nexusing==nexusing)return;
-    damage_context_generation=e.generation;damage_context_bits=bits;damage_context_breath=breath;
+    damage_context_generation=e.generation;damage_context_mask=mask;damage_context_bits=bits;damage_context_breath=breath;
     damage_context_frostbite=frostbite;damage_context_nexusing=nexusing;
+    e.flag2=1; /* Corrected Int32[] condition provenance; legacy phase 29 used a sprite key. */
     e.projectile=bits;e.value=breath;e.owner=frostbite;e.flag0=mask;e.flag1=nexusing>0;
     e.correlation=correlation;e.work_ns=monotonic_ns()-now;probe_emit(e);
 }
@@ -314,6 +322,10 @@ static void send_observed(void *self,void *message,const void *info) {
 #ifdef HIT_PROBE_BOUNDARY_TEST
     if(info==(void*)0x5678)caller=HIT_PROBE_BOUNDARY_TEST;
 #endif
+#ifdef HIT_PROBE_MIXED_TEST
+    if(info==(void*)0x6001)caller=TERRAIN_SEND_CALLER;
+    if(info==(void*)0x6002)caller=AREA_SEND_CALLER;
+#endif
     /* Exact caller and retained socket only. Nexus and all other messages pass.
      * No IL2CPP access off-main; the atomic latch is published after acceptance. */
     if((caller==TERRAIN_SEND_CALLER || caller==AREA_SEND_CALLER) && self &&
@@ -338,7 +350,10 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
 #ifdef HIT_PROBE_BOUNDARY_TEST
     caller=HIT_PROBE_BOUNDARY_TEST==TERRAIN_SEND_CALLER?TERRAIN_NOTIFY_CALLER:AREA_NOTIFY_CALLER;
 #endif
-#if defined(HIT_PROBE_TEST) && !defined(HIT_PROBE_BOUNDARY_TEST)
+#ifdef HIT_PROBE_MIXED_TEST
+    caller=a==2?TERRAIN_NOTIFY_CALLER:a==3?AREA_NOTIFY_CALLER:NOTIFY_CALLER;
+#endif
+#if defined(HIT_PROBE_TEST) && !defined(HIT_PROBE_BOUNDARY_TEST) && !defined(HIT_PROBE_MIXED_TEST)
     int local_projectile=1;
 #else
     int local_projectile=caller==NOTIFY_CALLER;
@@ -383,8 +398,13 @@ static void hp_observed(void *self,int value,const void *info) {
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
             fatal_server_hp(&fatal_policy,after.hp);fatal_emit(28,self,after.id,after.hp,after.update_source,0);
+            /* A positive authoritative value can reveal a lethal conservative
+             * bound while older reports remain uncertain. Escape now; never
+             * suppress or change the authoritative assignment itself. */
+            if(after.hp>0 && !fatal_policy.blocking && fatal_policy.pending>0 && fatal_policy.projected<=0)
+                (void)fatal_intervene(self,0,after.id);
 #ifdef EXALT_CLIENT_FATAL
-            live_data.death_pending=0;live_data.death_predicted=after.hp;
+            live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
 #endif
         }
         if(fatal_enabled && fatal_policy.blocking && after.hp<=0 && !fatal_death_logged){fatal_death_logged=1;fatal_emit(26,self,after.id,after.hp,0,0);}}
@@ -503,8 +523,8 @@ static void probe_install(void) {
         if(fatal_enabled && (!fatal_socket_field || !fatal_nexusing_field)){note("hit_probe_refused\tfatal_nexus_fields\n");return;}
     }
 #ifdef EXALT_HIT_PROBE
-    void *entity=ancestor_named(player_class,"KJMONHENJEN");
-    damage_conditions_field=entity?typed_field(entity,"JJDEDAFLGHC","System.UInt64"):NULL;
+    void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
+    damage_conditions_field=entity?typed_field(entity,"COHCKAPOLCA","System.Int32[]"):NULL;
     damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
     damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
 #endif
@@ -560,7 +580,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=2\treconciliation=retain_uncertain\thealing_credit=0\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);

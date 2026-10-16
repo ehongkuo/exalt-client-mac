@@ -93,7 +93,7 @@ The Apple silicon UI loads an Intel C library into Exalt for that launch. The li
 
 Auto-potions use observed HP. The polling timer requests checks at 1 ms intervals on the game's main thread; actual scheduling varies with game load and is shown in the timing display. Nexus on death runs synchronously at audited projectile calculations and ground/area notifications, before their corresponding reports.
 
-Incoming player HP assignments replace the prediction baseline and clear retained damage. Audited damage accumulates between those assignments. A predicted HP of zero or below requests Nexus. Suppression begins only after the local Nexusing flag is confirmed. Failed requests preserve the original damage path and are logged.
+Incoming HP assignments do not acknowledge individual reports. Uncertain audited damage is retained until Nexus arrival or player/connection/map replacement, and HP updates can only lower the conservative prediction. Healing cannot raise it, so prolonged combat can cause an early Nexus even at full observed HP. A predicted HP of zero or below requests Nexus. Suppression begins only after the local Nexusing flag is confirmed. Failed requests preserve the original damage path and are logged.
 
 The app and library exchange state, settings, and Join requests through a small shared-memory file. Installed game files are unchanged. See [the architecture walkthrough](docs/how-it-works.md) and [the intervention notes](docs/nexus-on-death.md) for more detail.
 
@@ -158,7 +158,7 @@ Every box is a real file on your Mac, except the server. Green is installed by t
 
 Live tests have demonstrated predicted-death escapes both in the standalone diagnostic and in the integrated app with potions disabled. Tested cases include low-HP crossings and rapid multi-shot bursts. The integrated app has automated coverage for Armed, Dry Run, toggle off, HP resets, denied requests, exceptions, changing settings during escape, and legacy settings without any percentage Nexus fallback.
 
-This is experimental protection. It covers audited projectile, ground and radius/AOE paths, and does not guarantee survival from every damage source or network condition. A delayed HP update can clear damage still in flight; previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
+This is experimental protection. It covers audited projectile, ground and radius/AOE paths, and does not guarantee survival from every damage source or network condition. Retained damage can include damage already applied by the server, causing early escapes; previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
 
 The integration uses the reviewed profile selected by `compatibility/active-profile.txt`. That profile generates `guard/build_profile.h` and `guard/game-build.sha256`; see [build compatibility](compatibility/README.md) for the read-only update-analysis command. Method signatures, field types, offsets, and native entry bytes are validated before the death hooks are installed in Nexus. Readiness failures are shown in the app.
 

@@ -1,4 +1,30 @@
-# Expanded damage protection validation
+# Status and reconciliation hardening
+
+The current policy retains uncertain damage across HP updates and cannot increase its HP bound from
+healing or a higher stale assignment. It can therefore escape early during sustained combat. A
+positive HP update that makes retained damage lethal can request Nexus without suppressing the
+assignment. Failed requests continue retaining damage and become retryable after another positive HP
+update. See [the native audit and tradeoffs](../docs/damage-status-audit.md).
+
+The diagnostic condition source is corrected to the first two Int32 words in the living entity's
+`COHCKAPOLCA` array. Null or short arrays are unavailable; corrected records carry `flag2=1`.
+Legacy phase-29 values came from a sprite key and are no longer labeled as condition flags by readers.
+The native map now verifies 15 methods, four fields, stat routing for HP/breath/frostbite and two
+condition words, plus the instruction evidence. Individual bleeding flags and cancellable local
+status/environmental damage calculations remain unresolved.
+
+Validation passed for this pass: 12 production intervention tests, 23 diagnostic tests, 16 session-report
+tests, five native-map tests, eight shadow-ledger tests and 16 compatibility tests. The fatal policy
+also passes undefined-behavior sanitization for boundary arithmetic. Native trampoline checks,
+production guard compilation, Swift app compilation, script checks and signed package verification pass.
+The mixed-source native fixture preserves damage through unchanged/lower/healing updates, and a
+separate fixture requests Nexus on a positive HP update without canceling the assignment.
+
+The prior live results below validate implementation `73a01ef` and the shared hook wiring. They do
+not measure the new conservative policy's false-positive rate. The signed verification package can
+be rebuilt without replacing the installed client. Raw X01-X03 artifacts remain unchanged.
+
+## Earlier expanded damage protection validation
 
 The expanded implementation covers audited projectile, ground and radius/AOE boundaries. It shares
 one fatal-damage policy and normal Nexus request, retains player/connection/socket handles through

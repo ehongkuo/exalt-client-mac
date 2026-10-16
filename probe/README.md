@@ -1,7 +1,7 @@
 # Damage-path diagnostic
 
 The diagnostic records player HP, incoming updates, projectile calculations, notification callers,
-raw entity flags, breath and frostbite meters, Nexus requests, map transitions and death-screen events.
+the first two condition-mask words, breath and frostbite meters, Nexus requests, map transitions and death-screen events.
 It includes audited projectile, ground and radius/AOE intervention. Bleeding, oxygen and frostbite
 protection remain unproven. Use `--verify` to check an escape on a small hit using a synthetic 1-HP
 prediction; actual game HP is unchanged. Start with the [in-game checklist](../docs/damage-testing.md) and
@@ -45,15 +45,16 @@ requests the normal Nexus function before the fatal hit report, and suppresses t
 path only after confirming the local Nexusing flag. That flag does not establish server acceptance.
 
 ```text
-projected HP = observed player HP - retained audited damage
+projected HP = min(previous bound - new damage, observed HP - all retained damage)
 request Nexus when projected HP <= 0
 ```
 
-Incoming HP assignments replace the baseline and clear retained damage, even if HP is unchanged or
-increased. This does not acknowledge individual hits. Delayed updates, queued reports and server ordering
-remain unresolved. A failed request preserves original damage handling; the existing policy attempts
-one automatic request per player/map/connection window. Confirmed Nexus arrival or scope replacement
-resets the window. Settings changes do not cancel an active escape.
+HP assignments retain uncertain damage and can only lower the bound. Healing is not credited until a
+validated scope reset, so this can Nexus early during sustained combat. If a still-positive HP update
+makes the bound nonpositive, it requests Nexus without suppressing that assignment. A failed request
+preserves damage; another positive HP update permits a retry. Confirmed Nexus arrival or validated
+player/map/connection replacement resets the budget. Settings changes do not cancel an active escape.
+See [the audit and tradeoff](../docs/damage-status-audit.md).
 
 ## Trace and analysis
 
@@ -79,6 +80,6 @@ setter/notification/sampling boundary, without inferring the cause from a test l
 Native caller labels require the recorded build fingerprint. A death event overrides a successful
 escape, including deaths found in the binary tail. Every report says lethal prevention is unproven.
 
-The binary fingerprint, eight mapped method entries, five notification dispatch sites, three optional
-field declarations and selected instruction evidence live in `damage_paths.json`. `map_damage.py`
+The binary fingerprint, 15 mapped method entries, five notification dispatch sites, four
+field declarations (including the retained legacy sprite-key identity) and selected instruction evidence live in `damage_paths.json`. `map_damage.py`
 verifies those facts without changing runtime approval. No live tests for the new sources have yet run.

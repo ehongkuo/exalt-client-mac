@@ -30,7 +30,8 @@ def summarize(events, ready=False, complete=False, lost=0, off_main=0):
             mask = e['flag0']
             contexts[generation] = dict(ns=e['ns'], breath=e['value'] if mask & 2 else None,
                 frostbite=e['owner'] if mask & 4 else None,
-                conditions_raw=hex(e['projectile']) if mask & 1 else None,
+                conditions_raw=hex(e['projectile']) if mask & 1 and e['flag2']==1 else None,
+                legacy_sprite_key_raw=hex(e['projectile']) if mask & 1 and e['flag2']!=1 else None,
                 local_nexusing=bool(e['flag1']) if mask & 8 else None)
             context_trace.append(dict(contexts[generation], event_id=e['id'], generation=generation))
         if e['phase'] == 5: assignments[e['id']] = e

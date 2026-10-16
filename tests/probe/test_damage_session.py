@@ -82,12 +82,18 @@ class DamageSessionTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'observed')
 
     def test_meter_context_is_raw_evidence_not_a_damage_cause(self):
-        rows = [event(1), event(2, 29, value=0, owner=100, projectile=1 << 45, flag0=7), event(3, hp=800)]
+        rows = [event(1), event(2, 29, value=0, owner=100, projectile=1 << 45, flag0=7, flag2=1), event(3, hp=800)]
         drop = session.summarize(rows, ready=True)['hp_decreases'][0]
         self.assertEqual(drop['path'], 'sampled_unattributed')
         self.assertEqual(drop['context']['breath'], 0)
         self.assertEqual(drop['context']['conditions_raw'], hex(1 << 45))
         self.assertIsNone(drop['cause'])
+
+    def test_legacy_sprite_key_is_never_presented_as_condition_flags(self):
+        rows = [event(1, 29, projectile=0x8500200080849772, flag0=1), event(2), event(3, hp=800)]
+        context = session.summarize(rows)['hp_decreases'][0]['context']
+        self.assertIsNone(context['conditions_raw'])
+        self.assertEqual(context['legacy_sprite_key_raw'], '0x8500200080849772')
 
     def test_context_does_not_cross_generation_or_stale_window(self):
         rows = [event(1, 29, value=0, flag0=2), event(2, generation=2), event(3, hp=800, generation=2)]

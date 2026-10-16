@@ -1,10 +1,12 @@
 #define il2cpp_runtime_invoke fixture_runtime_invoke
 #define il2cpp_object_get_class fixture_object_get_class
 #define il2cpp_field_get_value fixture_field_get_value
+#define il2cpp_array_length fixture_array_length
 #define main guard_fixture_main
 #include "../fixture.c"
 #undef main
 #undef il2cpp_field_get_value
+#undef il2cpp_array_length
 #undef il2cpp_object_get_class
 #undef il2cpp_runtime_invoke
 #include <pthread.h>
@@ -65,8 +67,18 @@ int damage_fixture_body(void *self,float value,const void *info) {
 void death_fixture_body(void *self,void *message,const void *info) {
  assert(self==(void*)20 && message==(void*)0x1234 && info==(void*)0x5678);++death_forwarded;
 }
+#ifdef SHORT_CONDITIONS
+#define CONDITION_WORDS 1
+#else
+#define CONDITION_WORDS 2
+#endif
+static struct {uintptr_t header[4];uint32_t words[2];} condition_array={{0,0,0,CONDITION_WORDS},{0,1u<<13}};
+uint32_t il2cpp_array_length(void *array){
+ if(array==&condition_array)return (uint32_t)condition_array.header[3];
+ return fixture_array_length(array);
+}
 void il2cpp_field_get_value(void *o,void *f,void *v) {
- if(f==(void*)1001){assert(o==(void*)40 || o==(void*)41);*(uint64_t*)v=1ULL<<45;return;}
+ if(f==(void*)1001){assert(o==(void*)40 || o==(void*)41);*(void**)v=&condition_array;return;}
  if(f==(void*)1002){assert(o==(void*)40 || o==(void*)41);*(int*)v=0;return;}
  if(f==(void*)1003){assert(o==(void*)40 || o==(void*)41);*(int*)v=100;return;}
  if(f==(void*)992){assert(o==(void*)70);*(void**)v=(void*)500;return;}
@@ -91,7 +103,7 @@ uint64_t fixture_body(void *self,int tick,uint32_t bullet,int value,int owner,ui
  ++enemy_forwarded;return 0xabcdef0123456789ULL;
 }
 void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,uint8_t flag,void *projectile,uint8_t a,uint8_t b,const void *info) {
- assert(self==(void*)40 && killed==0 && (value==400 || value==50) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && a==1 && b==0 && info==(void*)0x4567);
+ assert(self==(void*)40 && killed==0 && (value==400 || value==50 || value==60 || value==70) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && (a>=1 && a<=3) && b==0 && info==(void*)0x4567);
  ++notify_forwarded;
 #if defined(LETHAL_BURST) || defined(FATAL_BURST)
  #ifndef FATAL_RECONCILE
@@ -108,7 +120,7 @@ extern void send_fixture(void *,void *,const void *);
 static unsigned boundary_sent,other_sent;
 void send_fixture_body(void *self,void *message,const void *info) {
  assert(message==(void*)3);
- if(self==(void*)500 && info==(void*)0x5678)++boundary_sent;
+ if(self==(void*)500 && (info==(void*)0x5678 || info==(void*)0x6001 || info==(void*)0x6002))++boundary_sent;
  else ++other_sent;
 }
 static void burst(void *unused) {
@@ -116,6 +128,32 @@ static void burst(void *unused) {
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
+#ifdef FATAL_HP_CROSS
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ next_stats_hp=40;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==40); /* Never cancel the server assignment. */
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ puts("positive_hp_update_triggered_escape=1");return;
+#endif
+#ifdef FATAL_MIXED_BURST
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ notify_fixture((void*)40,0,60,(void*)0x2345,1,(void*)0x3456,2,0,(void*)0x4567);
+ send_fixture((void*)500,(void*)3,(void*)0x6001);
+ next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ notify_fixture((void*)40,0,70,(void*)0x2345,1,(void*)0x3456,3,0,(void*)0x4567);
+ send_fixture((void*)500,(void*)3,(void*)0x6002);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ next_stats_hp=250;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(notify_forwarded==2 && report_forwarded==1 && boundary_sent==1 && assigned_hp==250);
+ puts("mixed_paths_preserved_uncertain_damage=1");return;
+#endif
 #ifdef FATAL_BOUNDARY_BURST
  for(int i=0;i<6;++i){
   notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
@@ -146,7 +184,11 @@ static void burst(void *unused) {
   #ifdef VERIFY_EARLY
   assert(actual==0);
 #else
+  #ifdef FATAL_RECONCILE
+  assert(actual==(i<2?50:0));
+#else
   assert(actual==(i<3?50:0));
+#endif
 #endif
 #endif
 #ifdef FATAL_RECONCILE
@@ -200,14 +242,14 @@ static void late_blocked_hit(void *unused) {
 static void verify_forwarding(void *unused) {
  (void)unused;
 #ifdef FATAL_BURST
-#ifdef FATAL_BOUNDARY_BURST
+#if defined(FATAL_BOUNDARY_BURST) || defined(FATAL_MIXED_BURST) || defined(FATAL_HP_CROSS)
  return;
 #endif
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
  assert(report_forwarded==7 && notify_forwarded==7 && assigned_hp==0);
 #else
  #ifdef FATAL_RECONCILE
- assert(report_forwarded==4 && notify_forwarded==4 && assigned_hp==200);
+ assert(report_forwarded==3 && notify_forwarded==3 && assigned_hp==200);
 #else
  #ifdef VERIFY_EARLY
  assert(report_forwarded==0 && notify_forwarded==0 && assigned_hp==200);

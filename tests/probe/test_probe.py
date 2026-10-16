@@ -11,11 +11,12 @@ guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
 class ProbeTests(unittest.TestCase):
- def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False):
+ def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if short_conditions:args.append('-DSHORT_CONDITIONS')
    if fatal:args.append('-DFATAL_BURST')
    if verify_hp:args.append('-DVERIFY_EARLY')
    if reconcile:args.append('-DFATAL_RECONCILE')
@@ -53,6 +54,12 @@ class ProbeTests(unittest.TestCase):
   self.assertEqual(request['value'],50)
   self.assertEqual(request['update_context'],(1<<64)-49)
   self.assertIn('fatal_report_forwarded=0 fatal_notify_forwarded=0',self.last_output)
+ def test_short_condition_array_is_unavailable_without_out_of_bounds_read(self):
+  log=self.fixture(short_conditions=True)
+  contexts=[e for e in analysis.read_events(log) if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['flag0']==14 and e['flag2']==1 for e in contexts))
+  self.assertTrue(all(e['conditions_raw'] is None for e in self.summary['damage_contexts']))
  def test_context_round_trips_and_unmapped_calculations_never_intervene(self):
   log=self.fixture(unaudited=True);events=analysis.read_events(log)
   contexts=[e for e in events if e['phase']==29]
@@ -161,18 +168,18 @@ class ProbeTests(unittest.TestCase):
   self.assertEqual(self.summary['manual_nexus_entries'],[])
   self.assertEqual(len(self.summary['fatal_intervention']['decisions']),1)
   self.assertEqual(len(self.summary['fatal_intervention']['suppressed_reports']),3)
- def test_server_hp_replaces_budget_without_clearing_escape_latch(self):
+ def test_server_hp_preserves_budget_and_escape_latch(self):
   log=self.fixture(fatal=True,reconcile=True)
-  self.assertIn('fatal_report_forwarded=4 fatal_notify_forwarded=4 fatal_damage_calls=7',self.last_output)
+  self.assertIn('fatal_report_forwarded=3 fatal_notify_forwarded=3 fatal_damage_calls=7',self.last_output)
   events=analysis.read_events(log)
   resets=[e for e in events if e['phase']==28]
   self.assertEqual(len(resets),2)
-  self.assertEqual([e['projectile'] for e in resets],[0,0])
-  self.assertEqual([e['update_context'] for e in resets],[200,200])
+  self.assertEqual([e['projectile'] for e in resets],[50,200])
+  self.assertEqual([e['update_context'] for e in resets],[150,0])
   self.assertEqual([e['flag1'] for e in resets],[0,1])
   decision=next(e for e in events if e['phase']==20)
   self.assertEqual(decision['projectile'],200)
-  self.assertEqual(len([e for e in events if e['phase']==23]),3)
+  self.assertEqual(len([e for e in events if e['phase']==23]),4)
  def test_rejected_nexus_does_not_suppress_or_repeat(self):
   log=self.fixture(fatal=True,denied=True)
   self.assertIn('fatal_report_forwarded=7 fatal_notify_forwarded=7',self.last_output)

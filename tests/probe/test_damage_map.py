@@ -45,6 +45,11 @@ class MapTests(unittest.TestCase):
         self.binary.memory.clear()
         with self.assertRaises(ValueError): mapping.verify(self.data, self.binary)
 
+    def test_stat_dispatch_cannot_be_reassigned_to_another_handler(self):
+        changed=copy.deepcopy(self.data)
+        changed['stat_dispatch']['cases'][0]['handler']='0x1234'
+        with self.assertRaises(ValueError): mapping.verify(changed,self.binary)
+
     def test_ambiguous_method_or_changed_field_is_rejected(self):
         self.dump['methods'].append(copy.deepcopy(self.dump['methods'][0]))
         with self.assertRaises(ValueError): mapping.verify(self.data, self.binary, self.dump)

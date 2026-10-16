@@ -42,7 +42,7 @@ if [[ "$verify_mode" == 1 ]]; then
 elif [[ "$fatal_mode" == 1 ]]; then
     print 'LIVE INTERVENTION: predicted lethal projectile, ground and radius/AOE damage requests Nexus before reporting.'
     print 'After the local Nexusing flag is set, the audited fatal and subsequent damage reports are withheld.'
-    print 'No percentage threshold is used. Server HP assignments reset the pending damage budget.'
+    print 'Uncertain damage survives HP updates; healing is not credited. Sustained combat can cause early Nexus.'
     print 'Other damage sources are not covered by this prototype.'
 else
     print 'Observation-only mode. Gameplay automation is off.'

@@ -46,7 +46,7 @@ def main():
                             mask=int(row[16])
                             breath=row[10] if mask&2 else 'unavailable'
                             frostbite=row[9] if mask&4 else 'unavailable'
-                            flags=hex(int(row[15])) if mask&1 else 'unavailable'
+                            flags=hex(int(row[15])) if mask&1 and row[18]=='1' else 'unavailable (legacy sprite key)' if mask&1 else 'unavailable'
                             print(f'Context | breath {breath} | frostbite {frostbite} | raw flags {flags}',flush=True)
                         elif phase==4:
                             print(f'HP sample {row[11]}/{row[12]} | cause not inferred',flush=True)
@@ -60,7 +60,7 @@ def main():
                         elif phase==25:print('Nexus map observed; fatal budget reset.' if row[16]=='1' else 'Player/map changed; fatal budget reset.',flush=True)
                         elif phase==26:print('Server/client HP reached zero while escape was pending. Intervention did not protect this case.',flush=True)
                         elif phase==28:
-                            print(f'Server HP baseline {row[11]} | retained damage reset to 0 | escape latch {row[17]}',flush=True)
+                            print(f'Server HP baseline {row[11]} | uncertain damage retained | escape latch {row[17]}',flush=True)
                         elif phase==27:
                             raw=int(row[21]);projected=raw-(1<<64) if raw>=(1<<63) else raw
                             print(f'Fatal budget | observed HP {row[11]} | retained damage {row[15]} | projected {projected}',flush=True)

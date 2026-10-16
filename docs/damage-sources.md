@@ -20,7 +20,7 @@ that every possible lethal cause has been enumerated. Unattributed HP decreases 
 |---|---|---|---|
 | Enemy projectiles, overlapping hits, armor-piercing variants | Existing audited path; variants sharing this route need no separate test | Calculator `0x650e90`, collision `0x6534f0`, notification caller `0x653bd0` | D01 |
 | Grenades, explosions and other radial attacks | Static area/radius-handler candidate; not yet a live-confirmed grenade | Handler `0x183f290`, generic calculation call `0x183f6ed`, notification caller `0x183f7be` | D02 |
-| Bleeding and other player damage-over-time effects | Candidate; source-specific tick function unresolved | Raw entity flags, HP assignments and sampled changes | D03 |
+| Bleeding and other player damage-over-time effects | Candidate; source-specific tick function unresolved | Condition-mask words, HP assignments and sampled changes | D03 |
 | Lava and damaging ground | Static terrain path; individual tile rules need live confirmation | Terrain routine `0x196eb80`, notification caller `0x196ed65`, report call `0x196ed8b` | D04 |
 | Dungeon floor hazards, damaging water, traps or contact hazards | Candidate; some may share terrain, area or projectile code | Record exact hazard and resulting callers; do not assume a shared implementation | D05 |
 | Oxygen depletion / suffocation | Breath meter statically mapped; drain/death source unresolved | Player `NMLPJEBCBAE` at `+0x52c`, breath-bar reader `0x1df40a0` | D06 |
@@ -56,7 +56,7 @@ checks unambiguous metadata identities and field type/storage/offset. It never a
 | HP baseline replacement | Call at `0x184c110` from `NAMGODOEDBO` to `NIDPCHCNDLJ` | Incoming stat application; does not identify which pending hits the server processed |
 | Breath meter | `CharacterGUIInfoSection.UpdateBreathBar` reads player `+0x52c` at `0x1df40c5` | Raw meter value, not a confirmed damage prediction |
 | Frostbite meter | `UpdateFrostbiteBar` reads player `+0x530` at `0x1df5825` | Raw meter value, not a confirmed damage prediction |
-| Entity flags | `KJMONHENJEN.JJDEDAFLGHC`, `UInt64`, `+0xf8` | Record opaque bits; individual condition meanings remain undecoded |
+| Condition masks | `LKHPPBEGNOM.COHCKAPOLCA`, `Int32[]`, `+0x250` | First two words recorded; individual meanings remain undecoded. Legacy `+0xf8` was a sprite key. |
 | Direct HP writes | `0x1af197a` and `0x1af978a` initialize both max HP and HP; base notification can write zero at `0x1af6232` | Alternate state paths, not evidence of a DOT routine |
 
 The initial direct-call search found only one caller of the projectile calculator. That search is not
@@ -67,10 +67,11 @@ callers as **unmapped**, without using them for prediction, pairing or intervent
 
 Phase 29 adds context without changing the version-4 binary event layout:
 
-- `projectile`: opaque entity flag bits, not an object pointer.
+- `projectile`: first two Int32 condition-mask words, packed as unsigned 64-bit.
 - `value` / `owner`: raw breath / frostbite values.
 - `flag0`: availability bits, 1 flags, 2 breath, 4 frostbite, 8 local Nexusing.
 - `flag1`: local Nexusing when available.
+- `flag2=1`: corrected condition-array provenance. Older records contain a sprite key, not condition flags.
 - `correlation`: HP-assignment or notification entry ID when captured at that boundary; zero for sampling.
 
 Context is sampled at most every 20 ms and published on change, plus at HP-assignment and notification
@@ -105,3 +106,6 @@ non-projectile report on the main thread. Failed requests and disabled protectio
 The breath setter call at `0x184cb6f` and frostbite setter call at `0x184c7da` belong to the incoming
 stat handler. This proves how meter values arrive, not whether their HP loss is locally predictable.
 We have not established a universal pre-damage boundary for status/environmental effects.
+
+The [status and reconciliation audit](damage-status-audit.md) records incoming stat IDs, corrected
+condition provenance, unresolved DOT boundaries and the conservative pending-damage policy.

@@ -3,6 +3,7 @@
 import argparse
 import importlib.util
 import json
+import struct
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -33,6 +34,14 @@ def verify(mapping, binary, dump=None):
         expected = bytes.fromhex(row['bytes'])
         if binary.read(int(row['address'], 16), len(expected)) != expected:
             raise ValueError('Native evidence changed: ' + row['finding'])
+    routing=mapping.get('stat_dispatch')
+    if routing:
+        base=int(routing['table'],16)
+        for case in routing['cases']:
+            index=(case['stat']-routing['rotation']) & 255
+            target=base+struct.unpack('<i',binary.read(base+4*index,4))[0]
+            if target!=int(case['handler'],16):
+                raise ValueError('Stat dispatch changed: '+case['role'])
     if dump is not None:
         for row in mapping['fields']:
             matches = [f for f in dump['fields'] if (f['namespace'], f['owner'], f['name']) ==
