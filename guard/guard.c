@@ -24,13 +24,13 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Offsets of the game functions in the inspected GameAssembly build (sha256 0d11bbb7...).
+/* Offsets of the game functions in the inspected GameAssembly build (sha256 ad069824...).
  * The guard refuses to arm if the runtime reports anything else. */
-#define POTION_OFFSET 0x52cc60UL  /* EquipmentManager::OnQuickslotHotkeyPressedHandler(Int32) */
-#define NEXUS_OFFSET  0x7264f0UL  /* HJMBOMEHGDJ::GGGHNGEJPDE(), run by the Nexus key */
+#define POTION_OFFSET 0x1fe30f0UL  /* EquipmentManager::OnQuickslotHotkeyPressedHandler(Int32) */
+#define NEXUS_OFFSET  0x1841500UL  /* HJMBOMEHGDJ::GGGHNGEJPDE(), run by the Nexus key */
 /* The ctrl-click menu's "Join dungeon" button (PlayerActionPanel::KJFENHHKFOO) runs these two: */
-#define JOIN_OFFSET          0xa3d060UL   /* IOPKEEBMGJK::FDOIPKHKGNF(String name): party manager, join a member */
-#define JOIN_COOLDOWN_OFFSET 0x11f7e00UL  /* FKALGHJIADI::LMCLHOGGKKG(Int32), called with 1000 on your character */
+#define JOIN_OFFSET          0x13e7dc0UL   /* IOPKEEBMGJK::FDOIPKHKGNF(String name): party manager, join a member */
+#define JOIN_COOLDOWN_OFFSET 0x1962b60UL  /* FKALGHJIADI::LMCLHOGGKKG(Int32), called with 1000 on your character */
 
 enum { RESULT_DRY = 0, RESULT_CALLED = 1, RESULT_EXCEPTION = -1, RESULT_UNAVAILABLE = -2, RESULT_EMPTY = -3 };
 #define MAX_QUICKSLOTS 8

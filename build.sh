@@ -16,6 +16,11 @@ data="$HOME/Library/Application Support/Exalt Client Mac"
 tests="$out/tests"   # test binaries
 mkdir -p "$cache" "$tests"
 
+game_binary="$HOME/.local/share/RealmOfTheMadGod/Production/RotMGExalt.app/Contents/Frameworks/GameAssembly.dylib"
+if [[ -f "$game_binary" ]]; then
+    python3 "$src/tests/verify_game_build.py" "$game_binary"
+fi
+
 if [[ "${1:-}" != --app-only ]]; then
 print '== Tests'
 clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests" && "$tests/core-tests"

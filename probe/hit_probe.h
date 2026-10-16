@@ -3,20 +3,23 @@
 #include "native_hook.h"
 #include <pthread.h>
 
-#define HIT_REPORT_OFFSET 0x712c10UL
-#define HIT_NOTIFY_OFFSET 0x11f6a60UL
-#define HP_ASSIGN_OFFSET 0x177ca50UL
-#define NEXUS_OFFSET 0x7264f0UL
-#define DAMAGE_OFFSET 0x2051720UL
-#define DEATH_SCREEN_OFFSET 0x6d8f70UL
-#define UPDATE_OFFSET 0x71a120UL
-#define STATS_OFFSET 0x71e940UL
+#define HIT_REPORT_OFFSET 0x1853fb0UL
+#define HIT_NOTIFY_OFFSET 0x1970a90UL
+#define HP_ASSIGN_OFFSET 0x1af1670UL
+#define NEXUS_OFFSET 0x1841500UL
+#define DAMAGE_OFFSET 0x650e90UL
+#define DEATH_SCREEN_OFFSET 0x1f92870UL
+#define UPDATE_OFFSET 0x18496e0UL
+#define STATS_OFFSET 0x184ae90UL
+#define DAMAGE_CALLER 0x6538a2UL
+#define NOTIFY_CALLER 0x653bd0UL
+#define ZERO_HP_CALLER 0x1840e64UL
 static const unsigned char report_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x41,0x89,0xd7};
 static const unsigned char notify_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
 #ifdef HIT_PROBE_TEST
 #define hp_prologue notify_prologue
 #else
-static const unsigned char hp_prologue[]={0x55,0x48,0x89,0xe5,0x89,0xb7,0x0c,0x02,0,0,0x48,0x8b,0x07,0x48,0x8b,0x88,0x18,0x07,0,0};
+static const unsigned char hp_prologue[]={0x55,0x48,0x89,0xe5,0x89,0xb7,0x0c,0x02,0,0,0x48,0x8b,0x07,0x48,0x8b,0x88,0xa8,0x09,0,0};
 #endif
 static const unsigned char nexus_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x48,0x49,0x89,0xfe};
 static const unsigned char damage_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x18,0xf3,0x0f,0x11,0x45,0xe0};
@@ -265,7 +268,7 @@ static void report_observed(void *self,uint32_t bullet,int owner,const void *inf
 }
 static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,uint8_t flag1,void *projectile,uint8_t a,uint8_t b,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);
-        int local=probe_callsite(__builtin_return_address(0))==0x20573b0UL;
+        int local=probe_callsite(__builtin_return_address(0))==NOTIFY_CALLER;
 #ifdef HIT_PROBE_TEST
         local=1;
 #endif
@@ -275,7 +278,7 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
 #ifdef HIT_PROBE_TEST
     int local_projectile=1;
 #else
-    int local_projectile=caller==0x20573b0UL;
+    int local_projectile=caller==NOTIFY_CALLER;
 #endif
     if(self && local_projectile && atomic_load_explicit(&fatal_block_player,memory_order_acquire)==(uintptr_t)self){
         ++fatal_notifications_dropped;ProbeEvent blocked=probe_snapshot(24,self,NULL);blocked.callsite=caller;
@@ -289,7 +292,7 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
         /* A temporal association, not a damage acknowledgement or deduplication key. */
         if(probe_last_report && probe_last_report_generation==e.generation && e.ns>=probe_last_report_ns && e.ns-probe_last_report_ns<10000000ULL
 #ifndef HIT_PROBE_TEST
-           && e.callsite==0x20573b0UL
+           && e.callsite==NOTIFY_CALLER
 #endif
         ){e.correlation=probe_last_report;e.bullet=probe_last_bullet;e.owner=probe_last_owner;probe_last_report=0;}
         probe_emit(e);
@@ -301,7 +304,7 @@ static void hp_observed(void *self,int value,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);hp_original(self,value,info);return;}
     int observe=probe_active() && self==probe_player();
     ProbeEvent e={0};
-    if(observe){e=probe_snapshot(5,self,__builtin_return_address(0));e.value=value;if(!e.update_context && e.callsite==0x70d804UL)e.update_source=3;probe_emit(e);}
+    if(observe){e=probe_snapshot(5,self,__builtin_return_address(0));e.value=value;if(!e.update_context && e.callsite==ZERO_HP_CALLER)e.update_source=3;probe_emit(e);}
     hp_original(self,value,info);
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
@@ -325,12 +328,12 @@ static int damage_observed(void *raw_arg,float input,const void *raw_info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);return damage_original(raw_arg,input,raw_info);}
     uint64_t caller=probe_callsite(__builtin_return_address(0));
 #ifdef HIT_PROBE_BAD_ARGUMENT_TEST
-    caller=0x2057082UL;
+    caller=DAMAGE_CALLER;
 #endif
     void *player=probe_player();
     int observe=probe_active() && player;
 #if !defined(HIT_PROBE_TEST) || defined(HIT_PROBE_BAD_ARGUMENT_TEST)
-    observe=observe && caller==0x2057082UL;
+    observe=observe && caller==DAMAGE_CALLER;
 #endif
     /* The audited caller does not populate an instance argument. Preserve opaque
      * native arguments, but never inspect them or use them as projectile IDs. */

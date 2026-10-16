@@ -69,13 +69,13 @@ Recover the binary only after quitting the game. It retains the most recent 8,19
 
 ## Coverage and interpretation
 
-The calculation hook is limited to return address `0x2057082` in the inspected projectile collision path. The report hook is HJMBOMEHGDJ.NDACCDPJHBC at `0x712c10`; the notification hook suppresses the controlled-player notification from the audited caller `0x20573b0`. Other damage paths remain unmapped and unchanged.
+The calculation hook is limited to return address `0x6538a2` in the inspected projectile collision path. The report hook is HJMBOMEHGDJ.NDACCDPJHBC at `0x1853fb0`; the notification hook suppresses the controlled-player notification from the audited caller `0x653bd0`. Other damage paths remain unmapped and unchanged.
 
 A successful synthetic test establishes local request/suppression ordering, not server behavior. A live survival result must be checked against the recorded prediction, actual withheld reports, Nexus request and observed map transition. An early conservative escape is not proof that a genuinely lethal hit was prevented. A server death after suppression is recorded, rather than hidden.
 
 Every hook validates runtime method parameters, game-build offsets and complete instruction-prefix bytes before installation. The previous invalid-instance crash regression remains enabled. Runtime objects are accessed only through validated game references and retained handles. Installed game files are unchanged.
 
 Supported GameAssembly SHA-256:
-`0d11bbb7d32c25203c1083300fbd3d8208f0b3215469e93553b6cab9f988d739`
+`ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f`
 
 One diagnostic folder is maintained in place. Historical sessions are under `data/sessions` and analyses under `data/analyses`. Source is in `/Users/ehongkuo/Development/exalt-client-mac-hit-probe`; build with `sh probe/build-probe.sh`. The main checkout is unchanged. Probe work remains uncommitted.

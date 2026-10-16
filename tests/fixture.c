@@ -259,17 +259,17 @@ int main(void) {
  char *base=self.dli_fbase;
  find_method.pointer=base+0x100;
 #ifdef BAD_OFFSET
- potion_method.pointer=base+0x52cc70;
+ potion_method.pointer=base+0x1fe3100;
 #else
- potion_method.pointer=base+0x52cc60;
+ potion_method.pointer=base+0x1fe30f0;
 #endif
- nexus_method.pointer=base+0x7264f0;
+ nexus_method.pointer=base+0x1841500;
 #ifdef JOIN_BAD_OFFSET
- join_method.pointer=base+0xa3d070;
+ join_method.pointer=base+0x13e7dd0;
 #else
- join_method.pointer=base+0xa3d060;
+ join_method.pointer=base+0x13e7dc0;
 #endif
- join_cooldown_method.pointer=base+0x11f7e00;
+ join_cooldown_method.pointer=base+0x1962b60;
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),NULL,stop);
  dispatch_main();
 }
