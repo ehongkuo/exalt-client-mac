@@ -1,5 +1,25 @@
 # Nexus protection performance audit
 
+## UI efficiency and bounded stall diagnostics
+
+The follow-up caps both visual refresh schedules at 30 Hz, coalesces UI reads within 16 ms, and keeps the separate 10 Hz party-alert read forced fresh. Protection polling and inline damage hooks retain their cadence and decisions. Timestamp formatting reuses one formatter; unchanged mapped snapshots reuse their decoded value. File identity checks remain immediate so reconnection is not delayed.
+
+Five alternating optimized Swift trials of 10,000 timestamp calls each measured **14.53 us before → 0.619 us after** (23.5x faster). This is isolated formatting cost, not a measured whole-app CPU reduction. Raw samples are in `build/local-latency/format-comparison.json`.
+
+New `guard_latency` lines summarize cumulative counts and maxima every 10 seconds and at orderly shutdown. All callbacks contribute gap counts (20 ms and 100 ms thresholds), total work through live publication, and maxima. `valid` means the current callback has a valid player/HUD reading; it includes Nexus and the first reading after a transition. Stage maxima split lookup, guard actions, hooks/chat/join services, and publication, sampled once per 64 callbacks. They are independent maxima, not a breakdown of the slowest callback. Work excludes timing-summary formatting and telemetry log enqueue. No timing history or shared-file ABI was added: fixed main-thread counters use 104 bytes plus an 8-byte deadline; summaries use the existing bounded note queue and background writer. Abrupt exits may lose the final partial interval, and a full note queue can drop a summary; subsequent cumulative summaries recover the counts.
+
+Five alternating full-callback fixture trials against merged main `e689e3b` measured median **0.773 → 0.968 us**, p95 **2.208 → 2.305 us**, and process CPU **932 → 1,179 ns/callback**. At 1,000 callbacks/sec that CPU difference is approximately 0.025% of one core in this fixture. A preceding five-run batch measured a smaller 24 ns median difference, so these background-loaded measurements are noisy, not a production CPU bound. All workloads recorded zero queue drops. Short benchmark bursts do not exercise the 10-second summary cadence.
+
+Reproduce the full-callback comparison without preparing old PR snapshots:
+
+```sh
+python3 tests/probe/benchmark.py --runs 5 --baseline e689e3b --full-tick --output build/local-latency/repro-full-tick
+```
+
+The `tick` workload with `--full-tick` measures the complete callback; the older poll-component numbers below measure only the protection component. The running installed app/guard have not been replaced during this follow-up. Fresh gameplay after installation is needed to attribute the previously observed scheduling stalls. Window redraw CPU savings have not yet been measured in a controlled app A/B run.
+
+## Protection-hook optimization baseline
+
 Measured on Apple M5 Pro, with Intel production-hook code under Rosetta in the synthetic game fixture. Seven alternating-order runs per version; each run measures 30,000 operations per ordinary workload and 100 local lethal requests. The real game was running concurrently, so these are component costs with scheduling noise, not a controlled full-game CPU/RAM or network-latency A/B test.
 
 The final run includes the version-3 authoritative-HP-window correction for the confirmed full-health false escape, as well as the production snapshot/logging optimizations.
@@ -56,4 +76,4 @@ git archive 2eccaad guard probe | tar -x -C build/performance/pr-before
 python3 tests/probe/benchmark.py --runs 7
 ```
 
-No game restart, injection into the real game, or installed-app replacement is performed by this benchmark. The running local game still uses the pre-sweep installed build.
+No game restart, injection into the real game, or installed-app replacement is performed by this benchmark. Installed-app state is separate from this synthetic benchmark.

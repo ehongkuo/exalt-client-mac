@@ -154,6 +154,21 @@ static uint64_t monotonic_ns(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     return (uint64_t)t.tv_sec * NSEC_PER_SEC + (uint64_t)t.tv_nsec;
 }
+static LatencyStats latency;
+static uint64_t next_latency_note;
+static void latency_note(void) {
+    /* Fixed-size existing note queue; the background writer performs file I/O. */
+    note("guard_latency\tchecks=%llu\tvalid=%llu\tgaps_ge20ms=%llu\tgaps_ge100ms=%llu"
+         "\tvalid_gaps_ge100ms=%llu\tmax_gap_us=%llu\tmax_valid_gap_us=%llu\tmax_work_us=%llu"
+         "\tstage_samples=%llu\tlookup_us=%llu\tguard_us=%llu\tservices_us=%llu\tpublication_us=%llu\n",
+         (unsigned long long)latency.checks, (unsigned long long)latency.valid_checks,
+         (unsigned long long)latency.gaps_20ms, (unsigned long long)latency.gaps_100ms,
+         (unsigned long long)latency.valid_gaps_100ms, (unsigned long long)(latency.max_gap_ns / 1000),
+         (unsigned long long)(latency.max_valid_gap_ns / 1000), (unsigned long long)(latency.max_work_ns / 1000),
+         (unsigned long long)latency.stage_samples, (unsigned long long)(latency.lookup_ns / 1000),
+         (unsigned long long)(latency.guard_ns / 1000), (unsigned long long)(latency.services_ns / 1000),
+         (unsigned long long)(latency.publication_ns / 1000));
+}
 static const char *safe(const char *s) { return s ? s : ""; }
 
 static int bind_api(void) {
@@ -743,6 +758,7 @@ static void drain(void *unused) {
     } else fflush(logfile);
 }
 static void finish(void) {
+    latency_note();
     release(&gui_handle); release(&player_handle); release(&equipment_handle); release(&realm_quests_handle);
     release(&chat_handle);
     dispatch_source_cancel(timer);
@@ -759,6 +775,8 @@ static void tick(void *unused) {
                 .epoch = start_epoch + (double)(begin - start_ns) / 1e9,
                 .gap_ns = previous_ns ? begin - previous_ns : 0, .status = 1};
     previous_ns = begin;
+    int sample_stages = (r.sequence & 63) == 0;
+    uint64_t lookup_end = 0, guard_end = 0;
     void *gui = NULL, *player = NULL, *bar = NULL, *own = NULL;
     if (!ready && begin >= next_lookup) {
         ready = prepare(); next_lookup = begin + 500 * NSEC_PER_MSEC;
@@ -800,8 +818,13 @@ static void tick(void *unused) {
     if (bar_aux_field) il2cpp_field_get_value(bar, bar_aux_field, &r.bar_aux);
     il2cpp_field_get_value(player, position_field, r.xyz);
     r.status = isfinite(r.hp) && r.hp >= 0 && isfinite(r.xyz[0]) && isfinite(r.xyz[1]) && isfinite(r.xyz[2]) ? 0 : 4;
+    if (sample_stages) lookup_end = monotonic_ns();
     if (r.status == 0) run_guard(&r, player, begin);
 done:
+    if (sample_stages) {
+        guard_end = monotonic_ns();
+        if (!lookup_end) lookup_end = guard_end;
+    }
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_tick(own, begin);
 #endif
@@ -813,6 +836,19 @@ done:
     r.dropped = drops;
     r.work_ns = monotonic_ns() - begin;
     publish_live(&r, begin);
+    uint64_t published = monotonic_ns();
+    latency_observe(&latency, r.gap_ns, published - begin, r.status == 0);
+    if (sample_stages) {
+        ++latency.stage_samples;
+        latency_stage_max(&latency.lookup_ns, begin, lookup_end);
+        latency_stage_max(&latency.guard_ns, lookup_end, guard_end);
+        latency_stage_max(&latency.services_ns, guard_end, begin + r.work_ns);
+        latency_stage_max(&latency.publication_ns, begin + r.work_ns, published);
+    }
+    if (!next_latency_note) next_latency_note = begin + 10 * NSEC_PER_SEC;
+    if (begin >= next_latency_note) {
+        latency_note(); next_latency_note = begin + 10 * NSEC_PER_SEC;
+    }
     /* Log only rows that change something (or one per second), so long sessions stay small. */
     int changed = !last_logged_ns || r.status != last_logged.status || r.hp != last_logged.hp ||
                   r.player_hp != last_logged.player_hp || r.player_max != last_logged.player_max ||

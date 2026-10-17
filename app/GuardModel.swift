@@ -314,6 +314,7 @@ final class LiveFeed {
     private var map: UnsafeMutableRawPointer?
     private var inode: ino_t = 0
     private var writable = false
+    private var cachedSnapshot: GuardSnapshot?
 
     init(url: URL) { self.url = url }
     deinit { unmap() }
@@ -323,7 +324,13 @@ final class LiveFeed {
         guard let map else { return nil }
         var data = LiveData()
         guard guard_live_copy(map, &data) != 0 else { return nil }
-        return GuardSnapshot(data)
+        if let cachedSnapshot, cachedSnapshot.pid == data.pid,
+           cachedSnapshot.ticks == data.ticks, cachedSnapshot.sampleNs == data.sample_ns {
+            return cachedSnapshot
+        }
+        let snapshot = GuardSnapshot(data)
+        cachedSnapshot = snapshot
+        return snapshot
     }
 
     /// Writes a settings change for the guard to pick up on its next check.
@@ -370,7 +377,7 @@ final class LiveFeed {
     }
     private func unmap() {
         if let map { munmap(map, Int(LIVE_FILE_SIZE)) }
-        map = nil; inode = 0; writable = false
+        map = nil; inode = 0; writable = false; cachedSnapshot = nil
     }
 }
 
@@ -379,10 +386,16 @@ enum Clock {
 }
 
 enum Format {
+    // Accessed on the app's UI thread; reuse Foundation's expensive formatting setup.
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
     static func time(_ epoch: Double) -> String {
         let date = Date(timeIntervalSince1970: epoch)
-        let formatter = DateFormatter(); formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: date)
+        return timestampFormatter.string(from: date)
     }
     /// h:mm:ss above an hour, otherwise m:ss.
     static func duration(_ seconds: Double) -> String {

@@ -8,17 +8,28 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 def run(cmd,**kwargs):return subprocess.run(cmd,check=True,**kwargs)
 def main():
- p=argparse.ArgumentParser();p.add_argument('--runs',type=int,default=5);args=p.parse_args()
- out=ROOT/'build/performance';out.mkdir(parents=True,exist_ok=True)
+ p=argparse.ArgumentParser();p.add_argument('--runs',type=int,default=5)
+ p.add_argument('--baseline',help='Compare one Git ref with the working tree')
+ p.add_argument('--full-tick',action='store_true',help='Measure the whole callback in the tick workload')
+ p.add_argument('--output',type=Path,default=ROOT/'build/performance');args=p.parse_args()
+ if args.runs < 1:p.error('--runs must be positive')
+ out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
+ versions=[('base',out/'base'),('pr-before',out/'pr-before'),('optimized',ROOT)]
+ if args.baseline:
+  snapshot=out/'baseline-source';snapshot.mkdir(exist_ok=True)
+  archive=run(['git','archive',args.baseline,'guard','probe'],cwd=ROOT,capture_output=True).stdout
+  run(['tar','-x','-C',str(snapshot)],input=archive)
+  versions=[('baseline',snapshot),('optimized',ROOT)]
  common=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror']
  fixture=out/'RotMGExalt'
  run(common+['-Wno-unused-function','-Wl,-export_dynamic','-DGUARD_BENCHMARK','-DFATAL_BURST','-DFATAL_RECONCILE','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(fixture)])
  results={}
- for version,source in [('base',out/'base'),('pr-before',out/'pr-before'),('optimized',ROOT)]:
+ for version,source in versions:
   folder=out/version;folder.mkdir(exist_ok=True)
   dylib=folder/'bench.dylib'
   build=common+['-dynamiclib','-undefined','dynamic_lookup','-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DHIT_PROBE_MIXED_TEST','-DSESSION_NS=0',f'-DGUARD_BENCH_SOURCE="{source}/guard/guard.c"',f'-DPROBE_LOG_DIR="{folder}"']
   if version!='base':build+=['-DBENCH_HAS_SEND']
+  if args.full_tick:build+=['-DBENCH_FULL_TICK']
   run(build+[str(ROOT/'tests/probe/benchmark_guard.c'),'-o',str(dylib)])
   results[version]=[]
  for trial in range(args.runs):
@@ -33,10 +44,10 @@ def main():
    # Synthetic logs are disposable; retain numeric samples rather than grow the checkout.
    for log in (out/version).glob('guard-*.tsv'):log.unlink()
  summary={version:{row['name']:{key:statistics.median(r[i][key] for r in runs) for key in row if key!='name'} for i,row in enumerate(runs[0])} for version,runs in results.items()}
- metadata=dict(runs=args.runs,host=platform.platform(),fixture_arch='x86_64',
+ metadata=dict(runs=args.runs,host=platform.platform(),fixture_arch='x86_64',full_tick=args.full_tick,baseline=args.baseline,
   source_sha256={version:{str(p.relative_to(source)):hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in (source/'guard/guard.c',source/'probe/hit_probe.h',source/'probe/fatal_policy.h')}
-    for version,source in [('base',out/'base'),('pr-before',out/'pr-before'),('optimized',ROOT)]})
+    for p in (source/'guard/guard.c',source/'guard/timing_core.h',source/'guard/guard_core.h',source/'guard/live_state.h',source/'probe/hit_probe.h',source/'probe/fatal_policy.h')}
+    for version,source in versions})
  (out/'results.json').write_text(json.dumps(dict(metadata=metadata,raw=results,median=summary),indent=2)+'\n')
  print(json.dumps(summary,indent=2))
 if __name__=='__main__':main()
