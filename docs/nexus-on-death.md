@@ -4,7 +4,13 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`. The validated standalone diagnostic, source checkpoint `639068f`, logs and live test reports remain available for future development. The integrated client has recorded three successful projectile escapes with potions disabled; percentage-threshold removal still needs its own live UI check.
 
-Prediction now retains uncertain damage across HP assignments, including unchanged, healing and delayed updates. The bound cannot rise until a validated scope reset; this prioritizes a conservative escape and can Nexus early during sustained combat. See the [status and reconciliation audit](damage-status-audit.md) for the regression and tradeoff. Suppression starts only when the local Nexusing flag is confirmed. Settings changes cannot cancel an already-started escape. Failed requests preserve the original damage path and are logged. Dry Run never requests an automatic Nexus or suppresses damage.
+Prediction uses the latest authoritative HP assignment as a new baseline. Projectile, ground and
+area damage accumulate within that window; healing and unchanged incoming HP also start a new
+window so old damage cannot accumulate indefinitely. This restores the previously working client's
+HP-window behavior. Incoming HP is not a per-report acknowledgement, so late/in-flight report ordering
+remains a limitation. Suppression starts only after local Nexusing is confirmed; an already-started
+escape survives settings changes and HP updates. Dry run never invokes Nexus or suppresses damage.
+See the [false-escape audit and correction](damage-status-audit.md).
 
 The hooks prepare in Nexus and validate method signatures, offsets and complete entry bytes. If preparation is refused, the UI reports that the feature is unavailable while the existing guard remains usable. Turning the feature on outside Nexus waits for preparation there. No installed game files are modified.
 

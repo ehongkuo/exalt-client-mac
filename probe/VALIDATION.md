@@ -1,3 +1,21 @@
+# Early-Nexus correction and runtime efficiency
+
+Policy version 3 restores authoritative HP windows after the confirmed 1206-HP/110-damage false
+escape. It no longer carries old damage indefinitely across HP updates or healing. Same-window
+projectile/ground/area bursts and confirmed escape latches remain protected. Server report ordering
+is still uncertain; this is not acknowledgement-aware reconciliation. See the [audit](../docs/damage-status-audit.md).
+
+Production-only efficiency changes skip discarded diagnostic snapshots and ordinary prediction
+logs and reduce the fixed event queue by 192 KiB. Standalone diagnostics retain their existing tracing.
+See [performance measurements](../docs/performance-audit.md) for component measurements and limits.
+
+Current validation passes: 17 production tests, 24 diagnostic tests, 16 session-report tests, five
+native-map tests and the undefined-behavior-sanitized policy suite. A signed corrected app builds
+without touching the running installed app. The captured 1206-HP state yields PASS/projected 876,
+where the archived version-2 policy yields REQUEST/projected -108.
+
+## Historical validation through 2eccaad (superseded policy)
+
 # Environmental guard validation
 
 The Citadel run `D06-20261017T000048Z-AQqfYg` recorded full frostbite before incoming HP loss.

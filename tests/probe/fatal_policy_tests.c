@@ -10,34 +10,35 @@ int main(void) {
  assert(fatal_environment_hazard(-2,-1)==0);
  FatalPolicy p={0};fatal_reset(&p,1,2,3);
  assert(fatal_damage(&p,200,50)==FATAL_PASS);
- fatal_server_hp(&p,200); /* unchanged update cannot acknowledge the hit */
- assert(p.pending==50 && p.projected==150);
- assert(fatal_damage(&p,200,50)==FATAL_PASS);
- fatal_server_hp(&p,250); /* healing or stale higher HP cannot restore the bound */
- assert(p.pending==100 && p.projected==100);
- assert(fatal_damage(&p,250,50)==FATAL_PASS && p.projected==50);
- assert(fatal_damage(&p,250,50)==FATAL_REQUEST && p.projected==0);
+ assert(fatal_damage(&p,200,60)==FATAL_PASS && p.pending==110);
+ assert(fatal_damage(&p,200,90)==FATAL_REQUEST && p.projected==0);
  fatal_requested(&p,1);fatal_server_hp(&p,250);
- assert(p.pending==200 && p.projected==0 && p.blocking);
+ assert(!p.pending && p.projected==250 && p.blocking);
  assert(fatal_damage(&p,250,50)==FATAL_BLOCK);
  fatal_reset(&p,1,2,4);
- assert(!p.pending && !p.has_bound && !p.blocking);
- assert(fatal_damage(&p,200,50)==FATAL_PASS); /* projectile */
- fatal_server_hp(&p,180); /* unidentified DOT or a report: no false acknowledgement */
- assert(p.pending==50 && p.projected==130);
- assert(fatal_damage(&p,180,60)==FATAL_PASS && p.projected==70); /* ground */
- fatal_server_hp(&p,180);
- assert(fatal_damage(&p,180,70)==FATAL_REQUEST && p.projected==0); /* area */
- fatal_requested(&p,0);
- assert(fatal_damage(&p,180,50)==FATAL_PASS && p.attempted && p.pending==230);
- fatal_server_hp(&p,180);assert(!p.attempted && !p.blocking && p.pending==230);
- assert(fatal_damage(&p,180,1)==FATAL_REQUEST); /* retry after update, no same-burst request loop */
+ assert(!p.pending && !p.blocking);
+ /* Live false escape: prior 703 damage, recovery, 10 damage, more healing,
+  * then three 110 hits at 1206 HP. Version 2 incorrectly predicted -108. */
+ assert(fatal_damage(&p,935,703)==FATAL_PASS);
+ fatal_server_hp(&p,1154);
+ assert(fatal_damage(&p,1154,10)==FATAL_PASS);
+ const int healing[]={1169,1174,1189,1204,1206};
+ for(unsigned i=0;i<sizeof healing/sizeof *healing;++i)fatal_server_hp(&p,healing[i]);
+ for(int i=0;i<3;++i)assert(fatal_damage(&p,1206,110)==FATAL_PASS);
+ assert(p.pending==330 && p.projected==876);
+ /* A full-HP update may include damage offset by healing. It must rebase too. */
+ fatal_server_hp(&p,1206);assert(!p.pending && p.projected==1206);
+ for(int i=0;i<1000;++i){assert(fatal_damage(&p,1206,110)==FATAL_PASS);fatal_server_hp(&p,1206);}
  fatal_reset(&p,1,2,5);
+ assert(fatal_damage(&p,100,100)==FATAL_REQUEST);fatal_requested(&p,0);
+ assert(fatal_damage(&p,100,1)==FATAL_PASS && p.attempted);
+ fatal_server_hp(&p,40);assert(!p.attempted && !p.pending);
+ assert(fatal_damage(&p,40,50)==FATAL_REQUEST);
+ fatal_reset(&p,1,2,6);
  assert(fatal_damage(&p,0,100)==FATAL_LATE);
  assert(fatal_damage(&p,100,-1)==FATAL_INVALID);
  assert(fatal_damage(&p,100,0)==FATAL_PASS && !p.attempted);
- p.pending=INT64_MAX;p.projected=INT64_MIN;p.has_bound=1;
- assert(fatal_damage(&p,100,1)==FATAL_INVALID);
- fatal_server_hp(&p,INT_MIN);assert(p.projected==INT64_MIN);
- puts("Fatal policy: delayed HP, healing, mixed damage, scope reset, failed request and overflow passed");
+ p.pending=INT64_MAX;assert(fatal_damage(&p,100,1)==FATAL_INVALID);
+ fatal_server_hp(&p,INT_MIN);assert(p.projected==INT_MIN && !p.pending);
+ puts("Fatal policy: authoritative windows, full-HP recovery regression, mixed bursts, failure retry and overflow passed");
 }

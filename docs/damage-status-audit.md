@@ -1,5 +1,28 @@
 # Status damage and HP reconciliation audit
 
+## Current policy: authoritative HP windows (version 3)
+
+The live installed version-2 policy produced a false projectile escape at event 11005 in
+`guard-93129.tsv`: HP 1206/1206, incoming calculated damage 110, retained damage 1043, projected HP
+-108. Before the final three 110 hits, its old retained damage was 713 and projected bound 222,
+even as authoritative HP recovered through 1169, 1174, 1189, 1204 and 1206. The 330-damage burst
+was nonlethal at actual HP 1206. No environmental trigger or synthetic-HP override caused this event.
+
+Version 3 restores the prior client's authoritative-window behavior: every incoming HP assignment
+clears the prior pending budget and adopts that HP baseline, including unchanged or higher values.
+Unchanged values can include damage offset by healing. Only audited hits between updates accumulate;
+all three local damage paths share the same budget. Already-confirmed escape latches survive updates.
+A failed request can retry after a positive update. Environmental full-meter guards are unchanged.
+
+This is a deliberate correction of version 2, not proof that incoming HP acknowledges particular
+reports. Clearing a window can omit still-in-flight reports; the client/server ordering limitation
+remains. The prior conservative approach did not establish universal safety and caused confirmed
+full-health false positives. The native policy regression reproduces its -108 bound and now yields
+876 HP after the three 110 hits; an integration fixture verifies no automatic Nexus after recovery.
+
+The historical conservative-policy discussion below is superseded by this correction.
+
+
 This audit applies to the fingerprint in `probe/damage_paths.json`. The native map verifies the
 installed binary, matching metadata identities, jump-table entries and instruction ranges.
 

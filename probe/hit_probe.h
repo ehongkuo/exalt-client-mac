@@ -50,7 +50,11 @@ static uint64_t probe_last_report,probe_last_report_ns,probe_last_report_generat
 static uint32_t probe_last_bullet;
 static int probe_last_owner;
 static _Atomic uint64_t probe_off_main,probe_drops;
+#ifdef EXALT_CLIENT_FATAL
+#define PROBE_CAPACITY 512 /* Intervention events only; diagnostic traces use the larger queue. */
+#else
 #define PROBE_CAPACITY 2048
+#endif
 /* Phases: report entry/return 1/2, notification 3, sampled HP 4,
  * HP assignment entry/return 5/6, manual Nexus entry/return 7/8, identity/map 9, notification return 10, damage entry/return 11/12,
  * death screen entry/return 13/14, positive-to-nonpositive HP 15. */
@@ -130,6 +134,17 @@ static int probe_active(void) {
     return probe_on_main() && !atomic_load_explicit(&finished,memory_order_acquire);
 }
 static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
+#ifdef EXALT_CLIENT_FATAL
+    /* Phases below 20 are diagnostic-only and discarded by probe_emit. Keep
+     * correlation/source routing, plus the post-setter HP used by the policy,
+     * without timestamps or unrelated IL2CPP reads in production. */
+    if(phase<20){
+        ProbeEvent e={.id=++probe_sequence,.callsite=probe_callsite(caller),
+            .update_context=probe_update_context,.update_source=probe_update_source};
+        if(phase==6 && player)il2cpp_field_get_value(player,player_hp_field,&e.hp);
+        return e;
+    }
+#endif
     uint64_t begin=monotonic_ns();
     int changed=probe_map!=last_map_info || probe_identity!=player;
 #ifdef EXALT_HIT_PROBE
@@ -162,6 +177,11 @@ static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
 /* Fatal phases 20-28 use numeric aliases: projectile = retained damage,
  * update_context = signed projected HP, flag1 = blocking. Neither is a pointer. */
 static void fatal_emit(int phase,void *player,uint64_t correlation,int value,int status,int exception) {
+#ifdef EXALT_CLIENT_FATAL
+    /* Normal prediction bookkeeping is already published in shared live data.
+     * Keep escape/failure/suppression evidence, not one log record per hit. */
+    if(phase==27)return;
+#endif
     ProbeEvent e=probe_snapshot(phase,player,NULL);e.correlation=correlation;e.value=value;
     e.projectile=(uint64_t)fatal_policy.pending;e.update_context=(uint64_t)fatal_policy.projected;
     e.flag0=status;e.flag1=fatal_policy.blocking;e.flag2=exception;probe_emit(e);
@@ -423,12 +443,13 @@ static void hp_observed(void *self,int value,const void *info) {
     hp_original(self,value,info);
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
-            fatal_server_hp(&fatal_policy,after.hp);fatal_emit(28,self,after.id,after.hp,after.update_source,0);
-            /* A positive authoritative value can reveal a lethal conservative
-             * bound while older reports remain uncertain. Escape now; never
-             * suppress or change the authoritative assignment itself. */
-            if(after.hp>0 && !fatal_policy.blocking && fatal_policy.pending>0 && fatal_policy.projected<=0)
-                (void)fatal_intervene(self,0,after.id);
+#ifdef EXALT_CLIENT_FATAL
+            int record_update=fatal_policy.pending>0 || fatal_policy.blocking;
+#else
+            int record_update=1;
+#endif
+            fatal_server_hp(&fatal_policy,after.hp);
+            if(record_update)fatal_emit(28,self,after.id,after.hp,after.update_source,0);
 #ifdef EXALT_CLIENT_FATAL
             live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
 #endif
@@ -610,7 +631,7 @@ static void probe_install(void) {
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
     note("environment_guard_ready\tbreath=%d\tfrostbite=%d\n",damage_breath_field!=NULL,damage_frostbite_field!=NULL);
-    probe_installed=1;note("fatal_policy\tversion=2\treconciliation=retain_uncertain\thealing_credit=0\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=3\treconciliation=authoritative_hp_window\thealing_credit=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);

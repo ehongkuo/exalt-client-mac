@@ -44,16 +44,16 @@ requests the normal Nexus function before the fatal hit report, and suppresses t
 path only after confirming the local Nexusing flag. That flag does not establish server acceptance.
 
 ```text
-projected HP = min(previous bound - new damage, observed HP - all retained damage)
+projected HP = current observed HP - audited damage since the last incoming HP assignment
 request Nexus when projected HP <= 0
 ```
 
-HP assignments retain uncertain damage and can only lower the bound. Healing is not credited until a
-validated scope reset, so this can Nexus early during sustained combat. If a still-positive HP update
-makes the bound nonpositive, it requests Nexus without suppressing that assignment. A failed request
-preserves damage; another positive HP update permits a retry. Confirmed Nexus arrival or validated
-player/map/connection replacement resets the budget. Settings changes do not cancel an active escape.
-See [the audit and tradeoff](../docs/damage-status-audit.md).
+Each incoming authoritative HP assignment starts a fresh prediction window, including unchanged
+or higher HP (damage may be offset by healing). This restores the previously working client's
+baseline behavior and prevents old combat damage from causing full-health escapes. Hits between
+updates still accumulate across projectile, ground and area paths. An HP update is not a per-report
+acknowledgement, so late/in-flight report ordering remains a limitation. A positive update rearms a
+failed request; an already confirmed escape remains latched. See the [audit](../docs/damage-status-audit.md).
 
 ## Trace and analysis
 

@@ -52,7 +52,7 @@ def main():
                             print(f'HP sample {row[11]}/{row[12]} | cause not inferred',flush=True)
                         if phase==20:
                             pending_hp=int(row[21]);projected=pending_hp-(1<<64) if pending_hp>=(1<<63) else pending_hp
-                            print(f'FATAL PREDICTION | observed HP {row[11]} | damage {row[10]} | retained damage {row[15]} | projected {projected}',flush=True)
+                            print(f'FATAL PREDICTION | observed HP {row[11]} | damage {row[10]} | window damage {row[15]} | projected {projected}',flush=True)
                         elif phase==22:
                             print('Nexus requested locally. Audited damage suppression is ON; awaiting map transition.' if row[16]=='1' else 'Nexus request FAILED locally. Damage remains enabled. Stop this test and report the result.',flush=True)
                         elif phase==23:print(f'Withheld projectile report | bullet {row[8]} | owner {row[9]}',flush=True)
@@ -60,10 +60,10 @@ def main():
                         elif phase==25:print('Nexus map observed; fatal budget reset.' if row[16]=='1' else 'Player/map changed; fatal budget reset.',flush=True)
                         elif phase==26:print('Server/client HP reached zero while escape was pending. Intervention did not protect this case.',flush=True)
                         elif phase==28:
-                            print(f'Server HP baseline {row[11]} | uncertain damage retained | escape latch {row[17]}',flush=True)
+                            print(f'Server HP baseline {row[11]} | authoritative HP window rebased | escape latch {row[17]}',flush=True)
                         elif phase==27:
                             raw=int(row[21]);projected=raw-(1<<64) if raw>=(1<<63) else raw
-                            print(f'Fatal budget | observed HP {row[11]} | retained damage {row[15]} | projected {projected}',flush=True)
+                            print(f'Fatal budget | observed HP {row[11]} | window damage {row[15]} | projected {projected}',flush=True)
                         event=read_events(line)[0];estimate=ledger.feed(event)
                         if not fatal_live and estimate and (phase in (6,12,17) or estimate['held_crossed'] or estimate['debit_crossed']):
                             print(f"Shadow hypotheses | held {estimate['held_estimate']} | net-debit {estimate['debit_estimate']} | pending {estimate['debit_pending']} | {estimate['status']} (no confirmed acknowledgement)",flush=True)

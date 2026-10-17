@@ -11,7 +11,7 @@ sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
@@ -20,6 +20,7 @@ class ClientInterventionTests(unittest.TestCase):
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if false_positive:args.append('-DFATAL_FALSE_POSITIVE')
    if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
    if hp_cross:args.append('-DFATAL_HP_CROSS')
    if mixed:args.append('-DFATAL_MIXED_BURST')
@@ -83,21 +84,26 @@ class ClientInterventionTests(unittest.TestCase):
     self.assertGreaterEqual(len(attempts),2)
     self.assertLessEqual(len(attempts),4)
     self.assertFalse(any(e['flag0'] for e in attempts))
- def test_positive_hp_update_can_trigger_escape_without_canceling_the_assignment(self):
+ def test_healed_full_hp_does_not_escape_on_three_nonlethal_hits(self):
+  self.run_client('armed=1,potion=0,death=1',false_positive=True)
+  self.assertIn('healed_full_hp_survived_3x110=1',self.output)
+  self.assertIn('nexus_calls=0',self.output)
+  self.assertFalse(any(e['phase']==20 for e in self.events))
+ def test_authoritative_hp_rebases_prediction_before_the_next_hit(self):
   self.run_client('armed=1,potion=0,death=1',hp_cross=True)
-  self.assertIn('positive_hp_update_triggered_escape=1',self.output)
+  self.assertIn('authoritative_hp_rebased_before_next_hit=1',self.output)
   self.assertIn('nexus_calls=1',self.output)
   decision=next(e for e in self.events if e['phase']==20)
   self.assertEqual(decision['hp'],40)
-  self.assertEqual(decision['value'],0)
+  self.assertEqual(decision['value'],50)
   self.assertEqual(decision['projectile'],50)
- def test_mixed_paths_keep_damage_across_unchanged_drop_and_healing_updates(self):
+ def test_mixed_paths_accumulate_in_one_authoritative_window(self):
   self.run_client('armed=1,potion=0,death=1',mixed=True)
-  self.assertIn('mixed_paths_preserved_uncertain_damage=1',self.output)
+  self.assertIn('mixed_paths_rebased_and_preserved_same_window_burst=1',self.output)
   self.assertIn('nexus_calls=1',self.output)
   decision=next(e for e in self.events if e['phase']==20)
-  self.assertEqual(decision['projectile'],180)
-  self.assertEqual(decision['update_context'],0)
+  self.assertEqual(decision['projectile'],220)
+  self.assertEqual(decision['update_context'],(1<<64)-40)
   self.assertEqual([e['caller'] for e in self.secondary_reports],['0x183f880'])
  def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
   for boundary in ('0x196ed90UL','0x183f880UL'):
@@ -145,7 +151,7 @@ class ClientInterventionTests(unittest.TestCase):
   self.run_client('armed=1,potion=0,nexus=0,death=1',reconcile=True)
   resets=[e for e in self.events if e['phase']==28]
   self.assertEqual([e['flag1'] for e in resets],[0,1])
-  self.assertEqual([e['projectile'] for e in resets],[50,200])
+  self.assertEqual([e['projectile'] for e in resets],[0,0])
   self.assertEqual(self.live['nexus_sent'],'1')
  def test_disabling_toggle_mid_escape_keeps_pending_escape_blocked(self):
   self.run_client('armed=1,potion=0,nexus=0,death=1',toggle=True)
