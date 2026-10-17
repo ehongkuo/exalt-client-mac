@@ -20,9 +20,6 @@ remains. The prior conservative approach did not establish universal safety and 
 full-health false positives. The native policy regression reproduces its -108 bound and now yields
 876 HP after the three 110 hits; an integration fixture verifies no automatic Nexus after recovery.
 
-The historical conservative-policy discussion below is superseded by this correction.
-
-
 This audit applies to the fingerprint in `probe/damage_paths.json`. The native map verifies the
 installed binary, matching metadata identities, jump-table entries and instruction ranges.
 
@@ -71,45 +68,6 @@ numeric field. Null or short arrays are unavailable. Older events remain readabl
 `legacy_sprite_key_raw`, with `conditions_raw` unset. No old logs or report artifacts are rewritten.
 This correction does not invalidate X01-X03's escape evidence, which uses native caller identities,
 request results, report suppression and map transitions rather than these raw values.
-
-## Conservative policy version 2
-
-The previous policy erased pending damage on every incoming HP assignment, including unchanged HP.
-There is no per-hit acknowledgement in that assignment. The following native fixture demonstrates
-why a shared budget must survive mixed damage and delayed stats:
-
-| Step | Observed HP | Retained damage | Conservative bound |
-|---|---:|---:|---:|
-| Projectile 50 | 200 | 50 | 150 |
-| Repeated server HP 200 | 200 | 50 | 150 |
-| Ground 60 | 200 | 110 | 90 |
-| Server HP 180 of unknown attribution | 180 | 110 | 70 |
-| Area 70 | 180 | 180 | 0: request Nexus |
-
-Previously, the repeated update erased the projectile and the later update erased the ground damage,
-so the area hit alone predicted 110 HP and did not request Nexus.
-
-Version 2 retains uncertain damage until confirmed Nexus arrival or validated player/connection/map
-replacement. Each damage subtracts from the prior bound; an HP update can only lower that bound.
-Healing and higher stale assignments do not raise it. This is deliberately pessimistic: it can count
-already-applied damage twice and Nexus early during long fights, even after healing to full HP.
-It must not be advertised as exact remaining HP or as acknowledgement-aware reconciliation.
-
-A still-positive incoming HP assignment can itself reveal a nonpositive bound while prior local damage
-is retained. That requests Nexus immediately after recording the assignment, without changing or
-suppressing the authoritative HP value. With no pending local damage, a positive HP assignment alone
-does not trigger this path; server-only DOT is still not covered universally. Already-zero HP is not
-represented as a preventable escape.
-
-Failed requests preserve original damage and continue accumulating it. Another positive incoming HP
-update permits a retry, while multiple hits within one update do not repeatedly request Nexus. Once
-Nexusing is confirmed, no update or setting change clears the escape latch. Integer bounds saturate
-safely and overflow/invalid damage is rejected.
-
-These policy changes have automated coverage; the earlier X01-X03 tests validate the underlying live
-hook wiring, not the new policy's false-positive rate in extended gameplay. No additional in-game test
-is required to reproduce the arithmetic regression above. The installed app is not replaced by this
-source change or the standalone package build.
 
 ## Citadel observation and proactive environmental guard
 

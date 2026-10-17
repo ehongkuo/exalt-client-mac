@@ -2,7 +2,7 @@
 
 Enable **Nexus on death** in the client Settings and click **Apply**. The toggle is off for existing saved settings. Keep potion settings as desired. For an isolated predicted-death test, temporarily set the potion trigger and ceiling to Off, then enable Armed and this toggle. Percentage Auto-Nexus has been removed; old saved `nexus` values are discarded, and existing potion and death-toggle values are preserved. Enter Nexus and wait for **Nexus on death ready** before entering a fresh map with a throwaway character.
 
-The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`. The validated standalone diagnostic, source checkpoint `639068f`, logs and live test reports remain available for future development. The integrated client has recorded three successful projectile escapes with potions disabled; percentage-threshold removal still needs its own live UI check.
+The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
 Prediction uses the latest authoritative HP assignment as a new baseline. Projectile, ground and
 area damage accumulate within that window; healing and unchanged incoming HP also start a new

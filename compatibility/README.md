@@ -3,7 +3,7 @@
 The current integration uses a reviewed profile. Its addresses, method identities, hook bytes and caller
 sites live in one JSON file. The build checks generated files against that profile before compiling.
 An analysis report cannot approve a new build or change the installed app.
-See [validation](VALIDATION.md) and the [previous-to-current example](examples/previous-to-current.md).
+The commands below validate the selected profile and produce comparison reports when needed.
 
 ## Files
 
