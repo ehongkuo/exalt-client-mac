@@ -23,18 +23,15 @@ if [[ "${actual%% *}" != "$expected" ]]; then
 fi
 fatal_mode=0
 verify_mode=0
-environment_mode=0
 if [[ "${1:-}" == '--intervene' ]]; then
     fatal_mode=1
 elif [[ "${1:-}" == '--verify' ]]; then
     fatal_mode=1
     verify_mode=1
-elif [[ "${1:-}" == '--environment' ]]; then
-    environment_mode=1
 elif [[ "${1:-}" == '--observe' ]]; then
     fatal_mode=0
 elif [[ -n "${1:-}" ]]; then
-    print 'Usage: Start Hit Diagnostic.command [--observe | --verify | --intervene | --environment]'
+    print 'Usage: Start Hit Diagnostic.command [--observe | --verify | --intervene]'
     exit 1
 fi
 print 'Exalt damage-path diagnostic'
@@ -50,20 +47,14 @@ elif [[ "$fatal_mode" == 1 ]]; then
 else
     print 'Observation-only mode. Gameplay automation is off.'
 fi
-if [[ "$environment_mode" == 1 ]]; then
-    print 'ENVIRONMENT TRACE: message type names and native stacks near meter limits. No message payloads.'
-    print 'At ample HP, observe 1-3 nonlethal frostbite ticks, manually Nexus, wait five seconds, and quit.'
-fi
 print 'Auto potions and party Join remain disabled.'
 print 'Click Play, enter Nexus, and wait for Probe installed before testing.'
 print "Test instructions: $here/damage-testing.md"
 print 'Begin with a fresh realm/map and one nonlethal source at a time. Escape manually.'
 print 'If escape stalls or the local request fails, stop and quit normally. Report what happened.'
 print 'This prototype runs until the game is closed. The file-backed recorder preserves recent events.'
-default_id=D00
-[[ "$environment_mode" == 1 ]] && default_id=F01
-read -r "test_id?Test ID from the checklist [$default_id]: "
-test_id="${test_id:-$default_id}"
+read -r 'test_id?Test ID from the checklist [D00]: '
+test_id="${test_id:-D00}"
 if [[ "$test_id" == *[^A-Za-z0-9_-]* || ${#test_id} -gt 32 ]]; then
     print 'Use a test ID containing letters, numbers, underscores or hyphens (maximum 32).'
     exit 1
@@ -71,7 +62,7 @@ fi
 read -r '?Press Return to open the launcher, or Control-C to cancel.'
 mkdir -p "$here/data/sessions"
 session_dir="$(mktemp -d "$here/data/sessions/$test_id-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
-EXALT_TRACE_ENVIRONMENT="$environment_mode" EXALT_VERIFY_ONE_HP="$verify_mode" EXALT_FATAL_INTERVENTION="$fatal_mode" EXALT_GUARD='armed=0,potion=0,nexus=0' EXALT_GUARD_DIR="$session_dir" \
+EXALT_VERIFY_ONE_HP="$verify_mode" EXALT_FATAL_INTERVENTION="$fatal_mode" EXALT_GUARD='armed=0,potion=0,nexus=0' EXALT_GUARD_DIR="$session_dir" \
 DYLD_INSERT_LIBRARIES="$here/ExaltHitProbe.dylib" "$launcher" >/dev/null 2>&1 &!
 print "Session: $session_dir"
 print 'Return to the chat after a damage test. The game can be quit normally.'

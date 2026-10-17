@@ -2,7 +2,7 @@
 
 The diagnostic records player HP, incoming updates, projectile calculations, notification callers,
 the first two condition-mask words, breath and frostbite meters, Nexus requests, map transitions and death-screen events.
-It includes audited projectile, ground and radius/AOE intervention. It also proactively escapes at frostbite >= 100 or exhausted oxygen after observing positive breath in the same player/map/connection scope. This does not cancel server damage; the oxygen trigger is not live-verified. Bleeding alone is nonlethal. Use `--verify` to check an escape on a small hit using a synthetic 1-HP
+It includes audited projectile, ground and radius/AOE intervention and a guard for lethal locally computed HP writes. Meter limits alone never request escape. Received HP and death handling are excluded; frostbite received-state damage is outside protection and oxygen-specific damage coverage remains unverified. Bleeding alone is nonlethal. Use `--verify` to check an escape on a small hit using a synthetic 1-HP
 prediction; actual game HP is unchanged. Start with the [in-game checklist](../docs/damage-testing.md) and
 [damage-source map](../docs/damage-sources.md).
 
@@ -82,3 +82,6 @@ escape, including deaths found in the binary tail. Every report says lethal prev
 The binary fingerprint, 15 mapped method entries, five notification dispatch sites, four
 field declarations (including the retained legacy sprite-key identity) and selected instruction evidence live in `damage_paths.json`. `map_damage.py`
 verifies those facts without changing runtime approval. Projectile, terrain and AOE escape wiring has live evidence; Citadel observations establish meter/HP-update timing. See VALIDATION.md for remaining limits.
+
+The completed F01 capture tools have been retired. Historical stack/message records are still
+readable by `analyze.py` and `damage_session.py`; findings are documented in the status audit.
