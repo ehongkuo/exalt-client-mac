@@ -140,3 +140,47 @@ guarded routes benefits from them, but there is no evidence yet that every statu
 routes through those functions. Direct writes bypassing both the setter and notification/calculator
 hooks, or different outgoing report routines, are not proven covered. This remains an explicit local
 routing task; no server-computation workaround is retained or proposed here.
+
+
+## F01: targeted Citadel frostbite trace (2026-10-17)
+
+Session `F01-20261017T065644Z-EynDnj`, raw `guard-42155.tsv` SHA-256
+`af1adc219c44d6192f555fb0d938aeca85abb3d928471fbeb7622d4e85a91078`, matches the
+GameAssembly fingerprint above. The capture contains 2893 events; the text and flight recorder
+report zero dropped/overwritten/incomplete events, zero observed off-main calls and zero trace-limit
+skips. Normal completion was not logged, so the automatic whole-session outcome remains
+inconclusive. The retained hazard interval is still usable for the following bounded routing findings;
+no repeat exposure is needed merely to obtain an orderly-exit marker.
+
+- 47 net HP decreases occurred with frostbite 100, over 12.116510 seconds. Each decreased HP by
+  10–13; their median spacing was 200.1715 ms. The first followed the recorded full meter by
+  176.973 ms. Minimum HP after these decreases was 1042 (maximum 1090); healing occurred between
+  some decreases, so their summed 557 HP is not a net session loss or a direct per-proc damage claim.
+- All 47 decreased through incoming stat assignment (`update_source=1`, HP setter return
+  `0x184c115`), with identical eight-frame GameAssembly stack observations. No hooked damage
+  calculator, damage notification or projectile-report events appeared anywhere in this capture.
+- The observed chain, from outer caller toward the HP write, is
+  `UnityThread.Update` → `SocketManager.GotMessageHandler` →
+  `HJMBOMEHGDJ.LDKKFMBNOCN` → `DBCEHNAEDCH` → `NAMGODOEDBO` → the HP setter.
+  Recorded return addresses are `0x1c29347`, `0x199f00a`, `0xad133`, `0x18498e7`,
+  `0x1849c85`, `0x184c115` (plus two outer Unity invocation frames).
+  Metadata and native instruction boundaries verify the handler call at `0x18498e2`, stat dispatcher
+  call at `0x1849c80`, and HP setter call at `0x184c110`. At that last call, the already decoded
+  integer is moved into the setter argument, with no damage calculation at that boundary.
+- 176 outgoing sends were observed near the meter limit: 82 `AJCKDMICJJA` from `0x1850690`,
+  69 `FKGDHGJDNAO` from `0x184a2fd`, 24 `LHNBLJLKPMJ` from `0x18543ac`, and one
+  `IKFIMIBKGEP` during the manual Nexus call. Metadata shows the first/last have no declared
+  payload fields; the second has integer/time and position-sample-list fields; the third's native
+  ToString literal identifies it as `ShootAckCounter`. These observations do not identify a local
+  frostbite damage producer or damage-report message. Payloads were not captured.
+- A manual Nexus call was recorded at HP 1077, with a later Nexus map observed about 2.005 seconds
+  afterward. No death-screen event was observed. This was a nonlethal routing test, not a lethal
+  cancellation test; oxygen was not established by it.
+
+**Coverage finding:** this capture does not support treating frostbite as an existing guarded
+projectile/ground/AOE producer. Its observed HP reduction enters through received state, which the
+current local-only hatch deliberately excludes. Therefore frostbite lethal protection remains
+unverified and the observed route is not protected by that hatch. The trace does not prove absence
+of arbitrary earlier inline calculations, other transports, or unobserved producer functions, nor
+server-side lethal ordering. The client-first assumption cannot substitute for a located producer.
+No speculative incoming-state rescue or meter-triggered escape was added in response to this test.
