@@ -9,7 +9,7 @@ Production-only efficiency changes skip discarded diagnostic snapshots and ordin
 logs and reduce the fixed event queue by 192 KiB. Standalone diagnostics retain their existing tracing.
 See [performance measurements](../docs/performance-audit.md) for component measurements and limits.
 
-Current validation covers: 22 production tests, 24 diagnostic tests, 16 session-report tests, five
+Current validation covers: 22 production tests, 24 diagnostic tests, 19 session-report tests, five
 native-map tests and the undefined-behavior-sanitized policy suite. Production and diagnostic libraries compile with warnings treated as errors; the signed app build passes. The captured 1206-HP state yields PASS/projected 876,
 where the earlier version-2 policy yields REQUEST/projected -108.
 
