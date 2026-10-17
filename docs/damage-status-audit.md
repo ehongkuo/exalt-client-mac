@@ -184,3 +184,57 @@ unverified and the observed route is not protected by that hatch. The trace does
 of arbitrary earlier inline calculations, other transports, or unobserved producer functions, nor
 server-side lethal ordering. The client-first assumption cannot substitute for a located producer.
 No speculative incoming-state rescue or meter-triggered escape was added in response to this test.
+
+
+## F01 backward trace: decoded HP and meter consumers
+
+Further native inspection locates where the received HP integer originates, before the main-thread
+handler. All addresses below match the same pinned GameAssembly and archived metadata as F01.
+
+| Stage | Native evidence | Meaning |
+|---|---|---|
+| Tick/status packet decoding | `BJEENKGELLO.JEFJDICFNBA`, `0x1950d60`; packet holds `List<BOEANEODCOA>` at `+0x20` | Decodes a batch of entity status records |
+| Entity status decoding | `BOEANEODCOA.JEFJDICFNBA`, `0x22599b0`; record holds `List<CGOECEPGBBG>` at `+0x20` | Decodes each entity's stat list |
+| Stat decoding | `CGOECEPGBBG.JEFJDICFNBA`, `0x1101e50` | Reads byte stat ID into `+0x10`; integer stat value into `+0x14` |
+| Integer origin | Call `0x1101f3e` → `OODFCLBKDJJ.FKPJFEHLIDH` at `0x1fecda0`, then store at `0x1101f43` | Signed variable-length integer decoding from `BHFDLBOGHIB` byte reader, not subtraction from current player HP |
+| Main-thread stat dispatch | `0x184b1be`: load stat `+0x14` into `%r14d`; `0x184b1c2`: load stat ID `+0x10` | Selects HP, breath, frostbite or another stat |
+| HP assignment | `0x184c10b`: move `%r14d` to setter argument; `0x184c110`: call `0x1af1670` | Applies the decoded HP value; no HP subtraction at this boundary |
+
+At stat ID 1 (HP), the decoder's numeric branch reads the integer into the same `+0x14` field consumed
+by the HP dispatch. Its reader uses a six-bit initial magnitude, sign bit and seven-bit continuation
+chunks. This is serialization arithmetic; it has no current-player HP argument. The earliest confirmed
+entry of the HP value is the stat parser's store at `0x1101f43`, already within received-state decoding.
+It is earlier than the setter, but is not an established local pre-report damage producer.
+
+The meter branch was followed independently:
+
+- Frostbite `+0x530` and breath `+0x52c` are incoming-backed player fields. Direct relative call/jump
+  scans for their getter/setter aliases and frostbite-full predicate found two instruction-verified
+  references: incoming dispatch calls frostbite setter `0x1979920` at `0x184c7da` and breath setter
+  `0x196c150` at `0x184cb6f`. Aliases/getters may be unused or inlined; that result alone cannot exclude
+  local consumers.
+- To examine inlining, a whole-text displacement scan found 605 raw `0x52c`/`0x530` candidates;
+  551 were matched to instruction extents within the audit's method-span limit. Those offsets also
+  occur in unrelated types/vtables, so this is a candidate search, not 605 player accesses.
+- `CharacterUIManager.Update` compares the actual player frostbite field to 100 at `0xbbc5ab` and
+  tail-calls `BlizzardController.BumpIntensity` at `0xbbc5e5`. That destination is only
+  `movl $0x3ecccccd, 0x44(%rdi)` plus return: it sets float intensity **0.4**, not HP. Inspection of
+  `BlizzardController.LateUpdate` resolves its direct calls to particle size, transforms, camera,
+  time and overlay alpha operations. The meter getters and bars likewise provide/display values.
+- The inspected `MBPKMLMIJNI` meter branches call `OverlayController.ShowUnderwaterOverlay`,
+  `ShowFrostOverlay`, `HideOverlay` and `UpdateAlpha`. They are presentation leads, not established
+  damage producers. Some aliases use different thresholds; none should be selected as a protection
+  boundary from a numeric threshold alone.
+
+Rechecked instruction bytes: `0x1101f3e=e85daeee00894314`,
+`0x184b1be=458b7714410fb65f10`, `0x184c10b=4489f631d2e85b552a00`,
+`0x112c584=c74744cdcccc3e`. Detailed candidate instructions and verified direct references are retained
+in ignored `build/damage-native-audit/f01-producer-backtrack.json`.
+
+**Result:** a concrete earlier received-value boundary is located, and the apparent full-meter damage
+lead resolves to graphics. A local frostbite subtraction/report producer is still not established.
+Hooking the decoder or blocking its write would change received-state handling, which the current
+local-only policy excludes; it would not demonstrate cancellation of the damage before the packet
+was sent. No runtime hooks, meter escapes, forecasts, or incoming-state rescue behavior were added.
+The F01 runtime evidence is specific to frostbite; the stat wiring does not prove oxygen damage shares
+its complete producer path. No additional live exposure is requested by this static audit.
