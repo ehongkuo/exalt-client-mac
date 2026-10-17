@@ -1,6 +1,6 @@
 # Status damage and HP reconciliation audit
 
-## Current policy: authoritative HP windows (version 3)
+## Current policy: authoritative HP windows (version 4)
 
 The live installed version-2 policy produced a false projectile escape at event 11005 in
 `guard-93129.tsv`: HP 1206/1206, incoming calculated damage 110, retained damage 1043, projected HP
@@ -12,7 +12,7 @@ Version 3 restores the prior client's authoritative-window behavior: every incom
 clears the prior pending budget and adopts that HP baseline, including unchanged or higher values.
 Unchanged values can include damage offset by healing. Only audited hits between updates accumulate;
 all three local damage paths share the same budget. Already-confirmed escape latches survive updates.
-A failed request can retry after a positive update. Environmental full-meter guards are unchanged.
+A failed request can retry after a positive update. Version 4 retains this HP-window policy and removes unconditional environmental meter escapes.
 
 This is a deliberate correction of version 2, not proof that incoming HP acknowledges particular
 reports. Clearing a window can omit still-in-flight reports; the client/server ordering limitation
@@ -53,7 +53,7 @@ notification without the separate outgoing damage report found in the ground/are
 notification can set HP to zero when that flag is set. This is received state, not an established
 local calculation/report boundary. Suppressing it would not establish that the server reversed death.
 
-No source-specific damage cancellation is established for bleeding, suffocation or frostbite. The later proactive meter guard described below is separate from cancellation.
+No source-specific damage cancellation is established for bleeding, suffocation or frostbite. Meter saturation is not a lethal input and does not request escape.
 The source of their HP changes remains unresolved. A labeled live trace may narrow that routing, but
 testing every dungeon or hazard is not justified by the current evidence.
 
@@ -69,7 +69,7 @@ numeric field. Null or short arrays are unavailable. Older events remain readabl
 This correction does not invalidate X01-X03's escape evidence, which uses native caller identities,
 request results, report suppression and map transitions rather than these raw values.
 
-## Citadel observation and proactive environmental guard
+## Citadel observation and removal of premature meter escapes
 
 Session `D06-20261017T000048Z-AQqfYg` was a Citadel run despite the D06 label; source identification
 comes from the user's report and frostbite readings, not the label. Its raw log SHA-256 is
@@ -79,14 +79,20 @@ All 57 recorded HP decreases came through incoming HP assignments at `0x184c115`
 
 At event 347389 (`531416446167000 ns`), frostbite was 100, breath -1, HP 740/740, conditions zero.
 The first following recorded decrease, event 347508 (`531416624203000 ns`), assigned HP 726 through
-the incoming stat path, about 178 ms later. This is an observed opportunity to request Nexus at the
-meter limit; it is not evidence of sufficient time for server acceptance under every connection.
+the incoming stat path, about 178 ms later. This directly demonstrates a full meter with positive HP
+and a subsequent nonlethal decrease; the meter limit itself is not an appropriate lethal trigger.
 The recording ends in Nexus at positive HP. The bundle remains inconclusive for whole-session
 completion because the diagnostic lacks an exit completion marker; raw evidence was not rewritten.
 
-The implementation now samples the mapped meters on the existing main-thread guard tick and uses
-the validated normal Nexus request and local blocking latch. Frostbite >= 100 triggers regardless
-of HP. Oxygen == 0 triggers only after positive breath was observed in the same scope. No server HP
-assignment is suppressed. These are proactive hazard escapes, not newly discovered cancellable DOT
-functions. Oxygen routing and live environmental escape remain unverified; no OT run is required
-to prepare this MR, and no shared server-side damage function is claimed.
+The former implementation escaped at frostbite >= 100 or exhausted oxygen regardless of HP. That
+behavior conflicted with lethal-only protection and has been removed, including production meter
+lookups, retry state and meter-only requests. Diagnostic meter observation and per-tick scope/latch
+cleanup remain. Regression fixtures cover meter saturation without escape, a nonlethal incoming HP
+update followed by a correctly intercepted lethal local hit, and incoming zero HP that is not hidden
+or falsely reported as prevented. These fixtures do not establish cancellable environmental DOT.
+
+The installed binary's native damage map still verifies. HP, breath and frostbite values enter through
+the incoming stat dispatch; no local environmental damage/report boundary or server request for a
+client-provided alive/dead status has been established by this audit. Incoming state must not be
+confused with a client-authoritative health response. Oxygen routing and lethal frostbite/suffocation
+cancellation remain unresolved.

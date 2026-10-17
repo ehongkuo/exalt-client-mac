@@ -25,7 +25,7 @@ This is not universal death prevention. Incoming server HP assignments are autho
 ignoring a zero assignment cannot undo a death already decided remotely. Breath and frostbite meter
 setters are called from the incoming stat handler (`0x184cb6f` and `0x184c7da` respectively), which does
 not establish a cancellable local damage calculation. Projectile, ground and area escape wiring has
-live evidence; the Citadel trace establishes full-meter/server-HP ordering. Environmental escape
+live evidence; the Citadel trace establishes full-meter/server-HP ordering. Lethal environmental damage cancellation
 and server acceptance under lethal conditions remain unverified. Bleeding alone is nonlethal.
 
 The minimum check is one projectile, one ground and one radius/AOE escape, with automatic log capture;
@@ -33,17 +33,20 @@ see [verification steps and native evidence](damage-testing.md). Testing every e
 once shared native routing is demonstrated. [Damage-source evidence](damage-sources.md) records the
 remaining gaps.
 
-## Environmental escape
+## Environmental meters and current coverage
 
-With Nexus on death enabled and Armed, the same validated Nexus request/latch now also runs at
-`frostbite >= 100`, regardless of HP. Exhausted oxygen (`breath == 0`) uses the same request, but only
-after a positive breath value was observed in the same validated player/map/connection scope. This
-avoids interpreting a default zero as active suffocation. Negative breath is inactive. Missing meter
-fields disable their trigger. Scope changes clear the breath history and retry timer.
+Meter limits alone never request Nexus: frostbite 100+ and exhausted breath indicate hazardous
+conditions, not lethal damage. The former unconditional meter escapes have been removed. Meter
+values remain available in the standalone diagnostic build; the production client does not poll them.
+The shared scope/latch cleanup still runs on every guard tick.
 
-The Citadel trace shows full frostbite followed by incoming server HP assignments, not a cancellable
-local hit. These guards deliberately escape at the hazardous meter limit, even at full HP; they do
-not wait for predicted death or cancel/rewrite server HP. Requests retry at most once per second on
-failure. Dry run records intentions without invoking Nexus. Normal observation mode remains passive.
-Oxygen uses a shared escape routine, but its meter transition has not been observed in a live run.
-Bleeding alone cannot kill players and does not require a dedicated lethal-source test.
+The Citadel trace records frostbite 100 at HP 740/740, followed about 178 ms later by incoming HP 726.
+This supports the distinction between a saturated meter and a lethal input. The incoming HP assignment
+is not an audited local damage calculation/report boundary. No source-specific cancellable frostbite
+or suffocation tick has been established, and no such protection is claimed by the settings text.
+
+Nonlethal incoming HP updates rebase the normal prediction window. Subsequent audited projectile,
+ground and area damage still enters the common lethal prediction and confirmed-escape latch.
+Incoming zero-HP assignments are not discarded or rewritten as positive HP: hiding that state would
+not establish that a server-originated death was prevented. The desired lethal-only environmental
+protection requires a verified pre-commit damage path; it is not implemented by this meter-trigger fix.

@@ -57,7 +57,7 @@ The protection-poll component used 113.70 ns of process CPU per operation on mai
 
 The main shipping library has 761,152 bytes of zero-fill data; the updated build has 564,704 bytes. Its Mach-O mapped segments total 630,784 bytes versus 823,296 on main (188 KiB smaller). The ninth hook reserves one additional 4 KiB trampoline, for an approximate net mapped reduction of 184 KiB against main. On-disk library size is 68,408 bytes versus 63,720 on main; file size and runtime resident memory are different quantities.
 
-The event buffer is bounded and allocated statically. Synthetic host resident/footprint readings were collected per workload but are not treated as the RAM delta in the real game. No production flight-recorder file/string is present in the shipping library. No additional runtime work or polling was added to the Swift UI.
+The event buffer is bounded and allocated statically. Synthetic host resident/footprint readings were collected per workload but are not treated as the RAM delta in the real game. No production flight-recorder file/string is present in the shipping library. That protection-hook optimization did not change UI polling; the follow-up UI changes are described above.
 
 All seven workload families across all seven runs and three versions recorded zero event-queue drops. The benchmark uses a single explicit consumer and deletes its synthetic logs after collecting numerical samples. Actual gameplay logs and diagnostic session evidence are untouched.
 
@@ -65,7 +65,7 @@ At the start of the sweep the PR had 2,203 added lines. At most 311 of those wer
 
 ## Validation and reproduction
 
-The 17 production intervention tests and 24 diagnostic tests pass after optimization. The 16 session-report tests, five native-map tests, production compilation with warnings as errors, and undefined-behavior-sanitized fatal-policy tests pass. The tests retain coverage for mixed-source damage, authoritative HP assignments, disabled/dry-run behavior, failed Nexus requests, oxygen/frostbite triggers, and pending-escape latches.
+The 17 production intervention tests and 24 diagnostic tests pass after optimization. The 16 session-report tests, five native-map tests, production compilation with warnings as errors, and undefined-behavior-sanitized fatal-policy tests pass. The tests retain coverage for mixed-source damage, authoritative HP assignments, disabled/dry-run behavior, failed Nexus requests, meter-only nonintervention, and pending-escape latches.
 
 From the worktree root, prepare the immutable source snapshots once and run:
 

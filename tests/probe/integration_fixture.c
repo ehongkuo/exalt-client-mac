@@ -19,7 +19,7 @@ static uint64_t benchmark_field_reads;
 #endif
 #ifdef OBSERVE_ENVIRONMENT
 static int fixture_breath=0,fixture_frostbite=100;
-#elif defined(FATAL_ENVIRONMENT) && FATAL_ENVIRONMENT==2
+#elif defined(FATAL_ENVIRONMENT) && (FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==7)
 static int fixture_breath=1,fixture_frostbite=0;
 #else
 static int fixture_breath=-1,fixture_frostbite=0;
@@ -150,9 +150,33 @@ static void burst(void *unused) {
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
 #ifdef FATAL_ENVIRONMENT
- fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3)?0:-1;
- fixture_frostbite=FATAL_ENVIRONMENT==1?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;
- puts("environment_fixture_ready=1");return;
+ fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3 || FATAL_ENVIRONMENT==7)?0:-1;
+ fixture_frostbite=(FATAL_ENVIRONMENT==1 || FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==8)?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;
+ puts("environment_fixture_ready=1");
+#if FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==7
+ /* Incoming nonlethal HP loss is not a local damage calculation. The next
+  * covered hits still use that authoritative baseline and the shared latch. */
+ next_stats_hp=186;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==186 && !nexus_calls);
+ for(int i=0;i<3;++i){
+  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ }
+ assert(!nexus_calls);puts("meter_and_nonlethal_damage_did_not_escape=1");
+ for(int i=0;i<2;++i){
+  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ }
+ assert(nexus_calls==1 && report_forwarded==3 && notify_forwarded==3);
+ puts("lethal_covered_hit_and_following_damage_blocked=1");
+#elif FATAL_ENVIRONMENT==8
+ next_stats_hp=0;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==0 && !nexus_calls);
+ puts("incoming_zero_hp_not_falsified=1");
+#endif
+ return;
 #endif
 #ifdef FATAL_FALSE_POSITIVE
  hp_fixture((void*)40,935,(void*)0x5678);

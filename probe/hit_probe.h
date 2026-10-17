@@ -68,8 +68,6 @@ typedef struct {
 #include "fatal_policy.h"
 static FatalPolicy fatal_policy;
 static int fatal_enabled,fatal_invoking,fatal_death_logged;
-static uint64_t fatal_meter_retry_ns;
-static int fatal_meter_saw_breath;
 #ifdef EXALT_HIT_PROBE
 static int fatal_verify_hp;
 #endif
@@ -194,7 +192,6 @@ static void fatal_clear(void *player,int reason) {
     atomic_store_explicit(&fatal_block_player,0,memory_order_release);
     release(&fatal_player_handle);release(&fatal_connection_handle);release(&fatal_socket_handle);
     fatal_policy=(FatalPolicy){0};fatal_death_logged=0;
-    fatal_meter_retry_ns=0;fatal_meter_saw_breath=0;
 #ifdef EXALT_CLIENT_FATAL
     live_data.death_blocking=0;live_data.death_pending=0;live_data.death_predicted=0;
 #endif
@@ -215,14 +212,13 @@ static int fatal_sync(void *player) {
     if(!fatal_policy.player)fatal_reset(&fatal_policy,(uintptr_t)player,(uintptr_t)connection,(uintptr_t)last_map_info);
     return 1;
 }
-static void *damage_breath_field,*damage_frostbite_field;
 static int fatal_local_nexusing(void *connection) {
     void *socket=read_reference(connection,fatal_socket_field);
     if(!socket || il2cpp_object_get_class(socket)!=fatal_socket_class)return 0;
     uint8_t value=0;il2cpp_field_get_value(socket,fatal_nexusing_field,&value);return value!=0;
 }
 #ifdef EXALT_HIT_PROBE
-static void *damage_conditions_field;
+static void *damage_conditions_field,*damage_breath_field,*damage_frostbite_field;
 static uint64_t damage_context_next_ns,damage_context_generation,damage_context_bits;
 static int damage_context_breath=-1,damage_context_frostbite=-1,damage_context_nexusing=-1,damage_context_mask=-1;
 /* Phase 29: projectile is an opaque condition bitset, value/owner are raw breath/frostbite
@@ -271,19 +267,14 @@ static void fatal_record(void *player,int hp,int result) {
          hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result);
 }
 #endif
-static int fatal_intervene_reason(void *player,int damage,uint64_t calculation,int hazard) {
+static int fatal_intervene(void *player,int damage,uint64_t calculation) {
     if(!fatal_sync(player))return damage;
     int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
     int prediction_hp=hp;
 #ifdef EXALT_HIT_PROBE
     if(fatal_verify_hp && hp>0)prediction_hp=1;
 #endif
-    int decision;
-    if(hazard){
-        if(hp<=0 || fatal_policy.blocking)return damage;
-        fatal_policy.attempted=1;decision=FATAL_REQUEST;
-        note("guard_environment_nexus\treason=%s\thp=%d\n",hazard==1?"frostbite_limit":"oxygen_exhausted",hp);
-    }else decision=fatal_damage(&fatal_policy,prediction_hp,damage);
+    int decision=fatal_damage(&fatal_policy,prediction_hp,damage);
     if(decision==FATAL_REQUEST) {
         fatal_emit(20,player,calculation,damage,decision,0);
 #ifdef EXALT_CLIENT_FATAL
@@ -325,23 +316,6 @@ prediction_done:
 #endif
     fatal_emit(27,player,calculation,damage,decision,0);
     return fatal_policy.blocking?0:damage;
-}
-static int fatal_intervene(void *player,int damage,uint64_t calculation) {
-    return fatal_intervene_reason(player,damage,calculation,0);
-}
-/* These meters describe server-owned hazards. Escape proactively; never pretend
- * that suppressing an incoming HP assignment cancels damage at the server. */
-static void fatal_meter_tick(void *player,uint64_t now) {
-    if(!fatal_sync(player) || fatal_policy.blocking || now<fatal_meter_retry_ns)return;
-    int breath=-1,frostbite=-1;
-    if(damage_breath_field)il2cpp_field_get_value(player,damage_breath_field,&breath);
-    if(damage_frostbite_field)il2cpp_field_get_value(player,damage_frostbite_field,&frostbite);
-    if(breath>0)fatal_meter_saw_breath=1;
-    int hazard=fatal_environment_hazard(breath,frostbite);
-    if(hazard==2 && !fatal_meter_saw_breath)return; /* default zero is not evidence of exhaustion */
-    if(!hazard)return;
-    fatal_meter_retry_ns=now+1000000000ULL; /* bounded retries, including dry run */
-    (void)fatal_intervene_reason(player,0,0,hazard);
 }
 static void report_observed(void *self,uint32_t bullet,int owner,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);
@@ -555,11 +529,9 @@ static void probe_install(void) {
     for(int i=0;i<9;++i)entries[i]=dlsym(RTLD_DEFAULT,names[i]);
     probe_tick_field=(void*)990;probe_time_field=(void*)991;
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
-#ifndef HIT_PROBE_NO_CONTEXT_TEST
+#if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
     damage_breath_field=(void*)1002;damage_frostbite_field=(void*)1003;
-#ifdef EXALT_HIT_PROBE
     damage_conditions_field=(void*)1001;
-#endif
 #endif
 #else
     size_t count=0;const void **assemblies=il2cpp_domain_get_assemblies(il2cpp_domain_get(),&count);
@@ -575,9 +547,9 @@ static void probe_install(void) {
 #ifdef EXALT_HIT_PROBE
     void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
     damage_conditions_field=entity?typed_field(entity,"COHCKAPOLCA","System.Int32[]"):NULL;
-#endif
     damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
     damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
+#endif
     if(!probe_projectile_class){note("hit_probe_refused\tprojectile_class\n");return;}
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
     probe_time_field=typed_field(connection_class,"FIAJOKGHGGK","System.UInt32");
@@ -630,8 +602,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    note("environment_guard_ready\tbreath=%d\tfrostbite=%d\n",damage_breath_field!=NULL,damage_frostbite_field!=NULL);
-    probe_installed=1;note("fatal_policy\tversion=3\treconciliation=authoritative_hp_window\thealing_credit=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=4\treconciliation=authoritative_hp_window\thealing_credit=1\tmeter_escape=0\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
@@ -648,7 +619,7 @@ static void hit_probe_tick(void *player,uint64_t now) {
     live_data.death_status=probe_installed?1:probe_attempted?-1:0;
 #endif
     if(!probe_installed)return;
-    if(fatal_enabled)fatal_meter_tick(player,now);
+    if(fatal_enabled)(void)fatal_sync(player); /* Keep scope/latch cleanup independent of damage. */
 #ifdef EXALT_CLIENT_FATAL
     live_data.death_blocking=fatal_policy.blocking;
     live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;

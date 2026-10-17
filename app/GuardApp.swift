@@ -536,7 +536,7 @@ struct GuardPanel {
                          help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
             Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath)
                 .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
-            Text("Escape before predicted lethal projectile, ground, or area damage. Requires Armed. Also escapes at full frostbite or exhausted oxygen, regardless of HP. Oxygen trigger has not been verified in game.")
+            Text("Escape before predicted lethal projectile, ground, or area damage. Requires Armed. Meter limits alone do not trigger escape. Lethal oxygen and frostbite damage protection is not established.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             if let s, s.nexusOnDeath || s.deathBlocking {
                 Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")

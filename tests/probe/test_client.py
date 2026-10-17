@@ -57,33 +57,32 @@ class ClientInterventionTests(unittest.TestCase):
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
- def test_environment_escapes_without_projectile_or_pending_damage(self):
-  for environment,reason in ((1,'frostbite_limit'),(2,'oxygen_exhausted'),(5,'frostbite_limit')):
-   with self.subTest(environment=environment):
-    self.run_client('armed=1,potion=0,death=1',environment=environment)
-    self.assertIn('nexus_calls=1',self.output)
-    self.assertIn('reason='+reason,self.log)
-    self.assertEqual(self.live['death_pending'],'0')
-    self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
- def test_environment_respects_dry_run_disabled_and_missing_fields(self):
-  for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
-   with self.subTest(settings=settings,no_context=no_context):
-    self.run_client(settings,environment=1,no_context=no_context)
-    self.assertIn('nexus_calls=0',self.output)
- def test_inactive_zero_breath_and_subthreshold_frostbite_do_not_escape(self):
-  for environment in (3,4):
+ def test_meter_limits_alone_do_not_escape(self):
+  for environment in (1,2,3,4,5):
    with self.subTest(environment=environment):
     self.run_client('armed=1,potion=0,death=1',environment=environment)
     self.assertIn('nexus_calls=0',self.output)
     self.assertNotIn('guard_environment_nexus',self.log)
- def test_environment_failure_retries_are_bounded(self):
-  for failure in ('denied','exception'):
-   with self.subTest(failure=failure):
-    self.run_client('armed=1,potion=0,death=1',environment=1,**{failure:True})
-    attempts=[e for e in self.events if e['phase']==22]
-    self.assertGreaterEqual(len(attempts),2)
-    self.assertLessEqual(len(attempts),4)
-    self.assertFalse(any(e['flag0'] for e in attempts))
+    self.assertFalse(any(e['phase']==20 for e in self.events))
+    self.assertEqual(self.live['death_pending'],'0')
+ def test_meter_limits_preserve_dry_run_disabled_and_missing_fields(self):
+  for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
+   with self.subTest(settings=settings,no_context=no_context):
+    self.run_client(settings,environment=1,no_context=no_context)
+    self.assertIn('nexus_calls=0',self.output)
+ def test_nonlethal_environment_hp_update_preserves_lethal_hit_protection(self):
+  for environment in (6,7):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('meter_and_nonlethal_damage_did_not_escape=1',self.output)
+    self.assertIn('lethal_covered_hit_and_following_damage_blocked=1',self.output)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
+ def test_incoming_zero_hp_is_not_misrepresented_as_prevented_damage(self):
+  self.run_client('armed=1,potion=0,death=1',environment=8)
+  self.assertIn('incoming_zero_hp_not_falsified=1',self.output)
+  self.assertIn('nexus_calls=0',self.output)
+  self.assertEqual(self.live['death_blocking'],'0')
  def test_healed_full_hp_does_not_escape_on_three_nonlethal_hits(self):
   self.run_client('armed=1,potion=0,death=1',false_positive=True)
   self.assertIn('healed_full_hp_survived_3x110=1',self.output)

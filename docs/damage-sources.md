@@ -2,7 +2,7 @@
 
 The implementation now protects audited projectile, ground and radius/AOE boundaries using a shared
 escape policy. Newly added paths have native and fixture evidence; live verification is still pending.
-Status and meter damage remain unresolved. See the [minimal verification process](damage-testing.md).
+Status and meter damage remain unresolved; saturated meters alone do not trigger escape. See the [minimal verification process](damage-testing.md).
 
 ## Evidence levels
 
@@ -34,7 +34,7 @@ exposed/curse-like effects, healing prevention, invulnerability, and ground prot
 does not establish that it drains HP. Player bleeding behavior must be measured separately from damage
 players inflict on enemies. We do not assume bleeding alone is lethal or infer its floor from a wiki.
 
-DECA's [Ice Citadel release notes](https://remaster.realmofthemadgod.com/?p=4582) describe frostbite damage
+DECA's [Ice Citadel public-testing introduction](https://remaster.realmofthemadgod.com/?p=4582) describe frostbite damage
 at a full meter. Their [bleeding update](https://remaster.realmofthemadgod.com/?p=3164) distinguishes
 enemy bleeding changes from player behavior. These are mechanic-discovery references, not proof of the
 installed implementation or current numerical damage rates.
@@ -91,8 +91,8 @@ from trigger to calculation/notification, HP updates and escape/death. A local N
 observed Nexus map are separate facts. Even a successful escape does not establish a prevented lethal hit.
 
 The next protection PR should select only source paths whose player identity, ABI, ordering and
-pre-commit boundary are established. Sources observed only through incoming lethal HP updates may
-require earlier preventive escape instead of waiting for predicted zero.
+pre-commit boundary are established. For sources observed only through incoming lethal HP updates, lethal-only cancellation requires
+a verified earlier damage boundary; a meter-limit escape is not equivalent.
 
 ## Expanded protection
 
