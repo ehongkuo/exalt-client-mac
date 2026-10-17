@@ -11,15 +11,16 @@ sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
-   subprocess.run(['clang',*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
+   subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
     '-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DSESSION_NS=3500000000ULL',
     f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
    if hp_cross:args.append('-DFATAL_HP_CROSS')
    if mixed:args.append('-DFATAL_MIXED_BURST')
    if boundary:
@@ -55,6 +56,33 @@ class ClientInterventionTests(unittest.TestCase):
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+ def test_environment_escapes_without_projectile_or_pending_damage(self):
+  for environment,reason in ((1,'frostbite_limit'),(2,'oxygen_exhausted'),(5,'frostbite_limit')):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertIn('reason='+reason,self.log)
+    self.assertEqual(self.live['death_pending'],'0')
+    self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
+ def test_environment_respects_dry_run_disabled_and_missing_fields(self):
+  for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
+   with self.subTest(settings=settings,no_context=no_context):
+    self.run_client(settings,environment=1,no_context=no_context)
+    self.assertIn('nexus_calls=0',self.output)
+ def test_inactive_zero_breath_and_subthreshold_frostbite_do_not_escape(self):
+  for environment in (3,4):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('nexus_calls=0',self.output)
+    self.assertNotIn('guard_environment_nexus',self.log)
+ def test_environment_failure_retries_are_bounded(self):
+  for failure in ('denied','exception'):
+   with self.subTest(failure=failure):
+    self.run_client('armed=1,potion=0,death=1',environment=1,**{failure:True})
+    attempts=[e for e in self.events if e['phase']==22]
+    self.assertGreaterEqual(len(attempts),2)
+    self.assertLessEqual(len(attempts),4)
+    self.assertFalse(any(e['flag0'] for e in attempts))
  def test_positive_hp_update_can_trigger_escape_without_canceling_the_assignment(self):
   self.run_client('armed=1,potion=0,death=1',hp_cross=True)
   self.assertIn('positive_hp_update_triggered_escape=1',self.output)

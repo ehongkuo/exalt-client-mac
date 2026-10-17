@@ -33,7 +33,7 @@ notification without the separate outgoing damage report found in the ground/are
 notification can set HP to zero when that flag is set. This is received state, not an established
 local calculation/report boundary. Suppressing it would not establish that the server reversed death.
 
-Consequently, no new source-specific cancellation is enabled for bleeding, suffocation or frostbite.
+No source-specific damage cancellation is established for bleeding, suffocation or frostbite. The later proactive meter guard described below is separate from cancellation.
 The source of their HP changes remains unresolved. A labeled live trace may narrow that routing, but
 testing every dungeon or hazard is not justified by the current evidence.
 
@@ -87,3 +87,25 @@ These policy changes have automated coverage; the earlier X01-X03 tests validate
 hook wiring, not the new policy's false-positive rate in extended gameplay. No additional in-game test
 is required to reproduce the arithmetic regression above. The installed app is not replaced by this
 source change or the standalone package build.
+
+## Citadel observation and proactive environmental guard
+
+Session `D06-20261017T000048Z-AQqfYg` was a Citadel run despite the D06 label; source identification
+comes from the user's report and frostbite readings, not the label. Its raw log SHA-256 is
+`edea76561d645b70442af1fd9f47ec6322ce80e949f080337640c91e3bf8501a`, matching the bundle manifest.
+All 57 recorded HP decreases came through incoming HP assignments at `0x184c115`; 29 had frostbite
+100 or 101. Mixed attacks later in the run prevent attributing every decrease to frostbite.
+
+At event 347389 (`531416446167000 ns`), frostbite was 100, breath -1, HP 740/740, conditions zero.
+The first following recorded decrease, event 347508 (`531416624203000 ns`), assigned HP 726 through
+the incoming stat path, about 178 ms later. This is an observed opportunity to request Nexus at the
+meter limit; it is not evidence of sufficient time for server acceptance under every connection.
+The recording ends in Nexus at positive HP. The bundle remains inconclusive for whole-session
+completion because the diagnostic lacks an exit completion marker; raw evidence was not rewritten.
+
+The implementation now samples the mapped meters on the existing main-thread guard tick and uses
+the validated normal Nexus request and local blocking latch. Frostbite >= 100 triggers regardless
+of HP. Oxygen == 0 triggers only after positive breath was observed in the same scope. No server HP
+assignment is suppressed. These are proactive hazard escapes, not newly discovered cancellable DOT
+functions. Oxygen routing and live environmental escape remain unverified; no OT run is required
+to prepare this MR, and no shared server-side damage function is claimed.

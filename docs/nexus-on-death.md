@@ -18,10 +18,26 @@ instructions are checked before installing any of the nine hooks.
 This is not universal death prevention. Incoming server HP assignments are authoritative observations;
 ignoring a zero assignment cannot undo a death already decided remotely. Breath and frostbite meter
 setters are called from the incoming stat handler (`0x184cb6f` and `0x184c7da` respectively), which does
-not establish their damage calculation timing. Bleeding, suffocation, frostbite, delayed updates and
-server ordering remain unproven. No expanded live-game test has been run for this change.
+not establish a cancellable local damage calculation. Projectile, ground and area escape wiring has
+live evidence; the Citadel trace establishes full-meter/server-HP ordering. Environmental escape
+and server acceptance under lethal conditions remain unverified. Bleeding alone is nonlethal.
 
 The minimum check is one projectile, one ground and one radius/AOE escape, with automatic log capture;
 see [verification steps and native evidence](damage-testing.md). Testing every enemy or tile is unnecessary
 once shared native routing is demonstrated. [Damage-source evidence](damage-sources.md) records the
 remaining gaps.
+
+## Environmental escape
+
+With Nexus on death enabled and Armed, the same validated Nexus request/latch now also runs at
+`frostbite >= 100`, regardless of HP. Exhausted oxygen (`breath == 0`) uses the same request, but only
+after a positive breath value was observed in the same validated player/map/connection scope. This
+avoids interpreting a default zero as active suffocation. Negative breath is inactive. Missing meter
+fields disable their trigger. Scope changes clear the breath history and retry timer.
+
+The Citadel trace shows full frostbite followed by incoming server HP assignments, not a cancellable
+local hit. These guards deliberately escape at the hazardous meter limit, even at full HP; they do
+not wait for predicted death or cancel/rewrite server HP. Requests retry at most once per second on
+failure. Dry run records intentions without invoking Nexus. Normal observation mode remains passive.
+Oxygen uses a shared escape routine, but its meter transition has not been observed in a live run.
+Bleeding alone cannot kill players and does not require a dedicated lethal-source test.

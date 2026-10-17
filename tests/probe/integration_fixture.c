@@ -14,6 +14,13 @@ extern uint64_t probe_fixture(void *,int,uint32_t,int,int,uint8_t,int,const void
 extern void notify_fixture(void *,uint8_t,int,void *,uint8_t,void *,uint8_t,uint8_t,const void *);
 static unsigned report_forwarded,notify_forwarded,enemy_forwarded,hp_forwarded,manual_nexus_forwarded;
 static int assigned_hp=-1;
+#ifdef OBSERVE_ENVIRONMENT
+static int fixture_breath=0,fixture_frostbite=100;
+#elif defined(FATAL_ENVIRONMENT) && FATAL_ENVIRONMENT==2
+static int fixture_breath=1,fixture_frostbite=0;
+#else
+static int fixture_breath=-1,fixture_frostbite=0;
+#endif
 extern void incoming_fixture(void *,uint32_t,int,const void *);
 extern void hp_fixture(void *,int,const void *);
 extern void nexus_fixture(void *,const void *);
@@ -79,8 +86,8 @@ uint32_t il2cpp_array_length(void *array){
 }
 void il2cpp_field_get_value(void *o,void *f,void *v) {
  if(f==(void*)1001){assert(o==(void*)40 || o==(void*)41);*(void**)v=&condition_array;return;}
- if(f==(void*)1002){assert(o==(void*)40 || o==(void*)41);*(int*)v=0;return;}
- if(f==(void*)1003){assert(o==(void*)40 || o==(void*)41);*(int*)v=100;return;}
+ if(f==(void*)1002){assert(o==(void*)40 || o==(void*)41);*(int*)v=fixture_breath;return;}
+ if(f==(void*)1003){assert(o==(void*)40 || o==(void*)41);*(int*)v=fixture_frostbite;return;}
  if(f==(void*)992){assert(o==(void*)70);*(void**)v=(void*)500;return;}
  if(f==(void*)993){assert(o==(void*)500);*(uint8_t*)v=socket_nexusing;return;}
  if(f==(void*)990){assert(o==(void*)70);*(int*)v=update_sequence;return;}
@@ -128,6 +135,11 @@ static void burst(void *unused) {
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
+#ifdef FATAL_ENVIRONMENT
+ fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3)?0:-1;
+ fixture_frostbite=FATAL_ENVIRONMENT==1?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;
+ puts("environment_fixture_ready=1");return;
+#endif
 #ifdef FATAL_HP_CROSS
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
@@ -242,7 +254,7 @@ static void late_blocked_hit(void *unused) {
 static void verify_forwarding(void *unused) {
  (void)unused;
 #ifdef FATAL_BURST
-#if defined(FATAL_BOUNDARY_BURST) || defined(FATAL_MIXED_BURST) || defined(FATAL_HP_CROSS)
+#if defined(FATAL_BOUNDARY_BURST) || defined(FATAL_MIXED_BURST) || defined(FATAL_HP_CROSS) || defined(FATAL_ENVIRONMENT)
  return;
 #endif
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)

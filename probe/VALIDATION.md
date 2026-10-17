@@ -1,3 +1,20 @@
+# Environmental guard validation
+
+The Citadel run `D06-20261017T000048Z-AQqfYg` recorded full frostbite before incoming HP loss.
+See [the evidence audit](../docs/damage-status-audit.md) for event IDs, timing and raw fingerprint.
+The session completion marker is missing, so the whole-session report remains inconclusive.
+The new environmental guard requests the normal Nexus escape at frostbite >= 100 or breath == 0
+after positive breath in the same scope, regardless of HP. This is proactive escape, not cancellation
+of server-owned damage. The oxygen transition and both new automatic triggers remain live-unverified.
+No additional live test is required to prepare this review; this limitation remains explicit.
+
+Current validation: 16 production intervention tests, 24 diagnostic tests, 16 session-report tests,
+five map tests and eight shadow-ledger tests passed. Native trampolines and the fatal policy
+(including undefined-behavior sanitization) passed; the production guard and Swift app compiled
+with warnings treated as errors. The signed diagnostic package built and verified. The environmental
+fixtures cover 100/101 frostbite, oxygen exhaustion after positive breath, inactive zero breath,
+subthreshold frostbite, missing fields, dry run/disabled protection and bounded retry failures.
+
 # Status and reconciliation hardening
 
 The current policy retains uncertain damage across HP updates and cannot increase its HP bound from

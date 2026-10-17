@@ -54,8 +54,7 @@ The reason for three examples is native ordering, not the number of damage sourc
 
 All three use the same pending-damage policy and Nexus request. Different native call sites and report
 orders require separate wiring; fixture success cannot establish the live attack identity or server result.
-Bleeding, oxygen loss and frostbite are **not claimed covered**. Their live investigation remains optional
-below; there is no reason to test every dungeon before reviewing the implemented protection.
+Bleeding alone is nonlethal and D03 is no longer required for lethal-source coverage. Environmental guards escape at full frostbite or exhausted oxygen after positive breath was observed. Citadel observation is recorded; oxygen and the newly added live escape remain unverified. The historical investigation checklist remains below; there is no reason to test every dungeon before reviewing the implemented protection.
 
 ## Optional investigation: one source per session
 

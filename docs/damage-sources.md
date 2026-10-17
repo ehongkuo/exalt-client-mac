@@ -20,7 +20,7 @@ that every possible lethal cause has been enumerated. Unattributed HP decreases 
 |---|---|---|---|
 | Enemy projectiles, overlapping hits, armor-piercing variants | Existing audited path; variants sharing this route need no separate test | Calculator `0x650e90`, collision `0x6534f0`, notification caller `0x653bd0` | D01 |
 | Grenades, explosions and other radial attacks | Static area/radius-handler candidate; not yet a live-confirmed grenade | Handler `0x183f290`, generic calculation call `0x183f6ed`, notification caller `0x183f7be` | D02 |
-| Bleeding and other player damage-over-time effects | Candidate; source-specific tick function unresolved | Condition-mask words, HP assignments and sampled changes | D03 |
+| Bleeding (nonlethal alone) and other player damage-over-time effects | Bleeding test not required for lethal-source coverage; other status mechanisms unresolved | Condition-mask words, HP assignments and sampled changes | D03 |
 | Lava and damaging ground | Static terrain path; individual tile rules need live confirmation | Terrain routine `0x196eb80`, notification caller `0x196ed65`, report call `0x196ed8b` | D04 |
 | Dungeon floor hazards, damaging water, traps or contact hazards | Candidate; some may share terrain, area or projectile code | Record exact hazard and resulting callers; do not assume a shared implementation | D05 |
 | Oxygen depletion / suffocation | Breath meter statically mapped; drain/death source unresolved | Player `NMLPJEBCBAE` at `+0x52c`, breath-bar reader `0x1df40a0` | D06 |
@@ -34,7 +34,7 @@ exposed/curse-like effects, healing prevention, invulnerability, and ground prot
 does not establish that it drains HP. Player bleeding behavior must be measured separately from damage
 players inflict on enemies. We do not assume bleeding alone is lethal or infer its floor from a wiki.
 
-DECA's [Ice Citadel release notes](https://remaster.realmofthemadgod.com/?p=4585) describe frostbite damage
+DECA's [Ice Citadel release notes](https://remaster.realmofthemadgod.com/?p=4582) describe frostbite damage
 at a full meter. Their [bleeding update](https://remaster.realmofthemadgod.com/?p=3164) distinguishes
 enemy bleeding changes from player behavior. These are mechanic-discovery references, not proof of the
 installed implementation or current numerical damage rates.

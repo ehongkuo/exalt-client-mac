@@ -8,6 +8,13 @@ typedef struct {
  int64_t pending,projected;
  int attempted,blocking,has_bound;
 } FatalPolicy;
+/* Negative breath is the inactive sentinel. Zero means exhausted; frostbite
+ * values above 100 occur in the live trace and must also trigger. */
+static inline int fatal_environment_hazard(int breath,int frostbite) {
+ if(frostbite>=100)return 1;
+ if(breath==0)return 2;
+ return 0;
+}
 static inline void fatal_reset(FatalPolicy *p,uintptr_t player,uintptr_t connection,uintptr_t map) {
  *p=(FatalPolicy){.player=player,.connection=connection,.map=map};
 }

@@ -11,11 +11,12 @@ guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
 class ProbeTests(unittest.TestCase):
- def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False):
+ def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False,observe_environment=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if observe_environment:args.append('-DOBSERVE_ENVIRONMENT')
    if short_conditions:args.append('-DSHORT_CONDITIONS')
    if fatal:args.append('-DFATAL_BURST')
    if verify_hp:args.append('-DVERIFY_EARLY')
@@ -46,6 +47,11 @@ class ProbeTests(unittest.TestCase):
    self.last_log=logfile.read_text()
    self.summary=analysis.analyze(logfile)
    return logfile.read_text()
+ def test_observation_remains_passive_at_environmental_limits(self):
+  log=self.fixture(observe_environment=True)
+  self.assertNotIn('guard_environment_nexus',log)
+  self.assertFalse(any(e['phase'] in (20,21,22,23,24) for e in analysis.read_events(log)))
+  self.assertTrue(any(e['breath']==0 and e['frostbite']==100 for e in self.summary['damage_contexts']))
  def test_one_hp_verification_escapes_before_first_small_hit_without_changing_hp(self):
   log=self.fixture(fatal=True,verify_hp=True)
   self.assertIn('damage_verification\teffective_hp=1\tgame_hp_unchanged=1',log)
@@ -64,13 +70,13 @@ class ProbeTests(unittest.TestCase):
   log=self.fixture(unaudited=True);events=analysis.read_events(log)
   contexts=[e for e in events if e['phase']==29]
   self.assertTrue(contexts)
-  self.assertTrue(all(e['projectile']==1<<45 and e['value']==0 and e['owner']==100 and e['flag0']==15 for e in contexts))
+  self.assertTrue(all(e['projectile']==1<<45 and e['value']==-1 and e['owner']==0 and e['flag0']==15 for e in contexts))
   self.assertFalse(any(e['phase'] in (20,23,24) for e in events))
   self.assertEqual(self.summary['damage_calculations'],0)
   self.assertEqual(len(self.summary['unclassified_damage_calculations']),3)
   self.assertEqual(self.flight_summary['damage_calculations'],0)
   self.assertEqual(len(self.flight_summary['unclassified_damage_calculations']),3)
-  self.assertTrue(all(e['conditions_raw']==hex(1<<45) and e['breath']==0 and e['frostbite']==100 for e in self.flight_summary['damage_contexts']))
+  self.assertTrue(all(e['conditions_raw']==hex(1<<45) and e['breath']==-1 and e['frostbite']==0 for e in self.flight_summary['damage_contexts']))
   self.assertEqual(self.summary['shadow_ledger']['trace'][-1]['held_damage'],0)
   self.assertEqual([e['id'] for e in events],sorted(e['id'] for e in events))
   self.assertTrue(any(e['phase']==9 and e['in_nexus'] for e in events))
