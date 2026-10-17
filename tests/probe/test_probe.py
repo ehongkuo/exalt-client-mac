@@ -11,12 +11,13 @@ guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
 class ProbeTests(unittest.TestCase):
- def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False,observe_environment=False):
+ def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False,observe_environment=False,trace_environment=False,trace_limit=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if observe_environment:args.append('-DOBSERVE_ENVIRONMENT')
+   if trace_limit:args.append('-DENVIRONMENT_TRACE_LIMIT')
    if short_conditions:args.append('-DSHORT_CONDITIONS')
    if fatal:args.append('-DFATAL_BURST')
    if verify_hp:args.append('-DVERIFY_EARLY')
@@ -29,6 +30,7 @@ class ProbeTests(unittest.TestCase):
    if bad_bytes:args.append('-DBAD_REPORT_BYTES')
    subprocess.run(args,check=True)
    env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'probe.dylib');env['EXALT_GUARD']='armed=1,potion=50,nexus=25'
+   env['EXALT_TRACE_ENVIRONMENT']='1' if trace_environment else '0'
    env['EXALT_VERIFY_ONE_HP']='1' if verify_hp else '0'
    env['EXALT_FATAL_INTERVENTION']='1' if fatal or unaudited else '0'
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
@@ -47,6 +49,32 @@ class ProbeTests(unittest.TestCase):
    self.last_log=logfile.read_text()
    self.summary=analysis.analyze(logfile)
    return logfile.read_text()
+ def test_environment_trace_captures_metadata_and_stacks_without_intervention(self):
+  self.fixture(observe_environment=True,trace_environment=True)
+  trace=self.summary['environment_trace']
+  self.assertTrue(trace['enabled'])
+  self.assertEqual(len(trace['sends']),2)
+  self.assertEqual(trace['sends'][0]['type_name'],'Fixture')
+  self.assertEqual(trace['sends'][0]['caller'],trace['sends'][1]['caller'])
+  frames=trace['frames'];self.assertTrue(frames)
+  sends={e['event_id'] for e in trace['sends']}
+  self.assertTrue(any(e['trigger_id'] in sends for e in frames))
+  self.assertEqual(len({e['trigger_id'] for e in frames if e['trigger_id'] in sends}),1)
+  self.assertEqual(trace['counters']['skipped'],0)
+  self.assertFalse(self.summary['fatal_intervention']['decisions'])
+  self.assertEqual(len(self.flight_summary['environment_trace']['sends']),2)
+ def test_environment_trace_limit_keeps_forwarding_game_messages(self):
+  self.fixture(observe_environment=True,trace_environment=True,trace_limit=True)
+  counters=self.summary['environment_trace']['counters']
+  self.assertEqual(counters['events'],8192)
+  self.assertGreaterEqual(counters['skipped'],108)
+  self.assertIn('environment_trace_sends_forwarded=8300',self.last_output)
+  self.assertFalse(self.summary['fatal_intervention']['decisions'])
+ def test_environment_trace_is_off_by_default(self):
+  self.fixture(observe_environment=True)
+  self.assertFalse(self.summary['environment_trace']['enabled'])
+  self.assertFalse(self.summary['environment_trace']['sends'])
+  self.assertFalse(self.summary['environment_trace']['frames'])
  def test_observation_remains_passive_at_environmental_limits(self):
   log=self.fixture(observe_environment=True)
   self.assertNotIn('guard_environment_nexus',log)

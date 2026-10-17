@@ -2,12 +2,6 @@
 #include <assert.h>
 #include <stdio.h>
 int main(void) {
- assert(fatal_environment_hazard(-1,0)==0);
- assert(fatal_environment_hazard(1,99)==0);
- assert(fatal_environment_hazard(-1,100)==1);
- assert(fatal_environment_hazard(-1,101)==1);
- assert(fatal_environment_hazard(0,0)==2);
- assert(fatal_environment_hazard(-2,-1)==0);
  FatalPolicy p={0};fatal_reset(&p,1,2,3);
  assert(fatal_damage(&p,200,50)==FATAL_PASS);
  assert(fatal_damage(&p,200,60)==FATAL_PASS && p.pending==110);

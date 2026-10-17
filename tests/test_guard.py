@@ -59,6 +59,11 @@ class GuardTests(unittest.TestCase):
    self.assertEqual(game.returncode,0)
    log=next(logdir.glob('guard-*.tsv')).read_text()
    self.assertIn('status\tcomplete',log)
+   latency=[line for line in log.splitlines() if line.startswith('guard_latency\t')]
+   self.assertTrue(latency, 'bounded latency summary emitted at shutdown')
+   metrics=dict(field.split('=') for field in latency[-1].split('\t')[1:])
+   self.assertGreater(int(metrics['checks']), 0)
+   self.assertGreater(int(metrics['stage_samples']), 0)
    calls=dict(kv.split('=') for kv in out.split())
    rows=[l.split('\t') for l in log.splitlines() if l.startswith('timing\t')]
    self.live=live_dump(logdir/'guard-live.bin')

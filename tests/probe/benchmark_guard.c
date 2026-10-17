@@ -32,7 +32,13 @@ __attribute__((visibility("default"))) void guard_benchmark(const char *name,int
   uint64_t begin=bench_wall_ns();
   for(int j=0;j<100;++j){
    switch(kind){
-   case 0:hit_probe_tick((void*)40,monotonic_ns());break;
+   case 0:
+#ifdef BENCH_FULL_TICK
+    tick(NULL);
+#else
+    hit_probe_tick((void*)40,monotonic_ns());
+#endif
+    break;
    case 1:case 6:
     (void)damage_observed((void*)3,50.5f,(void*)0x5678);
     report_observed((void*)70,4000000000u,7,(void*)0x5678);

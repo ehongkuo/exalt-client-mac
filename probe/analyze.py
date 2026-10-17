@@ -41,6 +41,22 @@ def analyze(path,threshold=None):
             for cell in row[1:]:
                 key,_,value=cell.partition('=')
                 if value.isdecimal():counters[key]=int(value)
+    environment_types={}
+    environment_counters={}
+    for line in log.splitlines():
+        cells=line.split('\t')
+        if cells[0]=='environment_message_type':
+            fields=dict(cell.split('=',1) for cell in cells[1:] if '=' in cell)
+            if fields.get('id','').isdigit():environment_types[int(fields['id'])]=fields.get('name')
+        if cells[0]=='environment_trace_summary':
+            environment_counters=dict((k,int(v)) for k,v in (cell.split('=',1) for cell in cells[1:]) if v.isdecimal())
+    environment=dict(enabled='environment_trace_ready\t' in log, message_types=environment_types,
+        counters=environment_counters,
+        sends=[dict(event_id=e['id'],ns=e['ns'],generation=e['generation'],caller=hex(e['callsite']),
+                    type_id=e['owner'],type_name=environment_types.get(e['owner'])) for e in events if e['phase']==31],
+        frames=[dict(event_id=e['id'],trigger_id=e['correlation'],trigger_phase=e['value'],
+                     frame_index=e['owner'],return_address=hex(e['callsite'])) for e in events if e['phase']==32],
+        limitation='Stacks are best effort and send stacks are deduplicated by caller/type. Meter proximity is not causation. Missing events or frames cannot establish absence of a local producer.')
     reports={e['id']:e for e in events if e['phase']==1}
     notifications=[e for e in events if e['phase']==3]
     returns={e['correlation']:e for e in events if e['phase']==2}
@@ -137,7 +153,7 @@ def analyze(path,threshold=None):
         'hp_assignments':assignments_after,'manual_nexus_entries':nexus,
         'notification_to_next_sampled_hp_decrease_ms_median':statistics.median(leads) if leads else None,
         'probe_snapshot_work_us_max':max((e['work_ns']/1000 for e in events),default=None),
-        'completion_counters':counters,
+        'completion_counters':counters,'environment_trace':environment,
         'limitation':'Pairing is a temporal association. HP assignments and map transitions are local observations, not verified server acknowledgements. Only audited projectile calculations enter shadow estimates; unknown callers are listed separately. Context values do not establish damage cause. Intervened sessions are not replayed as observation-only estimates.'}
 
 def main():

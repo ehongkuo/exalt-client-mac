@@ -156,6 +156,20 @@ private func sample() -> LiveData {
         try! bytes.write(to: file)
         let feed = LiveFeed(url: file)
         check(feed.read() == s, "file read matches")
+        check(feed.read() == s, "unchanged snapshot can be reused")
+        var changed = sample()
+        changed.ticks += 1; changed.hp = 42
+        bytes.withUnsafeMutableBytes { raw in
+            withUnsafeBytes(of: &changed) { src in
+                UnsafeMutableRawBufferPointer(rebasing: raw[16..<(16 + src.count)]).copyMemory(from: src)
+            }
+        }
+        try! bytes.write(to: file)
+        check(feed.read()?.hp == 42, "cached feed advances with published tick")
+        try! FileManager.default.removeItem(at: file)
+        check(feed.read() == nil, "removed mapping invalidates cache")
+        try! bytes.write(to: file)
+        check(feed.read()?.hp == 42, "replacement mapping reconnects")
         bytes.withUnsafeMutableBytes { $0.storeBytes(of: UInt32(3), toByteOffset: 8, as: UInt32.self) }  // odd: writing
         try! bytes.write(to: folder.appendingPathComponent("busy.bin"))
         check(LiveFeed(url: folder.appendingPathComponent("busy.bin")).read() == nil, "mid-write is rejected")

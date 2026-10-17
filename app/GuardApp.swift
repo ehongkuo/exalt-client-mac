@@ -18,15 +18,20 @@ private let liveURL = GuardPaths.liveFile(data: dataURL)
 private let settingsURL = GuardPaths.settingsFile(data: dataURL)
 #endif
 
-/// Reads the live file once per screen refresh. Not observable: the TimelineView drives redraws.
+/// Shares feed reads between the visual refresh and alert timer. Not observable: the TimelineView drives redraws.
 final class LiveSource {
     let feed = LiveFeed(url: liveURL)
     private var meter = RateMeter()
+    private var lastRefreshNs: UInt64 = 0
     private(set) var snapshot: GuardSnapshot?
     private(set) var link: Link = .offline("Waiting for the guard")
     private(set) var rate: Double?
 
-    func refresh() {
+    func refresh(force: Bool = false) {
+        let now = Clock.monotonicNs()
+        // Coalesce nearby UI/timer reads; alerts always get a fresh read.
+        if !force && lastRefreshNs != 0 && now - lastRefreshNs < 16_000_000 { return }
+        lastRefreshNs = now
         if let fresh = feed.read() {
             snapshot = fresh
             rate = meter.add(ns: fresh.sampleNs, ticks: fresh.ticks)
@@ -330,7 +335,7 @@ struct GuardView: View {
     @ObservedObject var alerts: PartyAlerts
 
     var body: some View {
-        TimelineView(.animation) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let _ = source.refresh()
             let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
             MainLayout {
@@ -531,7 +536,7 @@ struct GuardPanel {
                          help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
             Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath)
                 .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
-            Text("Escape before predicted lethal projectile, ground, or area damage. Requires Armed. Also escapes at full frostbite or exhausted oxygen, regardless of HP. Oxygen trigger has not been verified in game.")
+            Text("Escape before predicted lethal projectile, ground, or area damage, and block lethal locally computed HP writes. Requires Armed. Meter limits alone do not trigger escape. Environmental damage coverage is not yet verified.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             if let s, s.nexusOnDeath || s.deathBlocking {
                 Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")
@@ -720,7 +725,7 @@ struct CompactView: View {
     var expand: () -> Void
 
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
             let _ = source.refresh()
             CompactContent(snapshot: source.snapshot, link: source.link, expand: expand,
                            flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil,
@@ -858,7 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.source.refresh(); self.alerts.check(self.source)
+            self.source.refresh(force: true); self.alerts.check(self.source)
         }
         #if !GUARD_UI_TEST
         if Bundle.main.bundleIdentifier != nil {

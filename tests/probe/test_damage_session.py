@@ -48,6 +48,37 @@ class DamageSessionTests(unittest.TestCase):
             link.symlink_to(path)
             with self.assertRaises(ValueError): session.bundle(link, Path(folder) / 'bundle', 'D01')
 
+    def environment_log(self, folder, rows, skipped):
+        path = self.write_log(folder, rows)
+        path.write_text(path.read_text() + 'environment_trace_ready\tversion=1\n'
+            + f'environment_trace_summary\tevents=10\tstacks=3\tskipped={skipped}\n')
+        return path
+
+    def test_capture_limits_make_observation_inconclusive(self):
+        for skipped, expected in ((0, 'observed'), (1, 'inconclusive')):
+            with self.subTest(skipped=skipped), tempfile.TemporaryDirectory() as folder:
+                path = self.environment_log(folder, [event(1), event(2, hp=900)], skipped)
+                result = session.inspect(path)
+                self.assertEqual(result['outcome'], expected)
+                self.assertEqual(len(result['hp_decreases']), 1)
+                if skipped: self.assertTrue(any('capture limit' in reason for reason in result['reasons']))
+
+    def test_capture_limits_make_escape_inconclusive_without_hiding_arrival(self):
+        rows = [event(1), event(2, 22, flag0=1), event(3, 9, generation=2, in_nexus=1)]
+        for skipped, expected in ((0, 'escaped'), (1, 'inconclusive')):
+            with self.subTest(skipped=skipped), tempfile.TemporaryDirectory() as folder:
+                result = session.inspect(self.environment_log(folder, rows, skipped))
+                self.assertEqual(result['outcome'], expected)
+                self.assertTrue(result['automatic_escape_observed'])
+                self.assertTrue(result['nexus_arrival_observed'])
+
+    def test_capture_limits_preserve_confirmed_death(self):
+        for skipped in (0, 1):
+            with self.subTest(skipped=skipped), tempfile.TemporaryDirectory() as folder:
+                result = session.inspect(self.environment_log(folder, [event(1), event(2, 13, hp=0)], skipped))
+                self.assertEqual(result['outcome'], 'failed')
+                self.assertEqual(result['death_events'], [2])
+
     def test_missing_build_identity_prevents_native_path_claim(self):
         with tempfile.TemporaryDirectory() as folder:
             path = self.write_log(folder, [event(1)])

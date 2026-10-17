@@ -101,6 +101,10 @@ def inspect(log):
     result = summarize(events, ready='hit_probe_ready\t' in raw,
         complete='status\tcomplete' in raw, lost=lost,
         off_main=detail['completion_counters'].get('off_main_calls', 0))
+    result['environment_trace'] = detail['environment_trace']
+    if detail['environment_trace']['counters'].get('skipped',0):
+        result['reasons'].append('Environment trace reached a capture limit; missing stacks/events are inconclusive.')
+        if result['outcome'] != 'failed': result['outcome'] = 'inconclusive'
     expected = json.loads((HERE / 'damage_paths.json').read_text())['game_sha256']
     fingerprints = [line.split('sha256=', 1)[1] for line in raw.splitlines() if line.startswith('damage_build\tsha256=')]
     result['recorded_game_sha256'] = fingerprints[0] if len(fingerprints) == 1 else None

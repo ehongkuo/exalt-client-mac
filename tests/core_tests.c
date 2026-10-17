@@ -1,4 +1,5 @@
 #include "../guard/guard_core.h"
+#include "../guard/timing_core.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -201,7 +202,23 @@ static void test_chat_call(void) {
     assert(!chat_same_name(",x", ",x"));
 }
 
+static void test_latency(void) {
+    LatencyStats s = {0};
+    latency_observe(&s, 100 * MS, 30 * MS, 0);  /* loading gap */
+    latency_observe(&s, 20 * MS, 2 * MS, 1);   /* exact boundary */
+    latency_observe(&s, 150 * MS, 1 * MS, 1);  /* valid-player stall */
+    latency_observe(&s, MS, MS, 1);
+    assert(s.checks == 4 && s.valid_checks == 3);
+    assert(s.gaps_20ms == 3 && s.gaps_100ms == 2 && s.valid_gaps_100ms == 1);
+    assert(s.max_gap_ns == 150 * MS && s.max_valid_gap_ns == 150 * MS && s.max_work_ns == 30 * MS);
+    latency_stage_max(&s.lookup_ns, 10, 30);
+    latency_stage_max(&s.lookup_ns, 20, 25);
+    latency_stage_max(&s.lookup_ns, 30, 20);
+    assert(s.lookup_ns == 20);
+}
+
 int main(void) {
+    test_latency();
     test_legacy_nexus_is_inert();
     test_chat_call();
     test_apply();

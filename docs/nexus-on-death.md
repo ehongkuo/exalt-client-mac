@@ -21,29 +21,32 @@ only at their exact audited SendMessage call sites, on the retained escaping soc
 unrelated traffic pass through. Method identity, entry bytes, notification dispatches and report call
 instructions are checked before installing any of the nine hooks.
 
-This is not universal death prevention. Incoming server HP assignments are authoritative observations;
-ignoring a zero assignment cannot undo a death already decided remotely. Breath and frostbite meter
-setters are called from the incoming stat handler (`0x184cb6f` and `0x184c7da` respectively), which does
-not establish a cancellable local damage calculation. Projectile, ground and area escape wiring has
-live evidence; the Citadel trace establishes full-meter/server-HP ordering. Environmental escape
-and server acceptance under lethal conditions remain unverified. Bleeding alone is nonlethal.
+Protection targets locally computed damage before its HP effect and covered outgoing report.
+Incoming HP assignments update the prediction baseline; they never trigger an escape or get
+cancelled. Incoming death handling is also outside this local-damage policy. The working scope assumes
+client-computed damage is reported afterward; no received-state workaround is part of the mechanism.
 
 The minimum check is one projectile, one ground and one radius/AOE escape, with automatic log capture;
 see [verification steps and native evidence](damage-testing.md). Testing every enemy or tile is unnecessary
 once shared native routing is demonstrated. [Damage-source evidence](damage-sources.md) records the
 remaining gaps.
 
-## Environmental escape
+## Shared local HP hatch and environmental scope
 
-With Nexus on death enabled and Armed, the same validated Nexus request/latch now also runs at
-`frostbite >= 100`, regardless of HP. Exhausted oxygen (`breath == 0`) uses the same request, but only
-after a positive breath value was observed in the same validated player/map/connection scope. This
-avoids interpreting a default zero as active suffocation. Negative breath is inactive. Missing meter
-fields disable their trigger. Scope changes clear the breath history and retry timer.
+Policy version 6 adds a guard before the shared HP setter for the controlled player. A locally
+computed transition from positive HP to zero/negative HP invokes the same validated Nexus request as
+projectile, ground and AOE damage. Only confirmed local Nexusing cancels that write and subsequent
+local HP reductions. Healing and positive nonlethal local writes pass without charging the prediction
+budget a second time. Known incoming-update contexts/caller and the incoming death caller bypass
+this guard. Dry run, disabled protection and failed requests never pretend cancellation.
 
-The Citadel trace shows full frostbite followed by incoming server HP assignments, not a cancellable
-local hit. These guards deliberately escape at the hazardous meter limit, even at full HP; they do
-not wait for predicted death or cancel/rewrite server HP. Requests retry at most once per second on
-failure. Dry run records intentions without invoking Nexus. Normal observation mode remains passive.
-Oxygen uses a shared escape routine, but its meter transition has not been observed in a live run.
-Bleeding alone cannot kill players and does not require a dedicated lethal-source test.
+The existing escape latch continues to suppress audited projectile/ground/area notifications and
+reports on the retained escaping player/connection/socket. Scope changes clear the latch normally.
+
+Meter limits alone never request Nexus. Frostbite 100+ and exhausted breath are hazardous conditions,
+not lethal inputs. The production client no longer reads these meters; standalone diagnostics can
+still observe them. A local environmental producer using the guarded calculation, notification or HP
+setter routes gets the same hatch. A distinct local frostbite/suffocation calculation/report path has
+not yet been located, so source-specific routing remains unverified. This is a coverage limit, not a
+reason to restore meter-limit escapes or received-HP escape attempts. See the
+[client-side boundary audit](damage-status-audit.md#client-side-boundary-audit).

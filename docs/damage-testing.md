@@ -54,7 +54,7 @@ The reason for three examples is native ordering, not the number of damage sourc
 
 All three use the same pending-damage policy and Nexus request. Different native call sites and report
 orders require separate wiring; fixture success cannot establish the live attack identity or server result.
-Bleeding alone is nonlethal and D03 is no longer required for lethal-source coverage. Environmental guards escape at full frostbite or exhausted oxygen after positive breath was observed. Citadel observation is recorded; oxygen and the newly added live escape remain unverified. The historical investigation checklist remains below; there is no reason to test every dungeon before reviewing the implemented protection.
+Bleeding alone is nonlethal and D03 is no longer required for lethal-source coverage. Meter limits alone do not trigger escape. Citadel observation shows nonlethal incoming HP loss after frostbite saturation; lethal frostbite/suffocation cancellation remains unestablished. The historical investigation checklist remains below; there is no reason to test every dungeon before reviewing the implemented protection.
 
 ## Optional investigation: one source per session
 
@@ -136,3 +136,33 @@ This enables audited projectile, ground and radius/AOE intervention using the di
 Use `--intervene` only for ordinary real-HP prediction. The production client always uses real HP. Double-clicking the launcher uses
 observation mode. Restarting the game normally removes the diagnostic. The new code is also compiled
 into the integrated client, but building this diagnostic does not replace the installed client app.
+
+## Targeted frostbite producer capture
+
+Build with `sh probe/build-probe.sh`, then double-click **Trace Environment Damage.command**
+in `build/damage-diagnostic`. Quit the game and launcher first. Use label **F01**.
+This standalone run observes only; it does not enable the installed companion's automation.
+At ample HP, let Citadel frostbite cause **1–3 nonlethal HP ticks**, avoiding other damage
+as far as practical. Manually Nexus, wait five seconds, and quit normally. Send the session
+path and mention any overlapping attacks. No lethal exposure is needed.
+
+This opt-in mode records outgoing message type names and GameAssembly return addresses
+around notifications, calculators, decreasing HP assignments and sends while frostbite is
+at least 90 or available breath is between 0 and 10, plus two seconds afterward.
+It reads no message payloads. It has fixed limits of 8192 trace triggers, 256 unwinds of at
+most 20 frames, 64 type names, and 128 distinct send caller/type pairs. Repeated sends retain
+individual timestamps but only the first stack per pair. Queue drops and capture limits are
+reported; absent events or unwound frames cannot prove a producer does not exist. This
+extra work is excluded from production builds and disabled in ordinary diagnostics.
+
+The bundle includes `environment_trace`. To resolve native stack addresses for review:
+
+```sh
+python3 probe/environment_report.py SESSION/logs/guard-PID.tsv --script /path/to/current/script.json
+```
+
+Compare the nonlethal HP ticks against calculator/notification/send ordering and validate
+resolved methods in disassembly. Shared guarded producer and pre-report order establish
+routing coverage; a newly found producer needs its own guard and fixture. An incoming-only
+trace remains inconclusive and calls for static caller/packet-handler inspection. Oxygen
+coverage follows only if its shared producer is demonstrated.
