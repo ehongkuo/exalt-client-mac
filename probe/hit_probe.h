@@ -2,6 +2,10 @@
 #define HIT_PROBE_H
 #include "native_hook.h"
 #include <pthread.h>
+#ifdef EXALT_HIT_PROBE
+#include <execinfo.h>
+static int environment_trace_enabled;
+#endif
 
 typedef void (*ReportFunction)(void *,uint32_t,int,const void *);
 typedef void (*NotifyFunction)(void *,uint8_t,int,void *,uint8_t,void *,uint8_t,uint8_t,const void *);
@@ -91,6 +95,9 @@ static void hit_probe_open(const char *folder) {
     const char *verify=getenv("EXALT_VERIFY_ONE_HP");
     fatal_verify_hp=fatal_enabled && verify && !strcmp(verify,"1");
     if(fatal_verify_hp)note("damage_verification\teffective_hp=1\tgame_hp_unchanged=1\n");
+    const char *trace=getenv("EXALT_TRACE_ENVIRONMENT");
+    environment_trace_enabled=trace && !strcmp(trace,"1");
+    if(environment_trace_enabled)note("environment_trace_ready\tversion=1\tmax_events=8192\tmax_stacks=256\tmax_frames=20\tpayloads=0\n");
     probe_flight=flight_open(folder,start_ns,start_epoch);
     if(!probe_flight)note("hit_probe_refused\tflight_recorder\n");
 #endif
@@ -256,6 +263,7 @@ static void damage_context_emit(void *player,uint64_t correlation) {
     e.projectile=bits;e.value=breath;e.owner=frostbite;e.flag0=mask;e.flag1=nexusing>0;
     e.correlation=correlation;e.work_ns=monotonic_ns()-now;probe_emit(e);
 }
+#include "environment_trace.h"
 #endif
 #ifdef EXALT_CLIENT_FATAL
 static void fatal_record(void *player,int hp,int result) {
@@ -339,6 +347,9 @@ static void report_observed(void *self,uint32_t bullet,int owner,const void *inf
     if(observe){ProbeEvent returned=probe_snapshot(2,player,NULL);returned.correlation=e.id;returned.bullet=bullet;returned.owner=owner;probe_emit(returned);}
 }
 static void send_observed(void *self,void *message,const void *info) {
+#ifdef EXALT_HIT_PROBE
+    if(environment_trace_enabled && !probe_on_main())atomic_fetch_add(&probe_off_main,1);
+#endif
     uint64_t caller=probe_callsite(__builtin_return_address(0));
 #ifdef HIT_PROBE_BOUNDARY_TEST
     if(info==(void*)0x5678)caller=HIT_PROBE_BOUNDARY_TEST;
@@ -356,6 +367,19 @@ static void send_observed(void *self,void *message,const void *info) {
         }
         return;
     }
+#ifdef EXALT_HIT_PROBE
+    if(environment_trace_enabled && probe_active()){
+        void *player=probe_player();
+        void *connection=player?read_reference(player,connection_field):NULL;
+        if(connection && self==read_reference(connection,fatal_socket_field)){
+            damage_context_emit(player,0);
+            if(environment_trace_window()){
+                void *klass=message?il2cpp_object_get_class(message):NULL;
+                environment_trace(probe_snapshot(31,player,NULL),caller,klass);
+            }
+        }
+    }
+#endif
     send_original(self,message,info);
 }
 static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,uint8_t flag1,void *projectile,uint8_t a,uint8_t b,const void *info) {
@@ -400,6 +424,8 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
         probe_emit(e);
 #ifdef EXALT_HIT_PROBE
         damage_context_emit(self,e.id);
+        if(environment_trace_enabled && environment_trace_window())
+            environment_trace(e,e.callsite,NULL);
 #endif
     }
     notify_original(self,flag0,value,conditions,flag1,projectile,a,b,info);
@@ -413,6 +439,8 @@ static void hp_observed(void *self,int value,const void *info) {
         probe_emit(e);
 #ifdef EXALT_HIT_PROBE
         damage_context_emit(self,e.id);
+        if(environment_trace_enabled && value<e.hp && environment_trace_window())
+            environment_trace(e,e.callsite,NULL);
 #endif
     }
     /* Local computed HP writes only. Received state and death notifications are
@@ -485,7 +513,11 @@ static int damage_observed(void *raw_arg,float input,const void *raw_info) {
      * native arguments, but never inspect them or use them as projectile IDs. */
     ProbeEvent e={0};
     if(observe){e=probe_snapshot(11,player,NULL);e.callsite=caller;e.flag0=audited;e.flag1=1;
-        memcpy(&e.flag3,&input,sizeof input);probe_emit(e);}
+        memcpy(&e.flag3,&input,sizeof input);probe_emit(e);
+#ifdef EXALT_HIT_PROBE
+        if(environment_trace_enabled){damage_context_emit(player,0);if(environment_trace_window())environment_trace(e,caller,NULL);}
+#endif
+    }
     int result=damage_original(raw_arg,input,raw_info);
     uint64_t calculation=0;
     if(observe){ProbeEvent after=probe_snapshot(12,player,NULL);after.correlation=e.id;
@@ -672,6 +704,10 @@ static void hit_probe_drain(void) {
     if(now-last_counters>=1000000000ULL || atomic_load_explicit(&finished,memory_order_acquire)){
         last_counters=now;
         if(probe_flight){atomic_store(&probe_flight->dropped,atomic_load(&probe_drops));atomic_store(&probe_flight->off_main,atomic_load(&probe_off_main));msync(probe_flight,sizeof *probe_flight,MS_ASYNC);}
+#ifdef EXALT_HIT_PROBE
+        if(environment_trace_enabled)fprintf(logfile,"environment_trace_summary\tevents=%llu\tstacks=%llu\tskipped=%llu\n",
+            atomic_load(&environment_trace_events),atomic_load(&environment_trace_stacks),atomic_load(&environment_trace_skipped));
+#endif
         if(fatal_enabled)fprintf(logfile,"fatal_summary\trequests=%llu\treports_suppressed=%llu\tnotifications_suppressed=%llu\toff_main_reports_suppressed=%llu\toff_main_notifications_suppressed=%llu\tblocking=%d\n",
             fatal_requests,fatal_reports_dropped,fatal_notifications_dropped,atomic_load(&fatal_off_main_reports),atomic_load(&fatal_off_main_notifications),atomic_load(&fatal_block_connection)!=0);
         fprintf(logfile,"hit_probe_summary\tdropped=%llu\toff_main_calls=%llu\tcomplete=%d\n",

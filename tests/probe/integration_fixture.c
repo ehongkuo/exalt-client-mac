@@ -146,12 +146,26 @@ void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,ui
 extern void send_fixture(void *,void *,const void *);
 static unsigned boundary_sent,other_sent;
 void send_fixture_body(void *self,void *message,const void *info) {
- assert(message==(void*)3);
+ assert(message==(void*)3 || message==(void*)12340);
  if(self==(void*)500 && (info==(void*)0x5678 || info==(void*)0x6001 || info==(void*)0x6002))++boundary_sent;
  else ++other_sent;
 }
+#ifdef OBSERVE_ENVIRONMENT
+__attribute__((noinline)) static void environment_test_send(void) {
+ send_fixture((void*)500,(void*)12340,(void*)0x6001);
+ __asm__ volatile("" ::: "memory"); /* Preserve a single repeated native caller. */
+}
+#endif
 static void burst(void *unused) {
  (void)unused;
+#ifdef OBSERVE_ENVIRONMENT
+#ifdef ENVIRONMENT_TRACE_LIMIT
+ for(int i=0;i<8300;++i)environment_test_send();
+ assert(boundary_sent==8300);puts("environment_trace_sends_forwarded=8300");
+#else
+ environment_test_send();environment_test_send();
+#endif
+#endif
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
