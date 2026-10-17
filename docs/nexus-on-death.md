@@ -21,35 +21,32 @@ only at their exact audited SendMessage call sites, on the retained escaping soc
 unrelated traffic pass through. Method identity, entry bytes, notification dispatches and report call
 instructions are checked before installing any of the nine hooks.
 
-This is not universal death prevention. Incoming server HP assignments are authoritative observations;
-ignoring a zero assignment cannot undo a death already decided remotely. Breath and frostbite meter
-setters are called from the incoming stat handler (`0x184cb6f` and `0x184c7da` respectively), which does
-not establish a cancellable local damage calculation. Projectile, ground and area escape wiring has
-live evidence; the Citadel trace establishes full-meter/server-HP ordering. Lethal environmental damage cancellation
-and server acceptance under lethal conditions remain unverified. Bleeding alone is nonlethal.
+Protection targets locally computed damage before its HP effect and covered outgoing report.
+Incoming HP assignments update the prediction baseline; they never trigger an escape or get
+cancelled. Incoming death handling is also outside this local-damage policy. The working scope assumes
+client-computed damage is reported afterward; no received-state workaround is part of the mechanism.
 
 The minimum check is one projectile, one ground and one radius/AOE escape, with automatic log capture;
 see [verification steps and native evidence](damage-testing.md). Testing every enemy or tile is unnecessary
 once shared native routing is demonstrated. [Damage-source evidence](damage-sources.md) records the
 remaining gaps.
 
-## Environmental meters and current coverage
+## Shared local HP hatch and environmental scope
 
-Meter limits alone never request Nexus: frostbite 100+ and exhausted breath indicate hazardous
-conditions, not lethal damage. The former unconditional meter escapes have been removed. Meter
-values remain available in the standalone diagnostic build; the production client does not poll them.
-The shared scope/latch cleanup still runs on every guard tick.
+Policy version 6 adds a guard before the shared HP setter for the controlled player. A locally
+computed transition from positive HP to zero/negative HP invokes the same validated Nexus request as
+projectile, ground and AOE damage. Only confirmed local Nexusing cancels that write and subsequent
+local HP reductions. Healing and positive nonlethal local writes pass without charging the prediction
+budget a second time. Known incoming-update contexts/caller and the incoming death caller bypass
+this guard. Dry run, disabled protection and failed requests never pretend cancellation.
 
-The Citadel trace records frostbite 100 at HP 740/740, followed about 178 ms later by incoming HP 726.
-This supports the distinction between a saturated meter and a lethal input. The incoming HP assignment
-is not an audited local damage calculation/report boundary. No source-specific cancellable frostbite
-or suffocation tick has been established. The settings text labels environmental death prevention
-unverified, including the incoming-HP fallback below.
+The existing escape latch continues to suppress audited projectile/ground/area notifications and
+reports on the retained escaping player/connection/socket. Scope changes clear the latch normally.
 
-Nonlethal incoming HP updates rebase the normal prediction window. Subsequent audited projectile,
-ground and area damage still enters the common lethal prediction and confirmed-escape latch.
-Incoming zero-HP assignments are not discarded or rewritten as positive HP: hiding that state would
-not establish that a server-originated death was prevented. Policy version 5 adds a last-chance
-request before a nonpositive incoming HP value is written locally, restricted to the audited incoming
-stat call site. It does not establish server-side cancellation; see the
-[native trace](damage-status-audit.md#nonpositive-hp-and-death-native-trace).
+Meter limits alone never request Nexus. Frostbite 100+ and exhausted breath are hazardous conditions,
+not lethal inputs. The production client no longer reads these meters; standalone diagnostics can
+still observe them. A local environmental producer using the guarded calculation, notification or HP
+setter routes gets the same hatch. A distinct local frostbite/suffocation calculation/report path has
+not yet been located, so source-specific routing remains unverified. This is a coverage limit, not a
+reason to restore meter-limit escapes or received-HP escape attempts. See the
+[client-side boundary audit](damage-status-audit.md#client-side-boundary-audit).

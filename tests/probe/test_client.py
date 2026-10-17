@@ -11,10 +11,10 @@ sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False,unaudited_hp=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
-   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_HP_CALLER_TEST'] if unaudited_hp else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
+   subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
     '-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DSESSION_NS=3500000000ULL',
     f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
@@ -22,7 +22,7 @@ class ClientInterventionTests(unittest.TestCase):
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if false_positive:args.append('-DFATAL_FALSE_POSITIVE')
    if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
-   if environment in (8,9) and (unaudited_hp or 'armed=0' in settings or 'death=0' in settings):args.append('-DINCOMING_HP_PASS')
+   if environment in (10,11) and ('armed=0' in settings or 'death=0' in settings):args.append('-DLOCAL_HP_PASS')
    if hp_cross:args.append('-DFATAL_HP_CROSS')
    if mixed:args.append('-DFATAL_MIXED_BURST')
    if boundary:
@@ -79,47 +79,43 @@ class ClientInterventionTests(unittest.TestCase):
     self.assertIn('lethal_covered_hit_and_following_damage_blocked=1',self.output)
     self.assertIn('nexus_calls=1',self.output)
     self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
- def test_incoming_lethal_hp_requests_before_write_without_hiding_death(self):
+ def test_incoming_terminal_hp_never_requests_escape(self):
   for environment in (8,9):
    with self.subTest(environment=environment):
     self.run_client('armed=1,potion=0,death=1',environment=environment)
-    self.assertIn('incoming_lethal_hp_request_before_write=1',self.output)
-    self.assertIn('incoming_terminal_hp_and_death_message_preserved=1',self.output)
-    self.assertIn('nexus_calls=1',self.output)
-    self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
-    self.assertTrue(any(e['phase']==26 and e['hp']<=0 and e['flag1']==1 for e in self.events))
-    self.assertTrue(any(e['phase']==25 and e['flag0']==1 and e['value']==1 for e in self.events), 'fixture later reaches Nexus and clears the latch')
-    self.assertEqual(self.live['death_blocking'],'0')
-    self.assertIn('server_prevention_proven=0',self.log)
- def test_incoming_lethal_hp_respects_dry_run_and_disabled(self):
-  for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
-   with self.subTest(settings=settings):
-    self.run_client(settings,environment=8)
+    self.assertIn('incoming_hp_forwarded_without_escape=1',self.output)
     self.assertIn('nexus_calls=0',self.output)
-    self.assertIn('incoming_terminal_hp_and_death_message_preserved=1',self.output)
-    self.assertEqual(self.live['death_blocking'],'0')
- def test_incoming_lethal_hp_request_failure_preserves_state_and_reports(self):
-  for failure in ('denied','exception'):
-   with self.subTest(failure=failure):
-    self.run_client('armed=1,potion=0,death=1',environment=8,**{failure:True})
-    self.assertIn('incoming_lethal_hp_request_before_write=1',self.output)
-    self.assertIn('incoming_terminal_hp_and_death_message_preserved=1',self.output)
-    self.assertEqual(self.live['death_blocking'],'0')
- def test_incoming_terminal_assignment_can_retry_a_failed_hit_request(self):
-  self.run_client('armed=1,potion=0,death=1',environment=12,denied=True)
-  self.assertIn('incoming_lethal_hp_request_before_write=1',self.output)
-  self.assertIn('nexus_calls=2',self.output)
- def test_unmapped_and_already_zero_hp_do_not_invent_a_last_chance(self):
+    self.assertNotIn('guard_incoming_lethal_hp',self.log)
+ def test_local_lethal_hp_and_following_damage_are_cancelled(self):
   for environment in (10,11):
    with self.subTest(environment=environment):
     self.run_client('armed=1,potion=0,death=1',environment=environment)
-    self.assertIn('unmapped_or_already_zero_hp_did_not_request=1',self.output)
+    self.assertIn('local_lethal_and_following_hp_writes_cancelled=1',self.output)
+    self.assertIn('local_hp_hatch_and_report_behavior_checked=1',self.output)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertIn('guard_local_hp_blocked',self.log)
+ def test_local_hp_hatch_respects_dry_run_and_disabled(self):
+  for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
+   with self.subTest(settings=settings):
+    self.run_client(settings,environment=10)
+    self.assertIn('local_hp_hatch_and_report_behavior_checked=1',self.output)
     self.assertIn('nexus_calls=0',self.output)
- def test_incoming_context_with_unaudited_hp_caller_does_not_request(self):
-  self.run_client('armed=1,potion=0,death=1',environment=8,unaudited_hp=True)
-  self.assertIn('nexus_calls=0',self.output)
-  self.assertIn('incoming_terminal_hp_and_death_message_preserved=1',self.output)
-  self.assertNotIn('guard_incoming_lethal_hp',self.log)
+ def test_local_hp_failed_request_does_not_fake_cancellation(self):
+  for failure in ('denied','exception'):
+   with self.subTest(failure=failure):
+    self.run_client('armed=1,potion=0,death=1',environment=10,**{failure:True})
+    self.assertIn('local_hp_hatch_and_report_behavior_checked=1',self.output)
+    self.assertNotIn('guard_local_hp_blocked',self.log)
+ def test_local_lethal_hp_can_retry_a_failed_hit_request(self):
+  self.run_client('armed=1,potion=0,death=1',environment=15,denied=True)
+  self.assertIn('local_hp_hatch_and_report_behavior_checked=1',self.output)
+  self.assertIn('nexus_calls=2',self.output)
+ def test_nonlethal_local_writes_and_excluded_origins_pass(self):
+  for environment in (12,13,14,16):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('nexus_calls=0',self.output)
+    self.assertNotIn('guard_local_hp_blocked',self.log)
  def test_healed_full_hp_does_not_escape_on_three_nonlethal_hits(self):
   self.run_client('armed=1,potion=0,death=1',false_positive=True)
   self.assertIn('healed_full_hp_survived_3x110=1',self.output)

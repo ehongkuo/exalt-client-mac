@@ -1,6 +1,6 @@
 # Status damage and HP reconciliation audit
 
-## Current policy: authoritative HP windows (version 5)
+## Current policy: authoritative HP windows (version 6)
 
 The live installed version-2 policy produced a false projectile escape at event 11005 in
 `guard-93129.tsv`: HP 1206/1206, incoming calculated damage 110, retained damage 1043, projected HP
@@ -12,7 +12,7 @@ Version 3 restores the prior client's authoritative-window behavior: every incom
 clears the prior pending budget and adopts that HP baseline, including unchanged or higher values.
 Unchanged values can include damage offset by healing. Only audited hits between updates accumulate;
 all three local damage paths share the same budget. Already-confirmed escape latches survive updates.
-A failed request can retry after a positive update. Version 4 retains this HP-window policy and removes unconditional environmental meter escapes.
+A failed request can retry after a positive update. Version 6 retains this HP-window policy. Meter-limit escapes and incoming-HP escape attempts are removed.
 
 This is a deliberate correction of version 2, not proof that incoming HP acknowledges particular
 reports. Clearing a window can omit still-in-flight reports; the client/server ordering limitation
@@ -97,39 +97,46 @@ client-provided alive/dead status has been established by this audit. Incoming s
 confused with a client-authoritative health response. Oxygen routing and lethal frostbite/suffocation
 cancellation remain unresolved.
 
-## Nonpositive HP and death: native trace
+## Client-side boundary audit
 
-Rechecked against installed GameAssembly SHA-256
-`ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f`.
-`probe/map_damage.py` validates the added instruction evidence in `probe/damage_paths.json`.
-This is a static client trace plus the existing nonlethal Citadel trace, not a live lethal-hazard test.
+The working scope assumes damage is computed locally and then reported. The implementation does
+not attempt to rescue received lethal HP/death messages. The former incoming-HP last-chance request,
+its retry behavior, log row and test-only caller override are removed. Incoming HP still rebases the
+prediction budget and never clears an already confirmed escape latch.
 
-| Boundary | Native behavior | Protection behavior |
-|---|---|---|
-| Incoming breath/frostbite stats | Calls setters at `0x184cb6f` / `0x184c7da`, storing `+0x52c` / `+0x530` | Meters alone never request escape |
-| Incoming HP stat 1 | Calls the HP setter at `0x184c110`, returns `0x184c115` | Version 5 attempts normal Nexus first if the controlled player's current HP is positive and supplied HP is <= 0 |
-| HP setter `0x1af1670` | Writes supplied integer to entity `+0x20c` at `0x1af1674`, then tail-dispatches the virtual callback at class slot `+0x9a8` | Supplied HP is still passed to the original setter unchanged |
-| Normal Nexus `0x1841500` | At `0x1841731`, nonpositive player HP branches to return; helper `0x1841830` also refuses when the dead flag `+0x39` is set | The new request runs before the HP write; failed/unconfirmed calls do not activate suppression |
-| Nexus send helper | Calls `0x199e040` at `0x18418ab`; that writes SocketManager Nexusing `+0x40 = 1`. Tail-calls `SendMessage` at `0x1841905` | Existing latch is published only after that local flag is confirmed; unrelated/Nexus messages still pass |
-| Incoming death handler `0x1840c60` | Sets player `+0x39 = 1` at `0x1840e57`, sets HP 0 at `0x1840e5f`, then calls `ShowDeathScreenPanel` at `0x1840f1c` | This separate handler and the death screen are not hidden or treated as a cancellable local hit |
+Native evidence is checked against GameAssembly SHA-256
+`ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f`. The archived current metadata dump
+maps the exact methods/fields. The extended scan resolves ambiguities from the earlier bounded audit:
 
-The incoming HP-stat path and incoming death-message path are separate; the trace does not establish
-which arrives first for a lethal environmental event. The HP setter's type-specific virtual callback
-is not fully resolved here. A raw relative-call scan found 16 candidate direct HP-setter callers,
-confirmed as instructions; no direct caller of ShowDeathScreenPanel besides `0x1840f1c` was found.
-This does not rule out indirect calls. The other player-local setter calls include constant 1 and 0,
-not an identified environmental subtraction loop; their source mechanics remain unassigned.
+- The shared damage notification is virtual slot 118. Eleven matching immediate virtual-call byte
+  candidates exist in the text segment. Metadata/disassembly resolves three local damage producers
+  (projectile `0x653bca`, ground `0x196ed5f`, AOE `0x183f7b8`), two incoming notification handlers, and six
+  unrelated guild UI/equipment calls through different receiver types. The three local routes are
+  already intercepted. Raw displacement and direct-call searches are not proof against all indirect
+  dispatch or future inlining.
+- Sixteen direct HP-setter call candidates were instruction-verified. Twelve are player-tooltip clone
+  updates. The two player-local calls writing constants 1 and 0 are static constructors
+  `FKALGHJIADI.HANNHIFHJEA` (`0x1975590`) and `CEDFOHGDPEE` (`0x19775e0`), not damage loops. The remaining
+  two are the known incoming stat and incoming death handlers.
+- The HP setter writes entity `+0x20c` at `0x1af1674`, then dispatches virtual slot 135. Metadata resolves
+  the controlled-player override to `FKALGHJIADI.JEIJMMIOFNK` (`0x196d6a0`); it updates presentation/state
+  after assignment. The new local hatch runs before the write and callback.
+- The normal Nexus path rejects nonpositive HP and a set dead flag. Therefore the local lethal-write
+  hatch must request while current HP is still positive, and skip the local write only after the
+  existing local Nexusing confirmation succeeds.
 
-Previously the shared HP hook observed nonpositive incoming assignments but did not request escape.
-Version 5 closes that client-side omission without changing positive assignments or the HP-window
-policy. It requires a controlled player, known validated map/connection, active toggle, main thread,
-audited return address and incoming update context. Armed-off remains dry run. A terminal assignment
-can make one final request after an earlier failed hit request. Already confirmed latches do not issue
-duplicate requests. Already nonpositive HP and unmapped direct setter calls do not invent a revival.
+The new `guard_local_hp_blocked` row records current HP, computed local value and caller. A positive
+nonlethal local setter is not charged again: its underlying hit may already be in the common damage
+budget. Incoming contexts/caller, incoming death caller, non-controlled entities and off-main writes
+are not reclassified as local damage. Existing atomic suppression applies to covered off-main damage
+only after an escape latch has already been published.
 
-The new `guard_incoming_lethal_hp` row records supplied HP, HP before assignment, local Nexusing result,
-and `server_prevention_proven=0`. Automated fixtures verify request-before-write, zero and negative HP,
-following covered-report suppression, disabled/dry-run modes, rejection/exception, failed-request retry,
-and preservation of received terminal HP and subsequent death messages. They verify client ordering,
-not that a server already reporting lethal HP accepts Nexus or cancels environmental damage. There is
-still no proof of a cancellable frostbite/suffocation damage report before the incoming assignment.
+Regression fixtures cover local zero/negative HP cancellation; following local HP reductions and
+covered reports; healing/nonlethal writes; incoming state while latched; dry run/disabled/failure;
+retry after a failed hit request; already nonpositive state; and incoming/death origin exclusion.
+
+No separate local frostbite or suffocation producer has been located. A producer that uses the shared
+guarded routes benefits from them, but there is no evidence yet that every status/environmental source
+routes through those functions. Direct writes bypassing both the setter and notification/calculator
+hooks, or different outgoing report routines, are not proven covered. This remains an explicit local
+routing task; no server-computation workaround is retained or proposed here.

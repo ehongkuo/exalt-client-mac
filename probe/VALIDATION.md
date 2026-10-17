@@ -1,6 +1,6 @@
 # Early-Nexus correction and runtime efficiency
 
-Policy version 5 retains the authoritative HP windows introduced in version 3 after the confirmed 1206-HP/110-damage false
+Policy version 6 retains the authoritative HP windows introduced in version 3 after the confirmed 1206-HP/110-damage false
 escape. It no longer carries old damage indefinitely across HP updates or healing. Same-window
 projectile/ground/area bursts and confirmed escape latches remain protected. Server report ordering
 is still uncertain; this is not acknowledgement-aware reconciliation. See the [audit](../docs/damage-status-audit.md).
@@ -19,8 +19,8 @@ Projectile, ground and radius/AOE traces show local escape requests, matching re
 and later Nexus arrivals at safe actual HP. See [live evidence](../docs/damage-live-validation.md).
 The Citadel trace establishes full-frostbite/server-HP ordering and nonlethal HP loss. Version 4
 removes meter-limit escapes: frostbite 100+ and exhausted breath alone never request Nexus.
-Version 5 adds a last-chance request before an audited incoming nonpositive HP write.
-Server-side lethal frostbite/suffocation cancellation and the oxygen transition remain unverified. Incoming HP updates do not acknowledge
+Version 6 guards lethal locally computed HP writes, with the same request/latch as covered hits.
+Incoming HP never triggers escape. Distinct local frostbite/suffocation routing remains unverified. Incoming HP updates do not acknowledge
 individual hit reports, and local Nexusing does not confirm server acceptance.
 
 Whole-session probe reports remain inconclusive when the unlimited-duration run lacks a quit-time

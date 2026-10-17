@@ -120,7 +120,7 @@ void incoming_fixture_body(void *self,uint32_t bullet,int owner,const void *info
  ++report_forwarded;
 }
 void hp_fixture_body(void *self,int value,const void *info) {
- assert(self==(void*)40 && info==(void*)0x5678);hp_has_assignment=1;assigned_hp=value;++hp_forwarded;
+ assert(self==(void*)40 && (info==(void*)0x5678 || info==(void*)0x5679 || info==(void*)0x567a));hp_has_assignment=1;assigned_hp=value;++hp_forwarded;
 }
 void nexus_fixture_body(void *self,const void *info) {
  assert(self==(void*)70 && info==(void*)0x5678);++manual_nexus_forwarded;
@@ -177,36 +177,56 @@ static void burst(void *unused) {
  }
  assert(nexus_calls==1 && report_forwarded==3 && notify_forwarded==3);
  puts("lethal_covered_hit_and_following_damage_blocked=1");
-#elif FATAL_ENVIRONMENT==8 || FATAL_ENVIRONMENT==9 || FATAL_ENVIRONMENT==12
-#if FATAL_ENVIRONMENT==12
+#elif FATAL_ENVIRONMENT==8 || FATAL_ENVIRONMENT==9
+ next_stats_hp=FATAL_ENVIRONMENT==9?-7:0;
+ stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==next_stats_hp && nexus_invocations==0);
+ puts("incoming_hp_forwarded_without_escape=1");
+#elif FATAL_ENVIRONMENT==10 || FATAL_ENVIRONMENT==11 || FATAL_ENVIRONMENT==15
+#if FATAL_ENVIRONMENT==15
  for(int i=0;i<4;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(nexus_invocations==1 && !socket_nexusing);
 #endif
- next_stats_hp=FATAL_ENVIRONMENT==9?-7:0;
- stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- assert(assigned_hp==next_stats_hp);
-#ifdef INCOMING_HP_PASS
- assert(nexus_invocations==0);
+ int computed=FATAL_ENVIRONMENT==11?-7:0;
+ hp_fixture((void*)40,computed,(void*)0x5678);
+#ifdef LOCAL_HP_PASS
+ assert(assigned_hp==computed && nexus_invocations==0);
 #else
  assert(nexus_hp_at_request==200);
- assert(nexus_invocations==(FATAL_ENVIRONMENT==12?2u:1u));
- puts("incoming_lethal_hp_request_before_write=1");
+ assert(nexus_invocations==(FATAL_ENVIRONMENT==15?2u:1u));
+#if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
+ assert(assigned_hp==computed && !socket_nexusing);
+#else
+ assert(assigned_hp==200 && socket_nexusing);
+ hp_fixture((void*)40,190,(void*)0x5678);assert(assigned_hp==200);
+ hp_fixture((void*)40,240,(void*)0x5678);assert(assigned_hp==240); /* Healing is not damage. */
+ next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==180); /* Incoming state bypasses the local hatch. */
+ hp_fixture((void*)40,-7,(void*)0x5678);assert(assigned_hp==180);
+ puts("local_lethal_and_following_hp_writes_cancelled=1");
 #endif
- unsigned attempts=nexus_invocations;
- stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- assert(nexus_invocations==attempts); /* Already nonpositive: no fake revival/retry. */
+#endif
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
  assert(report_forwarded==(socket_nexusing?0u:1u));
  assert(notify_forwarded==(socket_nexusing?0u:1u));
- death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
- assert(death_forwarded==1); /* A later death message is not hidden. */
- puts("incoming_terminal_hp_and_death_message_preserved=1");
-#elif FATAL_ENVIRONMENT==10 || FATAL_ENVIRONMENT==11
- hp_fixture((void*)40,0,(void*)0x5678);
- if(FATAL_ENVIRONMENT==11){next_stats_hp=0;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);}
+ puts("local_hp_hatch_and_report_behavior_checked=1");
+#elif FATAL_ENVIRONMENT==12
+ hp_fixture((void*)40,190,(void*)0x5678);
+ assert(assigned_hp==190 && !nexus_invocations);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(nexus_invocations==0); /* Nonlethal setter did not charge damage again. */
+ puts("nonlethal_local_hp_write_passed=1");
+#elif FATAL_ENVIRONMENT==13 || FATAL_ENVIRONMENT==14
+ const void *origin=FATAL_ENVIRONMENT==13?(void*)0x5679:(void*)0x567a;
+ hp_fixture((void*)40,0,origin);
  assert(assigned_hp==0 && !nexus_invocations);
- puts("unmapped_or_already_zero_hp_did_not_request=1");
+ puts("incoming_or_death_origin_not_treated_as_local_damage=1");
+#elif FATAL_ENVIRONMENT==16
+ assigned_hp=0;hp_has_assignment=1;
+ hp_fixture((void*)40,-7,(void*)0x5678);
+ assert(assigned_hp==-7 && !nexus_invocations);
+ puts("already_nonpositive_not_revived=1");
 #endif
  return;
 #endif
