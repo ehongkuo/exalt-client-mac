@@ -14,12 +14,17 @@ extern uint64_t probe_fixture(void *,int,uint32_t,int,int,uint8_t,int,const void
 extern void notify_fixture(void *,uint8_t,int,void *,uint8_t,void *,uint8_t,uint8_t,const void *);
 static unsigned report_forwarded,notify_forwarded,enemy_forwarded,hp_forwarded,manual_nexus_forwarded;
 static int assigned_hp=-1;
+static int hp_has_assignment;
+#ifdef FATAL_BURST
+static int nexus_hp_at_request=-1;
+static unsigned nexus_invocations;
+#endif
 #ifdef GUARD_BENCHMARK
 static uint64_t benchmark_field_reads;
 #endif
 #ifdef OBSERVE_ENVIRONMENT
 static int fixture_breath=0,fixture_frostbite=100;
-#elif defined(FATAL_ENVIRONMENT) && (FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==7)
+#elif defined(FATAL_ENVIRONMENT) && (FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==7 || FATAL_ENVIRONMENT==9)
 static int fixture_breath=1,fixture_frostbite=0;
 #else
 static int fixture_breath=-1,fixture_frostbite=0;
@@ -47,6 +52,7 @@ void *il2cpp_runtime_invoke(const void *method,void *object,void **args,void **e
 #ifdef FATAL_BURST
  if(method==&nexus_method){
   assert(object==(void*)70 && args==NULL);*exception=NULL;
+  nexus_hp_at_request=assigned_hp;++nexus_invocations;
 #ifdef NEXUS_REQUEST_EXCEPTION
   *exception=&fake_exception;return NULL;
 #else
@@ -106,7 +112,7 @@ void il2cpp_field_get_value(void *o,void *f,void *v) {
  if(f==(void*)993){assert(o==(void*)500);*(uint8_t*)v=socket_nexusing;return;}
  if(f==(void*)990){assert(o==(void*)70);*(int*)v=update_sequence;return;}
  if(f==(void*)991){assert(o==(void*)70);*(uint32_t*)v=update_time;return;}
- if(f==(void*)11 && o==(void*)40 && assigned_hp>=0){*(int*)v=assigned_hp;return;}
+ if(f==(void*)11 && o==(void*)40 && (hp_has_assignment || assigned_hp>=0)){*(int*)v=assigned_hp;return;}
  fixture_field_get_value(o,f,v);
 }
 void incoming_fixture_body(void *self,uint32_t bullet,int owner,const void *info) {
@@ -114,7 +120,7 @@ void incoming_fixture_body(void *self,uint32_t bullet,int owner,const void *info
  ++report_forwarded;
 }
 void hp_fixture_body(void *self,int value,const void *info) {
- assert(self==(void*)40 && info==(void*)0x5678);assigned_hp=value;++hp_forwarded;
+ assert(self==(void*)40 && info==(void*)0x5678);hp_has_assignment=1;assigned_hp=value;++hp_forwarded;
 }
 void nexus_fixture_body(void *self,const void *info) {
  assert(self==(void*)70 && info==(void*)0x5678);++manual_nexus_forwarded;
@@ -150,7 +156,7 @@ static void burst(void *unused) {
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
 #ifdef FATAL_ENVIRONMENT
- fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3 || FATAL_ENVIRONMENT==7)?0:-1;
+ fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3 || FATAL_ENVIRONMENT==7 || FATAL_ENVIRONMENT==9)?0:-1;
  fixture_frostbite=(FATAL_ENVIRONMENT==1 || FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==8)?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;
  puts("environment_fixture_ready=1");
 #if FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==7
@@ -171,10 +177,36 @@ static void burst(void *unused) {
  }
  assert(nexus_calls==1 && report_forwarded==3 && notify_forwarded==3);
  puts("lethal_covered_hit_and_following_damage_blocked=1");
-#elif FATAL_ENVIRONMENT==8
- next_stats_hp=0;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- assert(assigned_hp==0 && !nexus_calls);
- puts("incoming_zero_hp_not_falsified=1");
+#elif FATAL_ENVIRONMENT==8 || FATAL_ENVIRONMENT==9 || FATAL_ENVIRONMENT==12
+#if FATAL_ENVIRONMENT==12
+ for(int i=0;i<4;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(nexus_invocations==1 && !socket_nexusing);
+#endif
+ next_stats_hp=FATAL_ENVIRONMENT==9?-7:0;
+ stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==next_stats_hp);
+#ifdef INCOMING_HP_PASS
+ assert(nexus_invocations==0);
+#else
+ assert(nexus_hp_at_request==200);
+ assert(nexus_invocations==(FATAL_ENVIRONMENT==12?2u:1u));
+ puts("incoming_lethal_hp_request_before_write=1");
+#endif
+ unsigned attempts=nexus_invocations;
+ stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(nexus_invocations==attempts); /* Already nonpositive: no fake revival/retry. */
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ assert(report_forwarded==(socket_nexusing?0u:1u));
+ assert(notify_forwarded==(socket_nexusing?0u:1u));
+ death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
+ assert(death_forwarded==1); /* A later death message is not hidden. */
+ puts("incoming_terminal_hp_and_death_message_preserved=1");
+#elif FATAL_ENVIRONMENT==10 || FATAL_ENVIRONMENT==11
+ hp_fixture((void*)40,0,(void*)0x5678);
+ if(FATAL_ENVIRONMENT==11){next_stats_hp=0;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);}
+ assert(assigned_hp==0 && !nexus_invocations);
+ puts("unmapped_or_already_zero_hp_did_not_request=1");
 #endif
  return;
 #endif

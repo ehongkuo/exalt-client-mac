@@ -43,10 +43,13 @@ The shared scope/latch cleanup still runs on every guard tick.
 The Citadel trace records frostbite 100 at HP 740/740, followed about 178 ms later by incoming HP 726.
 This supports the distinction between a saturated meter and a lethal input. The incoming HP assignment
 is not an audited local damage calculation/report boundary. No source-specific cancellable frostbite
-or suffocation tick has been established, and no such protection is claimed by the settings text.
+or suffocation tick has been established. The settings text labels environmental death prevention
+unverified, including the incoming-HP fallback below.
 
 Nonlethal incoming HP updates rebase the normal prediction window. Subsequent audited projectile,
 ground and area damage still enters the common lethal prediction and confirmed-escape latch.
 Incoming zero-HP assignments are not discarded or rewritten as positive HP: hiding that state would
-not establish that a server-originated death was prevented. The desired lethal-only environmental
-protection requires a verified pre-commit damage path; it is not implemented by this meter-trigger fix.
+not establish that a server-originated death was prevented. Policy version 5 adds a last-chance
+request before a nonpositive incoming HP value is written locally, restricted to the audited incoming
+stat call site. It does not establish server-side cancellation; see the
+[native trace](damage-status-audit.md#nonpositive-hp-and-death-native-trace).

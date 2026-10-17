@@ -427,6 +427,46 @@
       "address": "0x1841385",
       "bytes": "450fb64524498b4d18418b5520",
       "finding": "alternate incoming message supplies notification lethal flag and damage amount"
+    },
+    {
+      "address": "0x1af1674",
+      "bytes": "89b70c020000",
+      "finding": "HP setter writes incoming value to entity +0x20c before its virtual callback"
+    },
+    {
+      "address": "0x1841731",
+      "bytes": "83b80c020000007edc",
+      "finding": "Normal Nexus returns without escape when controlled-player HP is nonpositive"
+    },
+    {
+      "address": "0x1840e57",
+      "bytes": "c647390131f631d2e80c082b00",
+      "finding": "Incoming death handler sets entity dead flag +0x39 before assigning zero HP"
+    },
+    {
+      "address": "0x1840f1c",
+      "bytes": "e84f197500",
+      "finding": "Incoming death handler calls GuiManager.ShowDeathScreenPanel"
+    },
+    {
+      "address": "0x184187e",
+      "bytes": "807839007405",
+      "finding": "Nexus send helper refuses when the controlled-player dead flag +0x39 is set"
+    },
+    {
+      "address": "0x18418ab",
+      "bytes": "e890c71500",
+      "finding": "Nexus send helper calls SocketManager local Nexusing setter"
+    },
+    {
+      "address": "0x199e044",
+      "bytes": "c6474001",
+      "finding": "SocketManager Nexusing setter writes one at +0x40"
+    },
+    {
+      "address": "0x1841905",
+      "bytes": "e906ca1500",
+      "finding": "Nexus send helper tail-calls SocketManager.SendMessage"
     }
   ],
   "limitation": "Build-specific static and live projectile/terrain/area evidence. HP, breath, frostbite and two condition words are applied by incoming stat dispatch; no local cancellable DOT calculation is established. Legacy entity +0xf8 context is a sprite key, not status flags. Condition context now reads the first two Int32 mask words at +0x250 with explicit provenance.",

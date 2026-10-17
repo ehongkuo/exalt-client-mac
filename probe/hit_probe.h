@@ -34,6 +34,7 @@ static SendFunction send_original;
 #define TERRAIN_SEND_CALLER 0x196ed90UL /* report helper tail-calls SendMessage */
 #define AREA_SEND_CALLER 0x183f880UL
 #define SEND_OFFSET 0x199e310UL
+#define INCOMING_HP_CALLER 0x184c115UL
 static _Atomic uintptr_t fatal_block_socket;
 static int probe_installed,probe_attempted;
 static char probe_main_key;
@@ -414,6 +415,28 @@ static void hp_observed(void *self,int value,const void *info) {
         damage_context_emit(self,e.id);
 #endif
     }
+    /* Last chance before the audited incoming assignment writes nonpositive HP.
+     * This requests escape; it never rewrites received HP or proves server survival. */
+    if(observe && fatal_enabled && value<=0 && (e.update_source==1 || e.update_source==2)) {
+        uint64_t caller=e.callsite;
+#ifdef HIT_PROBE_TEST
+        if(info==(void*)0x5678)caller=INCOMING_HP_CALLER;
+#ifdef HIT_PROBE_BAD_HP_CALLER_TEST
+        caller=INCOMING_HP_CALLER+1;
+#endif
+#endif
+        if(caller==INCOMING_HP_CALLER && fatal_sync(self) && !fatal_policy.blocking) {
+            int hp=0;il2cpp_field_get_value(self,player_hp_field,&hp);
+            if(hp>0) {
+                /* A distinct terminal assignment gets a last chance even if an
+                 * earlier hit's request failed. Existing confirmed latches stay set. */
+                fatal_policy.attempted=0;
+                (void)fatal_intervene(self,hp,e.id);
+                note("guard_incoming_lethal_hp\thp_before=%d\tincoming=%d\tlocal_nexusing=%d\tserver_prevention_proven=0\n",
+                     hp,value,fatal_policy.blocking);
+            }
+        }
+    }
     hp_original(self,value,info);
     if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
@@ -583,9 +606,11 @@ static void probe_install(void) {
     static const unsigned char terrain_report_call[]={0xe8,0xb0,0x00,0xed,0xff};
     static const unsigned char terrain_send_tail[]={0xe9,0xf0,0xf3,0x15,0x00};
     static const unsigned char area_send_call[]={0xe8,0x90,0xea,0x15,0x00};
+    static const unsigned char incoming_hp_call[]={0xe8,0x5b,0x55,0x2a,0x00};
     if(memcmp((void*)(probe_game_base+TERRAIN_SEND_CALLER-5),terrain_report_call,5) ||
        memcmp((void*)(probe_game_base+0x183ef1bUL),terrain_send_tail,5) ||
-       memcmp((void*)(probe_game_base+AREA_SEND_CALLER-5),area_send_call,5)){
+       memcmp((void*)(probe_game_base+AREA_SEND_CALLER-5),area_send_call,5) ||
+       memcmp((void*)(probe_game_base+INCOMING_HP_CALLER-5),incoming_hp_call,5)){
         note("hit_probe_refused\treport_boundary_bytes\n");return;
     }
     const uintptr_t sites[]={TERRAIN_NOTIFY_CALLER,AREA_NOTIFY_CALLER};
@@ -602,7 +627,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("fatal_policy\tversion=4\treconciliation=authoritative_hp_window\thealing_credit=1\tmeter_escape=0\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=5\treconciliation=authoritative_hp_window\thealing_credit=1\tmeter_escape=0\tincoming_lethal_request=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
