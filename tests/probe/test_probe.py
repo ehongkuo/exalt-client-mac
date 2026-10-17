@@ -11,12 +11,15 @@ guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
 class ProbeTests(unittest.TestCase):
- def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False):
+ def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False,observe_environment=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
-   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
+   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if observe_environment:args.append('-DOBSERVE_ENVIRONMENT')
+   if short_conditions:args.append('-DSHORT_CONDITIONS')
    if fatal:args.append('-DFATAL_BURST')
+   if verify_hp:args.append('-DVERIFY_EARLY')
    if reconcile:args.append('-DFATAL_RECONCILE')
    if denied:args.append('-DNEXUS_REQUEST_DENIED')
    if exception:args.append('-DNEXUS_REQUEST_EXCEPTION')
@@ -26,7 +29,8 @@ class ProbeTests(unittest.TestCase):
    if bad_bytes:args.append('-DBAD_REPORT_BYTES')
    subprocess.run(args,check=True)
    env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'probe.dylib');env['EXALT_GUARD']='armed=1,potion=50,nexus=25'
-   env['EXALT_FATAL_INTERVENTION']='1' if fatal else '0'
+   env['EXALT_VERIFY_ONE_HP']='1' if verify_hp else '0'
+   env['EXALT_FATAL_INTERVENTION']='1' if fatal or unaudited else '0'
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
    time.sleep(1.15)
    if not crash:
@@ -43,6 +47,45 @@ class ProbeTests(unittest.TestCase):
    self.last_log=logfile.read_text()
    self.summary=analysis.analyze(logfile)
    return logfile.read_text()
+ def test_observation_remains_passive_at_environmental_limits(self):
+  log=self.fixture(observe_environment=True)
+  self.assertNotIn('guard_environment_nexus',log)
+  self.assertFalse(any(e['phase'] in (20,21,22,23,24) for e in analysis.read_events(log)))
+  self.assertTrue(any(e['breath']==0 and e['frostbite']==100 for e in self.summary['damage_contexts']))
+ def test_one_hp_verification_escapes_before_first_small_hit_without_changing_hp(self):
+  log=self.fixture(fatal=True,verify_hp=True)
+  self.assertIn('damage_verification\teffective_hp=1\tgame_hp_unchanged=1',log)
+  request=next(e for e in analysis.read_events(log) if e['phase']==20)
+  self.assertEqual(request['hp'],200)
+  self.assertEqual(request['value'],50)
+  self.assertEqual(request['update_context'],(1<<64)-49)
+  self.assertIn('fatal_report_forwarded=0 fatal_notify_forwarded=0',self.last_output)
+ def test_short_condition_array_is_unavailable_without_out_of_bounds_read(self):
+  log=self.fixture(short_conditions=True)
+  contexts=[e for e in analysis.read_events(log) if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['flag0']==14 and e['flag2']==1 for e in contexts))
+  self.assertTrue(all(e['conditions_raw'] is None for e in self.summary['damage_contexts']))
+ def test_context_round_trips_and_unmapped_calculations_never_intervene(self):
+  log=self.fixture(unaudited=True);events=analysis.read_events(log)
+  contexts=[e for e in events if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['projectile']==1<<45 and e['value']==-1 and e['owner']==0 and e['flag0']==15 for e in contexts))
+  self.assertFalse(any(e['phase'] in (20,23,24) for e in events))
+  self.assertEqual(self.summary['damage_calculations'],0)
+  self.assertEqual(len(self.summary['unclassified_damage_calculations']),3)
+  self.assertEqual(self.flight_summary['damage_calculations'],0)
+  self.assertEqual(len(self.flight_summary['unclassified_damage_calculations']),3)
+  self.assertTrue(all(e['conditions_raw']==hex(1<<45) and e['breath']==-1 and e['frostbite']==0 for e in self.flight_summary['damage_contexts']))
+  self.assertEqual(self.summary['shadow_ledger']['trace'][-1]['held_damage'],0)
+  self.assertEqual([e['id'] for e in events],sorted(e['id'] for e in events))
+  self.assertTrue(any(e['phase']==9 and e['in_nexus'] for e in events))
+ def test_missing_context_fields_preserve_original_game_calls(self):
+  log=self.fixture(context_missing=True);events=analysis.read_events(log)
+  contexts=[e for e in events if e['phase']==29]
+  self.assertTrue(contexts)
+  self.assertTrue(all(e['flag0']==8 and e['value']==-1 and e['owner']==-1 for e in contexts))
+  self.assertIn('damage_context_ready\tconditions=0\tbreath=0\tfrostbite=0',log)
  def test_incoming_identifiers_are_not_damage(self):
   log=self.fixture();self.assertIn('hit_probe_ready\tv7',log)
   events=analysis.read_events(log)
@@ -131,7 +174,7 @@ class ProbeTests(unittest.TestCase):
   self.assertEqual(self.summary['manual_nexus_entries'],[])
   self.assertEqual(len(self.summary['fatal_intervention']['decisions']),1)
   self.assertEqual(len(self.summary['fatal_intervention']['suppressed_reports']),3)
- def test_server_hp_replaces_budget_without_clearing_escape_latch(self):
+ def test_server_hp_rebases_budget_without_clearing_escape_latch(self):
   log=self.fixture(fatal=True,reconcile=True)
   self.assertIn('fatal_report_forwarded=4 fatal_notify_forwarded=4 fatal_damage_calls=7',self.last_output)
   events=analysis.read_events(log)

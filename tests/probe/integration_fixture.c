@@ -1,10 +1,12 @@
 #define il2cpp_runtime_invoke fixture_runtime_invoke
 #define il2cpp_object_get_class fixture_object_get_class
 #define il2cpp_field_get_value fixture_field_get_value
+#define il2cpp_array_length fixture_array_length
 #define main guard_fixture_main
 #include "../fixture.c"
 #undef main
 #undef il2cpp_field_get_value
+#undef il2cpp_array_length
 #undef il2cpp_object_get_class
 #undef il2cpp_runtime_invoke
 #include <pthread.h>
@@ -12,6 +14,16 @@ extern uint64_t probe_fixture(void *,int,uint32_t,int,int,uint8_t,int,const void
 extern void notify_fixture(void *,uint8_t,int,void *,uint8_t,void *,uint8_t,uint8_t,const void *);
 static unsigned report_forwarded,notify_forwarded,enemy_forwarded,hp_forwarded,manual_nexus_forwarded;
 static int assigned_hp=-1;
+#ifdef GUARD_BENCHMARK
+static uint64_t benchmark_field_reads;
+#endif
+#ifdef OBSERVE_ENVIRONMENT
+static int fixture_breath=0,fixture_frostbite=100;
+#elif defined(FATAL_ENVIRONMENT) && FATAL_ENVIRONMENT==2
+static int fixture_breath=1,fixture_frostbite=0;
+#else
+static int fixture_breath=-1,fixture_frostbite=0;
+#endif
 extern void incoming_fixture(void *,uint32_t,int,const void *);
 extern void hp_fixture(void *,int,const void *);
 extern void nexus_fixture(void *,const void *);
@@ -60,12 +72,36 @@ int damage_fixture_body(void *self,float value,const void *info) {
 #else
  assert(self==(void*)0x3456);
 #endif
- assert(value==50.5f && info==(void*)0x5678);++damage_forwarded;return 50;
+ assert(value==50.5f && info==(void*)0x5678);++damage_forwarded;
+#ifdef FATAL_FALSE_POSITIVE
+ return 110;
+#else
+ return 50;
+#endif
 }
 void death_fixture_body(void *self,void *message,const void *info) {
  assert(self==(void*)20 && message==(void*)0x1234 && info==(void*)0x5678);++death_forwarded;
 }
+#ifdef SHORT_CONDITIONS
+#define CONDITION_WORDS 1
+#else
+#define CONDITION_WORDS 2
+#endif
+static struct {uintptr_t header[4];uint32_t words[2];} condition_array={{0,0,0,CONDITION_WORDS},{0,1u<<13}};
+uint32_t il2cpp_array_length(void *array){
+ if(array==&condition_array)return (uint32_t)condition_array.header[3];
+ return fixture_array_length(array);
+}
 void il2cpp_field_get_value(void *o,void *f,void *v) {
+#ifdef GUARD_BENCHMARK
+ ++benchmark_field_reads;
+#endif
+#ifdef FATAL_FALSE_POSITIVE
+ if(f==(void*)10 && o==(void*)40){*(int*)v=1206;return;}
+#endif
+ if(f==(void*)1001){assert(o==(void*)40 || o==(void*)41);*(void**)v=&condition_array;return;}
+ if(f==(void*)1002){assert(o==(void*)40 || o==(void*)41);*(int*)v=fixture_breath;return;}
+ if(f==(void*)1003){assert(o==(void*)40 || o==(void*)41);*(int*)v=fixture_frostbite;return;}
  if(f==(void*)992){assert(o==(void*)70);*(void**)v=(void*)500;return;}
  if(f==(void*)993){assert(o==(void*)500);*(uint8_t*)v=socket_nexusing;return;}
  if(f==(void*)990){assert(o==(void*)70);*(int*)v=update_sequence;return;}
@@ -88,10 +124,10 @@ uint64_t fixture_body(void *self,int tick,uint32_t bullet,int value,int owner,ui
  ++enemy_forwarded;return 0xabcdef0123456789ULL;
 }
 void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,uint8_t flag,void *projectile,uint8_t a,uint8_t b,const void *info) {
- assert(self==(void*)40 && killed==0 && (value==400 || value==50) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && a==1 && b==0 && info==(void*)0x4567);
+ assert(self==(void*)40 && killed==0 && (value==400 || value==50 || value==60 || value==70 || value==110) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && (a>=1 && a<=3) && b==0 && info==(void*)0x4567);
  ++notify_forwarded;
 #if defined(LETHAL_BURST) || defined(FATAL_BURST)
- #ifndef FATAL_RECONCILE
+ #if !defined(FATAL_RECONCILE) && !defined(FATAL_FALSE_POSITIVE)
  if(notify_forwarded==4)assigned_hp=0;
 #endif
 #endif
@@ -101,11 +137,79 @@ void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,ui
 #else
 #define DAMAGE_ARGUMENT ((void*)0x3456)
 #endif
+extern void send_fixture(void *,void *,const void *);
+static unsigned boundary_sent,other_sent;
+void send_fixture_body(void *self,void *message,const void *info) {
+ assert(message==(void*)3);
+ if(self==(void*)500 && (info==(void*)0x5678 || info==(void*)0x6001 || info==(void*)0x6002))++boundary_sent;
+ else ++other_sent;
+}
 static void burst(void *unused) {
  (void)unused;
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
+#ifdef FATAL_ENVIRONMENT
+ fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3)?0:-1;
+ fixture_frostbite=FATAL_ENVIRONMENT==1?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;
+ puts("environment_fixture_ready=1");return;
+#endif
+#ifdef FATAL_FALSE_POSITIVE
+ hp_fixture((void*)40,935,(void*)0x5678);
+ for(int i=0;i<6;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==110);
+ next_stats_hp=1206;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ for(int i=0;i<3;++i){
+  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==110);
+  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+  notify_fixture((void*)40,0,110,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ }
+ assert(assigned_hp==1206 && !nexus_calls);puts("healed_full_hp_survived_3x110=1");return;
+#endif
+#ifdef FATAL_HP_CROSS
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ next_stats_hp=40;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==40); /* Never cancel the server assignment. */
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ puts("authoritative_hp_rebased_before_next_hit=1");return;
+#endif
+#ifdef FATAL_MIXED_BURST
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ notify_fixture((void*)40,0,60,(void*)0x2345,1,(void*)0x3456,2,0,(void*)0x4567);
+ send_fixture((void*)500,(void*)3,(void*)0x6001);
+ next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ notify_fixture((void*)40,0,70,(void*)0x2345,1,(void*)0x3456,3,0,(void*)0x4567);
+ send_fixture((void*)500,(void*)3,(void*)0x6002);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ send_fixture((void*)500,(void*)3,(void*)0x6002);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ next_stats_hp=250;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(notify_forwarded==3 && report_forwarded==1 && boundary_sent==2 && assigned_hp==250);
+ puts("mixed_paths_rebased_and_preserved_same_window_burst=1");return;
+#endif
+#ifdef FATAL_BOUNDARY_BURST
+ for(int i=0;i<6;++i){
+  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+  send_fixture((void*)500,(void*)3,(void*)0x5678);
+  send_fixture((void*)500,(void*)3,(void*)0x9876); /* unrelated callsite */
+  send_fixture((void*)501,(void*)3,(void*)0x5678); /* unrelated socket */
+ }
+ assert(other_sent==12);
+#if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION) || defined(BOUNDARY_PASS)
+ assert(boundary_sent==6 && notify_forwarded==6);
+#else
+ assert(boundary_sent==3 && notify_forwarded==3);
+#endif
+ printf("boundary_sent=%u other_sent=%u\n",boundary_sent,other_sent);
+ return;
+#endif
 #ifdef FATAL_RECONCILE
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
@@ -117,7 +221,15 @@ static void burst(void *unused) {
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
   assert(actual==50);
 #else
+  #ifdef VERIFY_EARLY
+  assert(actual==0);
+#else
+  #ifdef FATAL_RECONCILE
   assert(actual==(i<3?50:0));
+#else
+  assert(actual==(i<3?50:0));
+#endif
+#endif
 #endif
 #ifdef FATAL_RECONCILE
   if(i==3){next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);}
@@ -170,13 +282,20 @@ static void late_blocked_hit(void *unused) {
 static void verify_forwarding(void *unused) {
  (void)unused;
 #ifdef FATAL_BURST
+#if defined(FATAL_BOUNDARY_BURST) || defined(FATAL_MIXED_BURST) || defined(FATAL_HP_CROSS) || defined(FATAL_ENVIRONMENT) || defined(FATAL_FALSE_POSITIVE)
+ return;
+#endif
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION)
  assert(report_forwarded==7 && notify_forwarded==7 && assigned_hp==0);
 #else
  #ifdef FATAL_RECONCILE
  assert(report_forwarded==4 && notify_forwarded==4 && assigned_hp==200);
 #else
+ #ifdef VERIFY_EARLY
+ assert(report_forwarded==0 && notify_forwarded==0 && assigned_hp==200);
+#else
  assert(report_forwarded==3 && notify_forwarded==3 && assigned_hp==200);
+#endif
 #endif
 #endif
  #if defined(FATAL_RECONCILE) || defined(FATAL_CLIENT_TOGGLE)
@@ -193,6 +312,7 @@ static void verify_forwarding(void *unused) {
 #endif
  printf("probe_report_forwarded=%u probe_notify_forwarded=%u\n",report_forwarded,notify_forwarded);
 }
+#ifndef GUARD_BENCHMARK
 int main(void) {
 #ifdef FATAL_CLIENT_TOGGLE
  dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW,1500*NSEC_PER_MSEC),dispatch_get_main_queue(),NULL,late_blocked_hit);
@@ -203,4 +323,10 @@ int main(void) {
  return guard_fixture_main();
 }
 
+#else
+#include "benchmark_fixture.h"
+#endif
+
 void death_audit_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}
+
+void send_audit_body(void *a,void *b,const void *c){(void)a;(void)b;(void)c;}

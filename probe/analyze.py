@@ -70,7 +70,8 @@ def analyze(path,threshold=None):
             'next_transition_in_nexus':transition['in_nexus'] if transition else None})
     zero=[e for e in events if e['phase']==15]
     death=[e for e in events if e['phase']==13]
-    damage=[e for e in events if e['phase']==12]
+    damage=[e for e in events if e['phase']==12 and (not e['flag1'] or e['flag0'])]
+    unclassified_damage=[e for e in events if e['phase']==12 and e['flag1'] and not e['flag0']]
     damage_pairs=[]
     report_calculations={}
     previous_report={}
@@ -110,13 +111,21 @@ def analyze(path,threshold=None):
         request_results=[{'event_id':e['id'],'ns':e['ns'],'calculation_id':e['correlation'],'local_nexusing':bool(e['flag0']),
             'exception_or_handle_error':e['flag2']} for e in events if e['phase']==22],
         suppressed_reports=[{'event_id':e['id'],'ns':e['ns'],'bullet':e['bullet'],'owner':e['owner']} for e in events if e['phase']==23],
-        server_hp_resets=[{'event_id':e['id'],'hp':e['hp'],'blocking':bool(e['flag1'])} for e in events if e['phase']==28],
+        suppressed_secondary_reports=[{'event_id':e['id'],'ns':e['ns'],'caller':hex(e['callsite'])} for e in events if e['phase']==30],
+        server_hp_updates=[{'event_id':e['id'],'hp':e['hp'],'retained_damage':e['projectile'],
+            'projected_hp':signed64(e['update_context']),'blocking':bool(e['flag1'])} for e in events if e['phase']==28],
         suppressed_notifications=sum(e['phase']==24 for e in events),
         observed_transitions=[{'event_id':e['id'],'ns':e['ns'],'reason':e['flag0'],'was_blocking':bool(e['value'])} for e in events if e['phase']==25],
         deaths_while_blocking=[e['id'] for e in events if e['phase']==26],counters=fatal_counters,
-        limitation='A local Nexusing flag is not server acceptance. Suppression covers the audited projectile calculation, player-hit report and local notification paths. The retained-damage model can escape early and does not establish true HP.')
+        limitation='A local Nexusing flag is not server acceptance. Suppression covers audited projectile, ground and radius/AOE paths. Other HP-loss mechanisms are unproven. The retained-damage model can escape early and does not establish true HP.')
     return {'schema':4,'fatal_intervention':fatal,'shadow_ledger':({'trace':[],'limitation':'Live intervention changed damage handling; the legacy observation-only hypotheses are not replayed for this session.'} if fatal['decisions'] or any(e['phase']==27 for e in events) else shadow.replay(events,threshold)),'update_boundaries':updates,
         'hp_update_contexts':[{'event_id':e['id'],'hp':e['hp'],'context':e['update_context'],'source':e['update_source']} for e in events if e['phase']==6],'damage_calculations':len(damage),'pre_report_damage_pairs':damage_pairs,
+        'unclassified_damage_calculations':[{'id':e['id'],'caller':hex(e['callsite']),'value':e['value']} for e in unclassified_damage],
+        'damage_contexts':[{'id':e['id'],'ns':e['ns'],'generation':e['generation'],
+            'conditions_raw':hex(e['projectile']) if e['flag0']&1 and e['flag2']==1 else None,
+            'legacy_sprite_key_raw':hex(e['projectile']) if e['flag0']&1 and e['flag2']!=1 else None,
+            'breath':e['value'] if e['flag0']&2 else None,'frostbite':e['owner'] if e['flag0']&4 else None,
+            'local_nexusing':bool(e['flag1']) if e['flag0']&8 else None} for e in events if e['phase']==29],
         'notification_returns':sum(e['phase']==10 for e in events),'death_screen_entries':len(death),
         'nonpositive_hp_observations':[{'id':e['id'],'ns':e['ns'],'source_phase':e['value']} for e in zero],
         'reports_after_first_nonpositive_hp':sum(e['generation']==zero[0]['generation'] and e['ns']>zero[0]['ns'] for e in reports.values()) if zero else None,
@@ -129,7 +138,7 @@ def analyze(path,threshold=None):
         'notification_to_next_sampled_hp_decrease_ms_median':statistics.median(leads) if leads else None,
         'probe_snapshot_work_us_max':max((e['work_ns']/1000 for e in events),default=None),
         'completion_counters':counters,
-        'limitation':'Pairing is a temporal association. HP assignments and map transitions are local observations, not verified server acknowledgements. Damage calculations are compared with notifications per observed callsite; coverage is limited to the audited projectile branch. Shadow estimates are diagnostic hypotheses only; no automated action is enabled.'}
+        'limitation':'Pairing is a temporal association. HP assignments and map transitions are local observations, not verified server acknowledgements. Only audited projectile calculations enter shadow estimates; unknown callers are listed separately. Context values do not establish damage cause. Intervened sessions are not replayed as observation-only estimates.'}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

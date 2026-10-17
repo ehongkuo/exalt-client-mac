@@ -11,21 +11,28 @@ sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
-   subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
+   subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
     '-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DSESSION_NS=3500000000ULL',
     f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
+   if false_positive:args.append('-DFATAL_FALSE_POSITIVE')
+   if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
+   if hp_cross:args.append('-DFATAL_HP_CROSS')
+   if mixed:args.append('-DFATAL_MIXED_BURST')
+   if boundary:
+    args.append('-DFATAL_BOUNDARY_BURST')
+    if 'armed=0' in settings or 'death=0' in settings:args.append('-DBOUNDARY_PASS')
    if denied:args.append('-DNEXUS_REQUEST_DENIED')
    if exception:args.append('-DNEXUS_REQUEST_EXCEPTION')
    if reconcile:args.append('-DFATAL_RECONCILE')
    if toggle:args.append('-DFATAL_CLIENT_TOGGLE')
    subprocess.run(args,check=True)
-   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings
+   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings;env['EXALT_VERIFY_ONE_HP']='1' # production must ignore diagnostic threshold
    process=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
    if toggle:
     tool=p/'control'
@@ -43,12 +50,83 @@ class ClientInterventionTests(unittest.TestCase):
    self.output=result.stdout
    self.log=next(p.glob('guard-*.tsv')).read_text()
    self.events=analyze.read_events(self.log)
+   self.secondary_reports=analyze.analyze(next(p.glob('guard-*.tsv')))['fatal_intervention']['suppressed_secondary_reports']
    self.assertFalse(list(p.glob('hit-flight-*.bin')),'client does not write diagnostic flight files')
    self.assertFalse(any(e['phase']<20 and e['phase']!=15 for e in self.events),'client records intervention and nonpositive-HP events')
    dump=p/'dump'
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+ def test_environment_escapes_without_projectile_or_pending_damage(self):
+  for environment,reason in ((1,'frostbite_limit'),(2,'oxygen_exhausted'),(5,'frostbite_limit')):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertIn('reason='+reason,self.log)
+    self.assertEqual(self.live['death_pending'],'0')
+    self.assertTrue(any(e['phase']==22 and e['flag0']==1 for e in self.events))
+ def test_environment_respects_dry_run_disabled_and_missing_fields(self):
+  for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
+   with self.subTest(settings=settings,no_context=no_context):
+    self.run_client(settings,environment=1,no_context=no_context)
+    self.assertIn('nexus_calls=0',self.output)
+ def test_inactive_zero_breath_and_subthreshold_frostbite_do_not_escape(self):
+  for environment in (3,4):
+   with self.subTest(environment=environment):
+    self.run_client('armed=1,potion=0,death=1',environment=environment)
+    self.assertIn('nexus_calls=0',self.output)
+    self.assertNotIn('guard_environment_nexus',self.log)
+ def test_environment_failure_retries_are_bounded(self):
+  for failure in ('denied','exception'):
+   with self.subTest(failure=failure):
+    self.run_client('armed=1,potion=0,death=1',environment=1,**{failure:True})
+    attempts=[e for e in self.events if e['phase']==22]
+    self.assertGreaterEqual(len(attempts),2)
+    self.assertLessEqual(len(attempts),4)
+    self.assertFalse(any(e['flag0'] for e in attempts))
+ def test_healed_full_hp_does_not_escape_on_three_nonlethal_hits(self):
+  self.run_client('armed=1,potion=0,death=1',false_positive=True)
+  self.assertIn('healed_full_hp_survived_3x110=1',self.output)
+  self.assertIn('nexus_calls=0',self.output)
+  self.assertFalse(any(e['phase']==20 for e in self.events))
+ def test_authoritative_hp_rebases_prediction_before_the_next_hit(self):
+  self.run_client('armed=1,potion=0,death=1',hp_cross=True)
+  self.assertIn('authoritative_hp_rebased_before_next_hit=1',self.output)
+  self.assertIn('nexus_calls=1',self.output)
+  decision=next(e for e in self.events if e['phase']==20)
+  self.assertEqual(decision['hp'],40)
+  self.assertEqual(decision['value'],50)
+  self.assertEqual(decision['projectile'],50)
+ def test_mixed_paths_accumulate_in_one_authoritative_window(self):
+  self.run_client('armed=1,potion=0,death=1',mixed=True)
+  self.assertIn('mixed_paths_rebased_and_preserved_same_window_burst=1',self.output)
+  self.assertIn('nexus_calls=1',self.output)
+  decision=next(e for e in self.events if e['phase']==20)
+  self.assertEqual(decision['projectile'],220)
+  self.assertEqual(decision['update_context'],(1<<64)-40)
+  self.assertEqual([e['caller'] for e in self.secondary_reports],['0x183f880'])
+ def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
+  for boundary in ('0x196ed90UL','0x183f880UL'):
+   with self.subTest(boundary=boundary):
+    self.run_client('armed=1,potion=0,death=1',boundary=boundary)
+    self.assertIn('boundary_sent=3 other_sent=12',self.output)
+    self.assertIn('nexus_calls=1',self.output)
+    self.assertEqual(sum(e['phase']==30 for e in self.events),3)
+    self.assertEqual([e['caller'] for e in self.secondary_reports],[boundary[:-2]]*3)
+ def test_boundary_dry_run_and_disabled_mode_preserve_damage(self):
+  for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
+   with self.subTest(settings=settings):
+    self.run_client(settings,boundary='0x196ed90UL')
+    self.assertIn('boundary_sent=6 other_sent=12',self.output)
+    self.assertIn('nexus_calls=0',self.output)
+    self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
+ def test_boundary_request_failure_preserves_notifications_and_reports(self):
+  for boundary in ('0x196ed90UL','0x183f880UL'):
+   for failure in ('denied','exception'):
+    with self.subTest(boundary=boundary,failure=failure):
+     self.run_client('armed=1,potion=0,death=1',boundary=boundary,**{failure:True})
+     self.assertIn('boundary_sent=6 other_sent=12',self.output)
+     self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
  def test_armed_toggle_protects_burst_with_legacy_nexus_ignored(self):
   self.run_client('armed=1,potion=50,ceiling=80,nexus=25,death=1')
   self.assertIn('nexus_calls=1',self.output);self.assertIn('potion_calls=0',self.output)

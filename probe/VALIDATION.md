@@ -1,15 +1,26 @@
-# Fatal-intervention validation, 2026-10-13
+# Early-Nexus correction and runtime efficiency
 
-The active fixture uses 200 observed HP and six same-frame calculated hits of 50. The first three reports and notifications reach the original game functions. Before the fourth report, one Nexus invocation sets the simulated local Nexusing flag. The fourth and later calculations return zero; three report calls and three local notifications are suppressed. The original calculator is still called on all six hits. An off-main report and notification are also suppressed by identity-only checks. Ordinary updates continue, and the simulated Nexus transition resets the latch.
+Policy version 3 restores authoritative HP windows after the confirmed 1206-HP/110-damage false
+escape. It no longer carries old damage indefinitely across HP updates or healing. Same-window
+projectile/ground/area bursts and confirmed escape latches remain protected. Server report ordering
+is still uncertain; this is not acknowledgement-aware reconciliation. See the [audit](../docs/damage-status-audit.md).
 
-The fixture deliberately makes the invalid native argument 0x3 fault if inspected. The active intervention preserves that argument and never inspects it. No original calculator result is changed in observation-only mode. Synthetic Nexus/death/map behavior is scripted and does not establish server acceptance.
+Production-only efficiency changes skip discarded diagnostic snapshots and ordinary prediction
+logs and reduce the fixed event queue by 192 KiB. Standalone diagnostics retain their existing tracing.
+See [performance measurements](../docs/performance-audit.md) for component measurements and limits.
 
-Two failure cases are covered: a Nexus invocation that returns without setting its flag, and one that raises an exception. Both preserve original damage/report handling and do not make repeated automatic requests. The existing entry-byte mismatch refusal, pointer-regression, update-boundary, recovery and legacy-observer cases remain in the suite.
+Current validation passes: 17 production tests, 24 diagnostic tests, 16 session-report tests, five
+native-map tests and the undefined-behavior-sanitized policy suite. Production and diagnostic libraries compile with warnings treated as errors; the signed app build passes. The captured 1206-HP state yields PASS/projected 876,
+where the earlier version-2 policy yields REQUEST/projected -108.
 
-The fatal-policy tests cover exact-zero burst crossing, server HP baseline replacement (including unchanged HP), active escape latch preservation, one-request latching, failed-request behavior, scope resets, already-nonpositive HP, invalid damage and zero damage. No percentage threshold participates in this policy.
+## Current live evidence and limits
 
-The native tests preserve original argument/return behavior outside active cancellation and validate the audited HP and death-screen prefixes. The regular guard still compiles independently; its core tests pass. Python and launcher syntax, signing and whitespace checks are completed when publishing this build.
+Projectile, ground and radius/AOE traces show local escape requests, matching report suppression
+and later Nexus arrivals at safe actual HP. See [live evidence](../docs/damage-live-validation.md).
+The Citadel trace establishes full-frostbite/server-HP ordering; the new automatic environmental
+escapes and oxygen transition remain live-unverified. Incoming HP updates do not acknowledge
+individual hit reports, and local Nexusing does not confirm server acceptance.
 
-Live use is unverified. Server acceptance, server-independent damage and damage paths outside the audited projectile branch remain unresolved. The conservative budget can cause early Nexus. The local Nexusing flag confirms client state only. Existing queued reports are unaffected.
-
-The reconciliation fixture retains one 50-damage hit, applies an incoming HP assignment of 200, then runs the six-hit burst. The old damage is retired and the fourth burst hit triggers escape. A further HP assignment while escaping clears the budget without allowing any blocked report or notification through. Resetting on an assignment is not proof that the server processed every pending hit.
+Whole-session probe reports remain inconclusive when the unlimited-duration run lacks a quit-time
+completion marker. Raw sessions and fingerprints are retained as ignored local evidence. This
+validation does not establish universal lethal survival.
