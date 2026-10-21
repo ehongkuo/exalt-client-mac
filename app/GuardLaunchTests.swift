@@ -34,6 +34,13 @@ enum LaunchTests {
         check(ok.environment["DYLD_INSERT_LIBRARIES"] == "/g/ExaltGuard.dylib", "guard injected for this launch only")
         check(ok.environment["EXALT_GUARD_DIR"] == "/d", "guard writes to the app's data folder")
 
+        guard case .success(let capture) = LaunchPlan.make(install: install, dylib: dylib, data: data,
+                settings: settings, expectedHash: "abc", actualHash: "abc", running: [], observationOnly: true, exists: all)
+        else { fatalError("expected capture plan") }
+        check(capture.environment["EXALT_GUARD"] == "armed=0,potion=0,ceiling=0,death=0", "capture disables automation")
+        check(capture.environment["EXALT_FATAL_INTERVENTION"] == "0" && capture.environment["EXALT_VERIFY_ONE_HP"] == "0", "capture overrides inherited intervention")
+        check(settings.armed && settings.potion == 50, "capture preserves supplied settings")
+
         check(plan(exists: { $0 != install.launcher }) == .failure(.launcherMissing), "launcher missing")
         check(plan(exists: { $0 != install.gameAssembly }) == .failure(.gameMissing), "game missing")
         check(plan(exists: { $0 != dylib }) == .failure(.guardMissing), "guard missing")

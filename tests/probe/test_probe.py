@@ -87,7 +87,7 @@ class ProbeTests(unittest.TestCase):
   self.assertTrue(all(e['flag0']==8 and e['value']==-1 and e['owner']==-1 for e in contexts))
   self.assertIn('damage_context_ready\tconditions=0\tbreath=0\tfrostbite=0',log)
  def test_incoming_identifiers_are_not_damage(self):
-  log=self.fixture();self.assertIn('hit_probe_ready\tv7',log)
+  log=self.fixture();self.assertIn('hit_probe_ready\tv8',log)
   events=analysis.read_events(log)
   reports=[e for e in events if e['phase']==1]
   notifications=[e for e in events if e['phase']==3]
@@ -174,18 +174,18 @@ class ProbeTests(unittest.TestCase):
   self.assertEqual(self.summary['manual_nexus_entries'],[])
   self.assertEqual(len(self.summary['fatal_intervention']['decisions']),1)
   self.assertEqual(len(self.summary['fatal_intervention']['suppressed_reports']),3)
- def test_server_hp_rebases_budget_without_clearing_escape_latch(self):
+ def test_server_hp_retains_recent_damage_and_keeps_escape_latch(self):
   log=self.fixture(fatal=True,reconcile=True)
-  self.assertIn('fatal_report_forwarded=4 fatal_notify_forwarded=4 fatal_damage_calls=7',self.last_output)
+  self.assertIn('fatal_report_forwarded=3 fatal_notify_forwarded=3 fatal_damage_calls=7',self.last_output)
   events=analysis.read_events(log)
   resets=[e for e in events if e['phase']==28]
   self.assertEqual(len(resets),2)
-  self.assertEqual([e['projectile'] for e in resets],[0,0])
-  self.assertEqual([e['update_context'] for e in resets],[200,200])
+  self.assertEqual([e['projectile'] for e in resets],[50,0])
+  self.assertEqual([e['update_context'] for e in resets],[150,200])
   self.assertEqual([e['flag1'] for e in resets],[0,1])
   decision=next(e for e in events if e['phase']==20)
   self.assertEqual(decision['projectile'],200)
-  self.assertEqual(len([e for e in events if e['phase']==23]),3)
+  self.assertEqual(len([e for e in events if e['phase']==23]),4)
  def test_rejected_nexus_does_not_suppress_or_repeat(self):
   log=self.fixture(fatal=True,denied=True)
   self.assertIn('fatal_report_forwarded=7 fatal_notify_forwarded=7',self.last_output)

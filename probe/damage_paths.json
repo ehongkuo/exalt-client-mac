@@ -467,6 +467,26 @@
       "address": "0x1841905",
       "bytes": "e906ca1500",
       "finding": "Nexus send helper tail-calls SocketManager.SendMessage"
+    },
+    {
+      "address": "0x185405c",
+      "bytes": "4889c74489e64489fa31c9e8c4e7f8fe498bbe600100004885ff74124889de31d25b415c415e415f5de986a21400",
+      "finding": "projectile report initializes bullet/owner then tail-calls SocketManager.SendMessage; no HP or damage argument"
+    },
+    {
+      "address": "0x7e2834",
+      "bytes": "89771c895720",
+      "finding": "projectile report initializer stores bullet at +0x1c and owner at +0x20"
+    },
+    {
+      "address": "0x7e24c2",
+      "bytes": "0fb7431c",
+      "finding": "projectile report serializer loads bullet ID as UInt16 from +0x1c"
+    },
+    {
+      "address": "0x7e24fd",
+      "bytes": "8b4320",
+      "finding": "projectile report serializer loads owner ID as Int32 from +0x20"
     }
   ],
   "limitation": "Build-specific static and live projectile/terrain/area evidence. HP, breath, frostbite and two condition words are applied by incoming stat dispatch; no local cancellable DOT calculation is established. Legacy entity +0xf8 context is a sprite key, not status flags. Condition context now reads the first two Int32 mask words at +0x250 with explicit provenance.",

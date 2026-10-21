@@ -4,13 +4,44 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
-Prediction uses the latest authoritative HP assignment as a new baseline. Projectile, ground and
-area damage accumulate within that window; healing and unchanged incoming HP also start a new
-window so old damage cannot accumulate indefinitely. This restores the previously working client's
-HP-window behavior. Incoming HP is not a per-report acknowledgement, so late/in-flight report ordering
-remains a limitation. Suppression starts only after local Nexusing is confirmed; an already-started
-escape survives settings changes and HP updates. Dry run never invokes Nexus or suppresses damage.
-See the [false-escape audit and correction](damage-status-audit.md).
+Policy version 8 retains projectile, ground and area damage in the same fixed 128-entry ledger.
+Observed HP decreases still retire estimates oldest-first by their net amount; this is an inference,
+not identification of individual hits. HP increases supply a higher baseline without discarding
+pending hits or adding a separate estimated healing credit. The strict whole-event/history model
+in [the design proposal](nexus-reconciliation-design.md) is not implemented or assumed proven.
+
+Individual hits no longer expire by age. A quiet rebase clears the remaining ledger only after:
+
+- No positive predicted damage inputs for the settlement allowance.
+- A continuous interval of progressing tick IDs and server-origin timing values for that allowance.
+- A completed tick actually assigns the controlled player's HP, including a same-value assignment.
+- No new damage input occurs inside that tick handler and no escape is already latched.
+
+The allowance is a fixed **800 ms**, selected by the user after the timing captures. It is not
+a measured p99 or an upper bound on server processing/network delay; settlement later than 800 ms
+is an explicitly accepted risk. Tick cadence/jitter no longer lengthens this allowance. Receive
+gaps over 1 second, bunched ticks under 20 ms, or skipped IDs restart the healthy interval. Duplicate/reversed tick IDs or timing values cannot qualify and
+invalidate the interval. Counters support UInt32 wrap. A tick omitting unchanged HP updates liveness
+but cannot itself rebase. A standalone stat setter and elapsed local time also cannot rebase.
+
+The rebase condition assumes earlier reports have settled during healthy, quiet communication. It
+is not a server acknowledgement. A long-delayed stream that still appears healthy can violate that
+assumption. During continuous damage with healing, estimates can remain conservative and trigger an
+early escape; quiet rebasing needs a new HP-bearing tick to recover. This change does not establish
+coverage for untracked HP losses or equality between local and server damage calculations.
+
+A positive hit still requests Nexus when projected HP is nonpositive, updates are stale, or the
+ledger fills. Staleness uses the prior cadence-based rule (at least 1.5 seconds, at most 6 seconds),
+independently of the new settlement allowance. Only validated progressing completed ticks refresh
+that heartbeat. Zero damage does not restart the quiet timer or trigger the stale/capacity failsafes.
+Logs distinguish projected-lethal (reason 1), stale updates (2), and capacity (3). There is no fixed
+percentage-HP escape threshold. Each actual rebase writes one `guard_quiet_rebase` record containing
+retired damage, quiet duration, allowance, tick ID and `assumed_settled=1`; the analyzer includes it.
+
+Suppression starts only after local Nexusing is confirmed; an already-started escape survives settings
+changes and HP updates. Dry run never invokes Nexus or suppresses damage. See the
+[captured failure and reconciliation audit](nexus-failure-2026-10-20.md), and the
+[three beach tests](beach-stress-tests.md).
 
 The hooks prepare in Nexus and validate method signatures, offsets and complete entry bytes. If preparation is refused, the UI reports that the feature is unavailable while the existing guard remains usable. Turning the feature on outside Nexus waits for preparation there. No installed game files are modified.
 
@@ -33,7 +64,7 @@ remaining gaps.
 
 ## Shared local HP hatch and environmental scope
 
-Policy version 6 adds a guard before the shared HP setter for the controlled player. A locally
+The shared HP hatch, introduced in version 6, guards the controlled player before its HP setter. A locally
 computed transition from positive HP to zero/negative HP invokes the same validated Nexus request as
 projectile, ground and AOE damage. Only confirmed local Nexusing cancels that write and subsequent
 local HP reductions. Healing and positive nonlethal local writes pass without charging the prediction

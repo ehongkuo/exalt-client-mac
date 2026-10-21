@@ -10,6 +10,7 @@ from shadow_ledger import ShadowLedger
 
 def main():
     folder=Path(sys.argv[1])
+    sync_required='--sync' in sys.argv[2:]
     started=time.time()
     selected=None
     offset=0
@@ -32,9 +33,18 @@ def main():
                     row=line.split('\t')
                     if row[0]=='hit_probe_ready':
                         fatal_live='fatal_intervention=1' in row
-                        print('Probe installed. Fatal Nexus intervention is ON.' if 'fatal_intervention=1' in row else 'Probe installed. Observation only; gameplay automation is off.',flush=True)
+                        if sync_required:
+                            print('Base observer loaded. Wait for Sync recorder ready before testing.',flush=True)
+                        else:
+                            print('Probe installed. Fatal Nexus intervention is ON.' if 'fatal_intervention=1' in row else 'Probe installed. Observation only; gameplay automation is off.',flush=True)
                     elif row[0]=='hit_probe_refused':
                         print('Probe refused to install: '+' '.join(row[1:]),flush=True)
+                    elif row[0]=='sync_trace_ready':
+                        print('Sync recorder ready. Observation only; no automatic escape or damage cancellation.',flush=True)
+                    elif row[0]=='sync_trace_refused':
+                        print('Sync recorder refused to install: '+' '.join(row[1:]),flush=True)
+                    elif row[0]=='sync_trace_limit':
+                        print('Sync recording limit reached; ordinary game calls continue unchanged.',flush=True)
                     elif row[0]=='damage_context_ready':
                         print('Optional context fields (1 available, 0 unavailable): '+' '.join(row[1:]),flush=True)
                     elif row[0]=='guard_config':
