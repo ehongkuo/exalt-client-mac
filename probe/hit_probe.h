@@ -738,6 +738,10 @@ static void hit_probe_tick(void *player,uint64_t now) {
     (void)now;
     if(!ready)return;
     probe_install();
+#ifdef EXALT_SYNC_TRACE
+    /* Observation app reuses this status field; no production ABI change. */
+    live_data.death_status=sync_ready?(sync_events>=SYNC_EVENT_LIMIT?2:1):probe_attempted?-1:0;
+#endif
 #ifdef EXALT_CLIENT_FATAL
     incident_scope(player);
     live_data.death_status=probe_installed?1:probe_attempted?-1:0;

@@ -2,11 +2,21 @@
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
 # Usage: ./build.sh               (tests + build + install; the game must be closed)
+#        ./build.sh --app-only --sync-capture (temporary observation-only app)
 #        ./build.sh --test-only
 #        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
 #                                  until it is restarted from the app). Skips the tests: their
 #                                  UI check takes focus from the game. Run them with the game closed.
 set -eu
+sync_capture=0
+build_mode=""
+for option in "$@"; do
+    case "$option" in
+        --sync-capture) sync_capture=1 ;;
+        --app-only|--test-only) build_mode="$option" ;;
+        *) print "Unknown option: $option"; exit 1 ;;
+    esac
+done
 src="${0:A:h}"
 out="$src/build"
 cache="$src/module-cache"
@@ -23,7 +33,7 @@ if [[ -f "$game_binary" ]]; then
     python3 "$src/probe/map_damage.py" --binary "$game_binary"
 fi
 
-if [[ "${1:-}" != --app-only ]]; then
+if [[ "${build_mode}" != --app-only ]]; then
 print '== Tests'
 python3 "$src/tests/compatibility/test_profiles.py"
 python3 "$src/tests/probe/test_damage_map.py"
@@ -82,7 +92,7 @@ if [[ "$(grep '^step=' "$ui/steps.txt")" != "$expected" ]]; then
 fi
 rm -rf "$ui"
 print 'Compact and expand UI test passed'
-[[ "${1:-}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
+[[ "${build_mode}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
 else
 print '== Tests skipped (--app-only: the game may be running)'
 fi
@@ -95,7 +105,7 @@ if pgrep -x ExaltClientMac >/dev/null; then
     print 'Quit Exalt Client Mac first, then run this again.'
     exit 1
 fi
-if [[ "${1:-}" != --app-only ]] && { pgrep -x RotMGExalt >/dev/null || pgrep -xf '.*RotMG Exalt Launcher' >/dev/null; }; then
+if [[ "${build_mode}" != --app-only ]] && { pgrep -x RotMGExalt >/dev/null || pgrep -xf '.*RotMG Exalt Launcher' >/dev/null; }; then
     print 'Quit the game, DECA'"'"'s launcher and Exalt Client Mac first, then run this again.'
     exit 1
 fi
@@ -103,13 +113,20 @@ fi
 print '== Build guard (Intel, runs inside the game under Rosetta)'
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib -DEXALT_CLIENT_FATAL "$src/guard/guard.c" -o "$out/ExaltGuard.dylib"
+guard_flags=(-DEXALT_CLIENT_FATAL)
+swift_flags=()
+if (( sync_capture )); then
+    guard_flags=(-DEXALT_HIT_PROBE -DEXALT_SYNC_TRACE -DSESSION_NS=0)
+    swift_flags=(-D GUARD_SYNC_CAPTURE)
+    print 'Observation-only capture: all gameplay automation disabled; saved settings preserved.'
+fi
+clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "${guard_flags[@]}" "$src/guard/guard.c" -o "$out/ExaltGuard.dylib"
 # The app carries its own copy of the guard and the build record, so it works from anywhere.
 cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resources/"
 cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" "$app/Contents/Resources/compatibility-profile.json"
 
 print '== Build Exalt Client Mac.app (Apple silicon)'
-xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
+xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
     -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
 # Icon: DECA's launcher icon with the red lettering turned yellow (drawn fallback if missing).

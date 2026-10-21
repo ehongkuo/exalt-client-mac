@@ -91,3 +91,9 @@ not prove which HP assignment includes the hit. Missing/dropped/capped observati
 This capture is the next step toward selecting the escape condition, not a new timing heuristic.
 The previous dense chart was a synthetic replay with assumed local healing visibility; its exact
 divergence is not measured server behavior and must not be used as protocol evidence.
+
+### Capture through the installed app
+
+`zsh ./build.sh --app-only --sync-capture` builds and installs the observation-only recorder inside the existing Exalt Client Mac app. Its dedicated observation screen uses the normal Start game flow, reports recorder readiness after initialization in Nexus, and exposes no automation controls. It does not save over normal gameplay settings. The launch environment explicitly disables intervention and one-HP verification; the native diagnostic build also forces intervention off independently. Logs remain in the usual Application Support log folder.
+
+The readiness field is reused only in this diagnostic build: 0 waiting, 1 recorder ready, 2 event cap reached, -1 initialization refused. Normal production builds retain the original field meaning. Rebuild without `--sync-capture` to restore the regular gameplay app.

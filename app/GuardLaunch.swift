@@ -46,7 +46,7 @@ struct LaunchPlan: Equatable {
     /// Checks everything in order (cheap checks first). `actualHash` may be nil only if an
     /// earlier check fails; callers hash the 84 MB file after the cheap checks pass.
     static func make(install: GameInstall, dylib: URL, data: URL, settings: GuardSettings, expectedHash: String?,
-                     actualHash: String?, running: [String], exists: (URL) -> Bool) -> Result<LaunchPlan, LaunchProblem> {
+                     actualHash: String?, running: [String], observationOnly: Bool = false, exists: (URL) -> Bool) -> Result<LaunchPlan, LaunchProblem> {
         if !exists(install.launcher) { return .failure(.launcherMissing) }
         if !exists(install.gameAssembly) { return .failure(.gameMissing) }
         if !exists(dylib) { return .failure(.guardMissing) }
@@ -54,9 +54,14 @@ struct LaunchPlan: Equatable {
         if running.contains(launcherProcess) { return .failure(.launcherRunning) }
         guard let expectedHash else { return .failure(.buildUnknown) }
         if actualHash != expectedHash { return .failure(.gameUpdated) }
-        return .success(LaunchPlan(executable: install.launcher,
-                                   environment: ["EXALT_GUARD": settings.text, "DYLD_INSERT_LIBRARIES": dylib.path,
-                                                 "EXALT_GUARD_DIR": data.path]))
+        var environment = ["EXALT_GUARD": settings.text, "DYLD_INSERT_LIBRARIES": dylib.path,
+                           "EXALT_GUARD_DIR": data.path]
+        if observationOnly {
+            environment["EXALT_GUARD"] = "armed=0,potion=0,ceiling=0,death=0"
+            environment["EXALT_FATAL_INTERVENTION"] = "0"
+            environment["EXALT_VERIFY_ONE_HP"] = "0"
+        }
+        return .success(LaunchPlan(executable: install.launcher, environment: environment))
     }
 }
 

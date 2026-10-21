@@ -95,6 +95,11 @@ final class LaunchController: ObservableObject {
         let bundle = Bundle.main.bundleURL
         #endif
         let settings = SettingsFile.load(settingsURL) ?? .standard
+        #if GUARD_SYNC_CAPTURE
+        let observationOnly = true
+        #else
+        let observationOnly = false
+        #endif
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.executableURL?.lastPathComponent }
         DispatchQueue.global(qos: .userInitiated).async {
             let install = GameInstall.standard(home: FileManager.default.homeDirectoryForCurrentUser)
@@ -103,7 +108,7 @@ final class LaunchController: ObservableObject {
             let exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
             func plan(_ actual: String?) -> Result<LaunchPlan, LaunchProblem> {
                 LaunchPlan.make(install: install, dylib: dylib, data: dataURL, settings: settings, expectedHash: expected,
-                                actualHash: actual, running: running, exists: exists)
+                                actualHash: actual, running: running, observationOnly: observationOnly, exists: exists)
             }
             try? FileManager.default.createDirectory(at: GuardPaths.logs(data: dataURL), withIntermediateDirectories: true,
                                                      attributes: [.posixPermissions: 0o700])
@@ -337,7 +342,9 @@ struct GuardView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let _ = source.refresh()
+            #if !GUARD_SYNC_CAPTURE
             let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
+            #endif
             MainLayout {
                 GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, source: source).content(source.snapshot, source.link, source.rate)
             }
@@ -368,6 +375,35 @@ struct GuardPanel {
     let source: LiveSource
 
     @ViewBuilder func content(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
+        #if GUARD_SYNC_CAPTURE
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Exalt Client Mac").font(.title2.bold())
+            Pill(text: "SYNC OBSERVATION ONLY", color: amber)
+            Text("Auto Nexus, damage cancellation, auto potions and party Join are off for this capture.")
+                .foregroundStyle(amber)
+            Text("Your saved gameplay settings are preserved.").foregroundStyle(.secondary)
+            Card(title: "Recorder") {
+                if link.isLive, let s {
+                    Text(s.deathStatus == 1 ? "Recorder ready" : s.deathStatus == 2 ? "Capture complete" : s.deathStatus < 0 ? "Recorder refused — stop the test" : "Enter Nexus to initialize the recorder")
+                        .font(.headline)
+                    Text("Map: \(s.map.isEmpty ? "Loading" : s.map) • HP: \(s.hp)/\(s.maxHP)")
+                } else {
+                    Text("Waiting for a fresh game launch").font(.headline)
+                }
+                Text("Click Start game, then Play in DECA’s launcher. Enter Nexus and wait for Recorder ready. Play briefly while healthy, receive a few weak hits and healing, then manually Nexus.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            if case .failed(let message) = launch.state {
+                Text(message).foregroundStyle(coral)
+            }
+            if case .launched = launch.state {
+                Text("Launcher started. Click Play in its window.").foregroundStyle(.secondary)
+            }
+            Button("Start game (observation only)") { launch.start() }
+                .disabled(link.isLive || launch.state == .checking)
+            Spacer(minLength: 0)
+        }
+        #else
         VStack(alignment: .leading, spacing: 12) {
             header(s, link)
             if case .offline = link {
@@ -389,6 +425,7 @@ struct GuardPanel {
             }
             Spacer(minLength: 0)
         }
+        #endif
     }
 
     private func header(_ s: GuardSnapshot?, _ link: Link) -> some View {
@@ -863,9 +900,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.source.refresh(force: true); self.alerts.check(self.source)
+            self.source.refresh(force: true)
+            #if !GUARD_SYNC_CAPTURE
+            self.alerts.check(self.source)
+            #endif
         }
-        #if !GUARD_UI_TEST
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
             if alerts.settings.enabled { alerts.requestPermission() }
@@ -878,7 +918,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit Exalt Client Mac", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; NSApp.mainMenu = menu
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 1000), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        #if GUARD_SYNC_CAPTURE
+        window.title = "Exalt Client Mac — Sync observation"
+        #else
         window.title = "Exalt Client Mac"
+        #endif
         window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
