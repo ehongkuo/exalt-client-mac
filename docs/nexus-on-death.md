@@ -17,10 +17,10 @@ Individual hits no longer expire by age. A quiet rebase clears the remaining led
 - A completed tick actually assigns the controlled player's HP, including a same-value assignment.
 - No new damage input occurs inside that tick handler and no escape is already latched.
 
-The allowance is max(2 seconds, four smoothed tick intervals plus eight observed jitter values),
-capped at 8 seconds. These are explicit candidate policy parameters, not a measured upper bound on
-server processing or network delay. Receive gaps over 1 second, bunched ticks under 20 ms, or skipped
-IDs restart the healthy interval. Duplicate/reversed tick IDs or timing values cannot qualify and
+The allowance is a fixed **800 ms**, selected by the user after the timing captures. It is not
+a measured p99 or an upper bound on server processing/network delay; settlement later than 800 ms
+is an explicitly accepted risk. Tick cadence/jitter no longer lengthens this allowance. Receive
+gaps over 1 second, bunched ticks under 20 ms, or skipped IDs restart the healthy interval. Duplicate/reversed tick IDs or timing values cannot qualify and
 invalidate the interval. Counters support UInt32 wrap. A tick omitting unchanged HP updates liveness
 but cannot itself rebase. A standalone stat setter and elapsed local time also cannot rebase.
 

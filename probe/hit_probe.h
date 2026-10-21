@@ -736,7 +736,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("fatal_policy\tversion=8\treconciliation=quiet_period_rebase\twindow_min_ns=2000000000\twindow_max_ns=8000000000\thealthy_gap_max_ns=1000000000\thp_bearing_tick_required=1\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=8\treconciliation=quiet_period_rebase\twindow_min_ns=800000000\twindow_max_ns=800000000\thealthy_gap_max_ns=1000000000\thp_bearing_tick_required=1\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_SYNC_TRACE
     sync_install();
 #endif

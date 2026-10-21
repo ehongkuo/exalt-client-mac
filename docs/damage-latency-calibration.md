@@ -1,6 +1,7 @@
 # Damage-to-HP visibility calibration
 
-The production v8 quiet interval remains a 2–8 second timing assumption. It is not a measured p99.
+The initial v8 quiet interval was a 2–8 second timing assumption. After the captures, the user
+selected a fixed **800 ms** allowance and explicitly accepted longer-delay risk. This is not a measured p99.
 Its inputs describe received tick cadence, not the complete report-to-server-to-client path.
 
 ## Diagnostic
@@ -105,3 +106,6 @@ Four samples still do not establish population p99, and these matches remain inf
 rather than keyed acknowledgements. The capture was copied while the process remained open; the
 last counter is complete=0. Evidence: `build/reconciliation-candidate/latency-capture-40486/`.
 No production timing parameter was changed from these measurements.
+
+The subsequent user-selected 800 ms production allowance is a risk decision, not a p99 certification
+from these four samples. Update-health and HP-bearing-tick requirements still apply.

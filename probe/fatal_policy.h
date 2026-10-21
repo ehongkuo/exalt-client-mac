@@ -5,8 +5,7 @@
 enum { FATAL_PASS, FATAL_REQUEST, FATAL_BLOCK, FATAL_LATE, FATAL_INVALID };
 enum { FATAL_REASON_NONE, FATAL_REASON_LETHAL, FATAL_REASON_STALE, FATAL_REASON_CAPACITY };
 #define FATAL_HIT_CAPACITY 128
-#define FATAL_MIN_WINDOW_NS 2000000000ULL
-#define FATAL_MAX_WINDOW_NS 8000000000ULL
+#define FATAL_QUIET_WINDOW_NS 800000000ULL
 #define FATAL_HEALTHY_GAP_NS 1000000000ULL
 #define FATAL_MIN_TICK_GAP_NS 20000000ULL
 typedef struct { uint64_t ns; int damage; } FatalHit;
@@ -30,8 +29,8 @@ static inline void fatal_reset(FatalPolicy *p,uintptr_t player,uintptr_t connect
  * A full quiet interval AND healthy progressing ticks AND a new HP-bearing tick
  * are required. Never expire individual hits during continuing combat. */
 static inline uint64_t fatal_window_ns(const FatalPolicy *p) {
- uint64_t window=4*p->interval_ns+8*p->jitter_ns;
- return window<FATAL_MIN_WINDOW_NS?FATAL_MIN_WINDOW_NS:window>FATAL_MAX_WINDOW_NS?FATAL_MAX_WINDOW_NS:window;
+ (void)p;
+ return FATAL_QUIET_WINDOW_NS;
 }
 static inline void fatal_tick(FatalPolicy *p,uint64_t now) {
  if(p->last_update_ns && now<p->last_update_ns)return;

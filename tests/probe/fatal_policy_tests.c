@@ -12,7 +12,7 @@ static void invariant(const FatalPolicy *p) {
  assert(p->count<=FATAL_HIT_CAPACITY && p->head<FATAL_HIT_CAPACITY);
  for(unsigned i=0;i<p->count;++i)sum+=p->hits[(p->head+i)%FATAL_HIT_CAPACITY].damage;
  assert(sum==p->pending && sum>=0);
- assert(fatal_window_ns(p)>=FATAL_MIN_WINDOW_NS && fatal_window_ns(p)<=FATAL_MAX_WINDOW_NS);
+ assert(fatal_window_ns(p)==800000000ULL);
 }
 int main(void) {
  FatalPolicy p;fresh(&p,200);
@@ -55,10 +55,19 @@ int main(void) {
  /* Healing supplies a new baseline without individually expiring old hits.
   * Only a quiet interval with healthy ticks and an HP stat can clear them. */
  fresh(&p,935);assert(fatal_damage(&p,935,703,MS(1))==FATAL_PASS);
- for(int ms=200;ms<=2000;ms+=200){assert(!tick(&p,1206,ms,1));assert(p.pending==703);}
- assert(tick(&p,1206,2200,1));assert(!p.pending && p.projected==1206 && p.rebases==1);
- for(int i=0;i<3;++i)assert(fatal_damage(&p,1206,110,MS(2220+i))==FATAL_PASS);
+ for(int ms=200;ms<=800;ms+=200){assert(!tick(&p,1206,ms,1));assert(p.pending==703);}
+ assert(tick(&p,1206,1000,1));assert(!p.pending && p.projected==1206 && p.rebases==1);
+ for(int i=0;i<3;++i)assert(fatal_damage(&p,1206,110,MS(1020+i))==FATAL_PASS);
  assert(p.pending==330 && p.projected==876);
+
+ /* The selected threshold is exactly 800 ms, independent of jitter. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(100))==FATAL_PASS);
+ for(int ms=200;ms<=800;ms+=200)assert(!tick(&p,1000,ms,1));
+ FatalPolicy boundary=p;
+ assert(!tick(&p,1000,899,1) && p.pending==100);
+ p=boundary;assert(tick(&p,1000,900,1) && !p.pending);
+ p.interval_ns=1000000000ULL;p.jitter_ns=1000000000ULL;
+ assert(fatal_window_ns(&p)==800000000ULL);
 
  /* Continuous inputs never age out, even while healing masks every hit. */
  fresh(&p,10000);
@@ -70,11 +79,11 @@ int main(void) {
 
  /* A last-moment new input postpones the WHOLE quiet rebase. */
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
- for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
- assert(fatal_damage(&p,1000,1,MS(2099))==FATAL_PASS);
- assert(!tick(&p,1000,2200,1) && p.pending==101);
- for(int ms=2400;ms<=4000;ms+=200)assert(!tick(&p,1000,ms,1));
- assert(tick(&p,1000,4200,1));
+ for(int ms=200;ms<=800;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(fatal_damage(&p,1000,1,MS(899))==FATAL_PASS);
+ assert(!tick(&p,1000,1000,1) && p.pending==101);
+ for(int ms=1200;ms<=1600;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(tick(&p,1000,1800,1));
 
  /* Unchanged-HP ticks keep liveness but are not new HP-bearing snapshots. */
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
@@ -89,24 +98,22 @@ int main(void) {
  /* A stall and compressed backlog require a fresh healthy interval. */
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
  assert(!tick(&p,1000,4000,1));assert(!tick(&p,1000,4001,1));
- for(int ms=4200;ms<=6000;ms+=200)assert(!tick(&p,1000,ms,1));
- int settled=0;for(int ms=6200;ms<=10000 && !settled;ms+=200)settled=tick(&p,1000,ms,1);
- assert(settled && !p.pending);
+ for(int ms=4200;ms<=4800;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(tick(&p,1000,5000,1) && !p.pending);
 
  /* Duplicate, out-of-order and skipped tick identifiers cannot settle damage. */
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
- for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
- assert(!fatal_server_tick(&p,1000,MS(2200),p.tick_sequence,p.server_time,p.damage_sequence,1));
+ for(int ms=200;ms<=800;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(!fatal_server_tick(&p,1000,MS(1000),p.tick_sequence,p.server_time,p.damage_sequence,1));
  assert(p.pending==100);
- assert(!fatal_server_tick(&p,1000,MS(2400),p.tick_sequence-1,p.server_time-200,p.damage_sequence,1));
- assert(!fatal_server_tick(&p,1000,MS(2600),p.tick_sequence+2,p.server_time+400,p.damage_sequence,1));
- for(int ms=2800;ms<=4400;ms+=200)assert(!tick(&p,1000,ms,1));
- settled=0;for(int ms=4600;ms<=10000 && !settled;ms+=200)settled=tick(&p,1000,ms,1);
- assert(settled && !p.pending);
+ assert(!fatal_server_tick(&p,1000,MS(1200),p.tick_sequence-1,p.server_time-200,p.damage_sequence,1));
+ assert(!fatal_server_tick(&p,1000,MS(1400),p.tick_sequence+2,p.server_time+400,p.damage_sequence,1));
+ for(int ms=1600;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(tick(&p,1000,2200,1) && !p.pending);
 
  /* Handler reentrancy: a damage event during update processing survives it. */
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
- for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
+ for(int ms=200;ms<=800;ms+=200)assert(!tick(&p,1000,ms,1));
  uint64_t sequence=p.damage_sequence;
  assert(fatal_damage(&p,1000,10,MS(2200))==FATAL_PASS);
  fatal_server_hp(&p,1000,MS(2201));
@@ -153,7 +160,8 @@ int main(void) {
  p.pending=INT64_MAX;assert(fatal_damage(&p,100,1,MS(9001))==FATAL_INVALID);
  fatal_server_hp(&p,INT_MIN,MS(9002));assert(p.projected==INT_MIN && !p.pending);
 
- /* Cadence/jitter adapts inside fixed limits; backwards clock samples do not
+ /* Cadence/jitter still informs stale detection, not the fixed 800 ms wait.
+  * Backwards clock samples do not
   * wrap the elapsed-time arithmetic or move the heartbeat backwards. */
  fresh(&p,100000);
  const int gaps[]={200,200,350,40,1000,1200,200,700};uint64_t t=MS(0);
