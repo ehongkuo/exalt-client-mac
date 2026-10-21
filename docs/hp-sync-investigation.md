@@ -97,3 +97,32 @@ divergence is not measured server behavior and must not be used as protocol evid
 `zsh ./build.sh --app-only --sync-capture` builds and installs the observation-only recorder inside the existing Exalt Client Mac app. Its dedicated observation screen uses the normal Start game flow, reports recorder readiness after initialization in Nexus, and exposes no automation controls. It does not save over normal gameplay settings. The launch environment explicitly disables intervention and one-HP verification; the native diagnostic build also forces intervention off independently. Logs remain in the usual Application Support log folder.
 
 The readiness field is reused only in this diagnostic build: 0 waiting, 1 recorder ready, 2 event cap reached, -1 initialization refused. Normal production builds retain the original field meaning. Rebuild without `--sync-capture` to restore the regular gameplay app.
+
+## Installed-app passive capture, 20 October 2026
+
+
+- 14 outgoing projectile reports, each paired with the local notification path: 11 positive damage values and 3 zero values.
+- 98 HP setter calls: 80 increases, 11 decreases, 7 unchanged assignments. All 98 were incoming-stat assignments (source 1), caller `0x184c115`. This supports server-driven stored HP for this observed run; it does not prove absence of other HP producers globally.
+- Small +1/+2 increases and larger +41 increases used the same incoming-stat route. Neither increase size nor timing identifies VIT, pet or potion conclusively.
+- All 389 decoded tick IDs and associated server values matched the outgoing response tuple. Median receive-handler-to-SendMessage-entry delay was 0.020 ms (range 0.002–0.938 ms). This is local handler timing, **not network RTT or server acknowledgement latency**.
+- No incoming damage events were captured by either of the two instrumented decoded damage handlers. Therefore this capture provides no projectile-keyed incoming acknowledgement; it does not prove no other acknowledgement path exists.
+
+## Concrete overlapping-hit example
+
+Times below are client monotonic receipt/call times relative to the first report. Stored HP is the game's integer HP field, not a companion prediction.
+
+| Time | Event | Stored HP |
+|---:|---|---:|
+| 0 ms | Projectile A sent; following local notification has damage 44 | 225 |
+| 282.945 ms | Projectile B sent; following local notification has damage 44 | 225 |
+| 366.611 ms | Incoming tick 90 starts | 225 |
+| 366.654 ms | Tick 90 assigns HP | 181 |
+| 566.289 ms | Incoming tick 91 starts | 181 |
+| 566.339 ms | Tick 91 assigns HP | 138 |
+
+The arithmetic is consistent with one 44-damage hit becoming visible first, followed by a second 44-damage hit and 1 HP recovery. This attribution is an inference, not a keyed acknowledgement. What is directly measured: two reports went out while HP remained 225; later incoming ticks assigned 181 and 138. Reading 181 as a fresh baseline and clearing *all* outstanding reports would remove the other hit from the guard's projection. Conversely, subtracting both reports forever after receiving 138 would count damage twice. The tick-response tuple establishes which tick the client processed, not which outgoing projectile reports that tick's HP includes.
+
+A further sequence shows a notification for 54 damage at stored HP 78, followed by manual Nexus at HP 78, then an incoming assignment to 25 about 134 ms after the Nexus call. This is not a death and does not measure when server-side Nexus completed; it illustrates why last stored HP can lag damage even around a Nexus request.
+
+
+The capture loaded the intended passive recorder: 389 incoming ticks and matching responses, no recorded queue drops, no event cap reached. This was a copied window from an ongoing session (`complete=0`). Preserve PR 10 as draft: tick response matching does not establish per-hit HP coverage. Detailed evidence and hashes are saved in `build/hp-sync-audit-20261020/app-capture-31242/`.
