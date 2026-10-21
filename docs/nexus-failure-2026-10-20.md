@@ -163,10 +163,46 @@ are explicit limitations, not newly established protocol guarantees. See [beach 
 Candidate verification: 34 production integration cases, 24 diagnostic cases, four decoder cases,
 five native-map cases, reviewed-profile/generated-code checks, and the native policy suite including
 20,000 variable-gap transitions. The policy suite passes AddressSanitizer/UndefinedBehaviorSanitizer
-and Intel/Rosetta builds. Live beach validation remains outstanding.
+and Intel/Rosetta builds. The live validation below completes the requested beach check.
 
 Five alternating synthetic Rosetta trials against the capture-only baseline measured median
 projectile-path time 0.563 → 0.678 µs, incoming-update time 0.290 → 0.406 µs, and mixed-hit/update
 time 0.717 → 0.823 µs, with zero queue drops. The fixed policy grows from 48 to 2168 bytes;
 2048 bytes are the hit ledger. Independent 100-hit batches avoid benchmarking an accidental
 capacity-triggered escape. These fake-IL2CPP batch timings are not real-game/server latency.
+
+## Live validation: two automatic escapes, 20:15 Pacific
+
+The installed version 7 recorder captured two automatic escapes in `guard-26399.tsv` on
+2026-10-20. Both returned alive to Nexus. Both escape histories are complete within the bounded
+recorder (64 and 14 records); the session reports zero queue drops, zero observed off-main calls,
+two suppressed projectile reports and two suppressed notifications. No death event was recorded.
+Raw evidence, decoded incidents and a hash manifest are preserved locally under ignored
+`build/beach-validation-20261020-201611/`. Snapshot SHA-256:
+`4d225c8edb6b45069294a7c45c5c469ef7e7483257063b68f2a6b0d2c7acc71d`.
+
+| Automatic request (Pacific) | Stored HP | Total predicted damage including triggering hit | Projected HP | First observed HP in Nexus |
+|---|---:|---:|---:|---:|
+| 20:15:21.826694 | 18 | 19 | -1 | 14 |
+| 20:15:44.277529 | 225 | 228 | -3 | 111 |
+
+The first run exercises retention across an actual incoming HP assignment: the HP update from
+26 to 18 arrives with 22 pending damage. Reconciliation leaves 13 pending after net-loss debit
+and age retirement. A 2-damage hit raises this to 15; the following 4-damage hit triggers escape
+at 19. Under version 6, that final HP assignment would clear the budget, and these last two hits
+would total only 6, predicting 12 HP and making no request at this point. This is a counterfactual
+decision comparison, not proof that the character would have died with version 6.
+
+The second run begins at stored HP 225. One 114-damage hit is forwarded. Two unchanged-HP ticks
+retain that 114; another 114-damage hit 266.954 ms after the first projects -3 and is suppressed.
+The next received HP is 111, consistent with the first hit being applied; Nexus arrival is also
+111. Escaping while stored HP still reads 225 is supported by this outstanding burst, rather than
+a full-health threshold or a stale-update/capacity failsafe. Tick omission of the HP setter means
+this second sequence alone does not prove that version 6 would have cleared pending damage.
+
+Both requests use the projected-lethal reason. Recorded calculator return to successful local
+Nexusing result is 18 and 19 microseconds, respectively; this includes hook/recording work and is
+not an isolated policy benchmark or server latency. Nexus map arrival follows about 2.90 and
+2.96 seconds later, including transition/loading. Positive HP at arrival establishes the observed
+outcome beyond the local request flag. This validates the two captured sequences, not universal
+survival, all healing combinations, or the unresolved Advanced Kogbold killing route.
