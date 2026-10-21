@@ -85,3 +85,23 @@ python3 probe/analyze_latency.py --input build/damage-diagnostic/data/sessions \
 
 The current report also includes preserved captures elsewhere in `build/`. The installed gameplay
 app and timing settings are unchanged by this diagnostic.
+
+## Isolated-hit follow-up, 21 October 2026
+
+The next observation-only capture (`guard-40486.tsv`) contains four positive projectile reports and
+951 tick/response pairs, with no recorded drops/off-main calls, no cap and no unresolved reports.
+The recorded fingerprint matches the reviewed build. Three isolated HP decreases exactly match the
+local damage; the fourth is 1 HP smaller, compatible with recovery.
+
+| Local damage | Incoming HP | Visibility |
+|---:|---:|---:|
+| 89 | 225 → 136 | 566.691 ms |
+| 54 | 225 → 171 | 383.551 ms |
+| 89 | 225 → 136 | 400.330 ms |
+| 74 | 138 → 65 | 200.527 ms |
+
+All-four median is 391.941 ms. Calculator-return to outgoing SendMessage entry took 3–89 microseconds.
+Four samples still do not establish population p99, and these matches remain inferred visibility
+rather than keyed acknowledgements. The capture was copied while the process remained open; the
+last counter is complete=0. Evidence: `build/reconciliation-candidate/latency-capture-40486/`.
+No production timing parameter was changed from these measurements.
