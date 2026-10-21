@@ -35,6 +35,12 @@ def main():
                         print('Probe installed. Fatal Nexus intervention is ON.' if 'fatal_intervention=1' in row else 'Probe installed. Observation only; gameplay automation is off.',flush=True)
                     elif row[0]=='hit_probe_refused':
                         print('Probe refused to install: '+' '.join(row[1:]),flush=True)
+                    elif row[0]=='sync_trace_ready':
+                        print('Sync recorder ready. Observation only; no automatic escape or damage cancellation.',flush=True)
+                    elif row[0]=='sync_trace_refused':
+                        print('Sync recorder refused to install: '+' '.join(row[1:]),flush=True)
+                    elif row[0]=='sync_trace_limit':
+                        print('Sync recording limit reached; ordinary game calls continue unchanged.',flush=True)
                     elif row[0]=='damage_context_ready':
                         print('Optional context fields (1 available, 0 unavailable): '+' '.join(row[1:]),flush=True)
                     elif row[0]=='guard_config':

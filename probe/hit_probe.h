@@ -86,6 +86,9 @@ static void hit_probe_open(const char *folder) {
     (void)folder;fatal_enabled=1;
 #else
     const char *active=getenv("EXALT_FATAL_INTERVENTION");fatal_enabled=active && !strcmp(active,"1");
+#ifdef EXALT_SYNC_TRACE
+    fatal_enabled=0; /* Synchronization evidence must never intervene. */
+#endif
     /* Diagnostic-only synthetic lethal threshold. Never writes game HP and is
      * deliberately unavailable in the production client. */
     const char *verify=getenv("EXALT_VERIFY_ONE_HP");
@@ -387,6 +390,9 @@ prediction_done:
     fatal_emit(27,player,calculation,damage,decision,0);
     return fatal_policy.blocking?0:damage;
 }
+#ifdef EXALT_SYNC_TRACE
+#include "sync_trace.h"
+#endif
 static void report_observed(void *self,uint32_t bullet,int owner,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);
         if(self && atomic_load_explicit(&fatal_block_connection,memory_order_acquire)==(uintptr_t)self){atomic_fetch_add(&fatal_off_main_reports,1);return;}
@@ -425,6 +431,9 @@ static void send_observed(void *self,void *message,const void *info) {
         }
         return;
     }
+#ifdef EXALT_SYNC_TRACE
+    sync_send(self,message);
+#endif
     send_original(self,message,info);
 }
 static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,uint8_t flag1,void *projectile,uint8_t a,uint8_t b,const void *info) {
@@ -577,7 +586,13 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
     if(tracking)fatal_tick(&fatal_policy,monotonic_ns());
     if(observe){e=probe_snapshot(16,player,__builtin_return_address(0));e.update_context=e.id;e.update_source=1;
         probe_update_context=e.id;probe_update_source=1;probe_emit(e);}
+#ifdef EXALT_SYNC_TRACE
+    ProbeEvent sync_entry=observe?sync_tick(self,opaque_message):(ProbeEvent){0};
+#endif
     update_original(self,opaque_message,info);
+#ifdef EXALT_SYNC_TRACE
+    if(sync_entry.id)sync_tick_return(self,sync_entry);
+#endif
     /* A tick can omit an unchanged HP stat. Reconcile its current HP once at
      * completion, and count the tick heartbeat independently of HP changes. */
     if(tracking && fatal_sync(player) && snapshots==fatal_policy.snapshots){
@@ -705,6 +720,9 @@ static void probe_install(void) {
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
     probe_installed=1;note("fatal_policy\tversion=7\treconciliation=bounded_recent_hits\twindow_min_ns=400000000\twindow_max_ns=2000000000\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+#ifdef EXALT_SYNC_TRACE
+    sync_install();
+#endif
 #ifdef EXALT_CLIENT_FATAL
     note("incident_history\tversion=2\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\tautomatic_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
 #endif
