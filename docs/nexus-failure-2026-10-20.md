@@ -1,7 +1,7 @@
 # Advanced Kogbold death investigation — 2026-10-20
 
-Status: missed intervention confirmed; killing path and corrective protection change unresolved.
-This change adds evidence collection, not a claimed death-prevention fix.
+Status: the beach missed-prediction sequence is reproduced; version 7 adds bounded reconciliation.
+Original boss attribution remains unresolved. Timing reconciliation is heuristic, not a survival guarantee.
 
 ## Preserved incident
 
@@ -53,9 +53,9 @@ The source context and pending/projected HP are captured before incoming HP clea
 Eligibility is recorded on entry snapshots; an unaudited calculation remains observation-only.
 
 The existing background queue receives the history on the first observed terminal setter,
-notification return, sampled HP, or death-screen entry per player/map scope. A manual Nexus also
-saves one history per scope, allowing collection before lethal exposure. Collection continues
-after that manual request in case it fails. At most two dumps, each at most 65 records, are queued
+notification return, sampled HP, or death-screen entry per player/map scope. A manual Nexus or a
+confirmed automatic Nexus also saves one escape history per scope. Collection continues after
+that escape request in case a death follows. At most two dumps, each at most 65 records, are queued
 per scope. Ordinary hits produce no new per-hit file records, allocations, stack walks or payload dumps.
 The fallback reuses HP already read by the normal guard callback; it adds no ordinary-frame HP reads.
 
@@ -138,3 +138,35 @@ was damage versus healing. Retaining predictions fixes this replay's missed requ
 already-applied damage when healing overlaps it. A correction must address both this replay and the
 previous stale-damage/healing regression; do not substitute unlimited damage accumulation or claim
 that an HP assignment acknowledges all prior hit reports. The installed tracing build is unchanged.
+
+## Version 7 candidate
+
+The candidate replaces whole-budget resets with a 128-entry timestamped ledger (2048 bytes;
+2168 bytes including policy state). HP decreases debit the oldest estimates; increased HP raises
+the prediction baseline once. Fresh observations retire estimates older than the adaptive window
+described in [Nexus integration](nexus-on-death.md). Ticks omitting unchanged HP still count, so idle
+HP does not masquerade as a network stall. Map-entry validation bootstraps the stall clock once,
+without treating ordinary guard polling as a server heartbeat. Stalled updates and full capacity request escape before
+the next positive covered hit. Failed requests preserve damage and overflow debt rather than pretending
+cancellation. The existing player/connection/socket latch and incoming-state exclusions remain.
+
+The automated beach fixture requests Nexus at HP 42, pending damage 46 and projected HP -4, before
+the sixth hit report. Separate fixtures cover HP recovery and expiry, unchanged-HP tick heartbeats,
+stalls, buffer capacity, rejection/exception behavior and mixed damage. Unit tests replay delayed and
+jittered inputs plus the earlier 1206-HP false-escape sequence. Automatic confirmed Nexus now saves
+the bounded history as well as manual Nexus and terminal events.
+
+Neither net HP loss nor expiry is proof of report acceptance. Constant high processing delay can
+outlast the window even with regularly spaced packets, and healing can mask applied damage. These
+are explicit limitations, not newly established protocol guarantees. See [beach stress tests](beach-stress-tests.md).
+
+Candidate verification: 34 production integration cases, 24 diagnostic cases, four decoder cases,
+five native-map cases, reviewed-profile/generated-code checks, and the native policy suite including
+20,000 variable-gap transitions. The policy suite passes AddressSanitizer/UndefinedBehaviorSanitizer
+and Intel/Rosetta builds. Live beach validation remains outstanding.
+
+Five alternating synthetic Rosetta trials against the capture-only baseline measured median
+projectile-path time 0.563 → 0.678 µs, incoming-update time 0.290 → 0.406 µs, and mixed-hit/update
+time 0.717 → 0.823 µs, with zero queue drops. The fixed policy grows from 48 to 2168 bytes;
+2048 bytes are the hit ledger. Independent 100-hit batches avoid benchmarking an accidental
+capacity-triggered escape. These fake-IL2CPP batch timings are not real-game/server latency.

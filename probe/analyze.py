@@ -44,7 +44,7 @@ def incident_summary(events):
                     value=row['value'],source=row['update_source'],context=row['update_context'],
                     pending=signed(row['work_ns']),projected=signed(row['projectile']),
                     flag0=row['flag0'],flag1=row['flag1'],flag2=row['flag2'],flag3=row['flag3']) for row in history],
-                limitation='Last 64 main-thread boundaries only; manual Nexus also saves history. A terminal incoming event does not identify the original damage producer. Queue drops or abrupt process exit can lose the incident.'))
+                limitation='Last 64 main-thread boundaries only; manual or confirmed automatic Nexus also saves history. A terminal incoming event does not identify the original damage producer. Queue drops or abrupt process exit can lose the incident.'))
             history=[]
     return result
 
@@ -144,7 +144,8 @@ def analyze(path,threshold=None):
                 if value.isdecimal():fatal_counters[key]=int(value)
     def signed64(value):return value-(1<<64) if value>=(1<<63) else value
     fatal=dict(decisions=[{'event_id':e['id'],'ns':e['ns'],'hp':e['hp'],'damage':e['value'],
-            'retained_damage':e['projectile'],'projected_hp':signed64(e['update_context'])} for e in events if e['phase']==20],
+            'retained_damage':e['projectile'],'projected_hp':signed64(e['update_context']),
+            'reason':{1:'projected_lethal',2:'stale_updates',3:'ledger_capacity'}.get(e['flag3'],'legacy_or_unknown')} for e in events if e['phase']==20],
         request_results=[{'event_id':e['id'],'ns':e['ns'],'calculation_id':e['correlation'],'local_nexusing':bool(e['flag0']),
             'exception_or_handle_error':e['flag2']} for e in events if e['phase']==22],
         suppressed_reports=[{'event_id':e['id'],'ns':e['ns'],'bullet':e['bullet'],'owner':e['owner']} for e in events if e['phase']==23],

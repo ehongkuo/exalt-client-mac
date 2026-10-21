@@ -1,6 +1,16 @@
 # Status damage and HP reconciliation audit
 
-## Current policy: authoritative HP windows (version 6)
+## Current policy: bounded recent-hit reconciliation (version 7)
+
+The beach death trace demonstrates that clearing pending damage on every HP update can miss a
+lethal prediction. Version 7 retains recent timestamped estimates in a fixed ledger, credits observed
+HP decreases against the oldest estimates, and retires old estimates only on fresh observations
+beyond an adaptive timing window. Healing changes the baseline rather than accumulating synthetic
+healing credits. This is conservative inference, not individual report acknowledgement; it may still
+escape early, and sufficiently delayed processing can exceed the window. Full behavior and limits
+are described in [Nexus integration](nexus-on-death.md) and the [incident audit](nexus-failure-2026-10-20.md).
+
+## Previous authoritative HP-window policy (version 6)
 
 The live installed version-2 policy produced a false projectile escape at event 11005 in
 `guard-93129.tsv`: HP 1206/1206, incoming calculated damage 110, retained damage 1043, projected HP

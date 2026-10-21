@@ -4,13 +4,24 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
-Prediction uses the latest authoritative HP assignment as a new baseline. Projectile, ground and
-area damage accumulate within that window; healing and unchanged incoming HP also start a new
-window so old damage cannot accumulate indefinitely. This restores the previously working client's
-HP-window behavior. Incoming HP is not a per-report acknowledgement, so late/in-flight report ordering
-remains a limitation. Suppression starts only after local Nexusing is confirmed; an already-started
-escape survives settings changes and HP updates. Dry run never invokes Nexus or suppresses damage.
-See the [false-escape audit and correction](damage-status-audit.md).
+Policy version 7 retains recent projectile, ground and area damage across HP updates in a fixed
+128-entry ledger. Observed HP decreases retire estimates oldest-first; HP increases supply a higher
+baseline without discarding recent hits or counting healing twice. Older estimates retire only with
+a fresh server observation beyond an adaptive 400–2000 ms window. The window starts at 400 ms and
+tracks twice the smoothed update interval plus four times observed jitter. Ticks omitting an unchanged
+HP stat still advance the heartbeat and reconcile once at completion.
+
+This is a timing heuristic, not a verified hit acknowledgement. It can retire damage too soon when
+processing delay exceeds the window despite regular updates, or retain already-applied damage when
+healing masks it. Conservative early escapes remain possible. A positive hit requests Nexus if updates
+have stalled longer than max(1500 ms, three retention windows), or the 128-entry ledger fills. Zero
+damage alone does not trigger these two failsafes. Logs distinguish projected-lethal (reason 1), stale
+updates (2), and ledger capacity (3). There is no fixed percentage-HP escape threshold.
+
+Suppression starts only after local Nexusing is confirmed; an already-started escape survives settings
+changes and HP updates. Dry run never invokes Nexus or suppresses damage. See the
+[captured failure and reconciliation audit](nexus-failure-2026-10-20.md), and the
+[three beach tests](beach-stress-tests.md).
 
 The hooks prepare in Nexus and validate method signatures, offsets and complete entry bytes. If preparation is refused, the UI reports that the feature is unavailable while the existing guard remains usable. Turning the feature on outside Nexus waits for preparation there. No installed game files are modified.
 
@@ -33,7 +44,7 @@ remaining gaps.
 
 ## Shared local HP hatch and environmental scope
 
-Policy version 6 adds a guard before the shared HP setter for the controlled player. A locally
+The shared HP hatch, introduced in version 6, guards the controlled player before its HP setter. A locally
 computed transition from positive HP to zero/negative HP invokes the same validated Nexus request as
 projectile, ground and AOE damage. Only confirmed local Nexusing cancels that write and subsequent
 local HP reductions. Healing and positive nonlethal local writes pass without charging the prediction

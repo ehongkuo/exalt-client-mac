@@ -128,7 +128,7 @@ static void incident_scope(void *player) {
 }
 static int incident_phase(int phase) {
     return phase==1 || phase==3 || phase==4 || phase==5 || phase==6 || phase==7 || phase==10 ||
-           phase==11 || phase==12 || phase==13 || phase==27;
+           phase==11 || phase==12 || phase==13 || phase==20 || phase==21 || phase==22 || phase==27;
 }
 static void incident_remember(ProbeEvent e) {
     if(!incident_phase(e.phase))return;
@@ -137,11 +137,11 @@ static void incident_remember(ProbeEvent e) {
     e.work_ns=(uint64_t)fatal_policy.pending;
     e.projectile=(uint64_t)fatal_policy.projected;
     incident_history[incident_count++%INCIDENT_CAPACITY]=e;
-    int manual=e.phase==7 && !e.flag0;
-    if(e.phase!=13 && !manual &&
+    int escape=(e.phase==7 && !e.flag0) || (e.phase==22 && e.flag0);
+    if(e.phase!=13 && !escape &&
        !((e.phase==4 || e.phase==6 || e.phase==10) && e.hp<=0))return;
-    if(manual && incident_manual_dumped)return;
-    if(manual)incident_manual_dumped=1;else incident_dumped=1;
+    if(escape && incident_manual_dumped)return;
+    if(escape)incident_manual_dumped=1;else incident_dumped=1;
     uint64_t first=incident_count>INCIDENT_CAPACITY?incident_count-INCIDENT_CAPACITY:0;
     uint64_t dropped_before=atomic_load_explicit(&probe_drops,memory_order_relaxed);
     for(uint64_t i=first;i<incident_count;++i){
@@ -155,7 +155,7 @@ static void incident_remember(ProbeEvent e) {
     probe_publish(end);
     /* A manual request can fail. Keep collecting so a later death in the same
      * scope still has its own history, without repeatedly dumping on zero HP. */
-    if(manual)incident_count=0;
+    if(escape)incident_count=0;
 }
 #endif
 static void probe_emit(ProbeEvent e) {
@@ -240,13 +240,13 @@ static void fatal_emit(int phase,void *player,uint64_t correlation,int value,int
      * Keep escape/failure/suppression evidence, not one log record per hit. */
     if(phase==27){
         ProbeEvent e={.id=++probe_sequence,.phase=27,.value=value,.flag0=status,
-            .flag1=fatal_policy.blocking,.correlation=correlation,.hp=-1,.max=-1};
+            .flag1=fatal_policy.blocking,.flag3=fatal_policy.reason,.correlation=correlation,.hp=-1,.max=-1};
         incident_remember(e);return;
     }
 #endif
     ProbeEvent e=probe_snapshot(phase,player,NULL);e.correlation=correlation;e.value=value;
     e.projectile=(uint64_t)fatal_policy.pending;e.update_context=(uint64_t)fatal_policy.projected;
-    e.flag0=status;e.flag1=fatal_policy.blocking;e.flag2=exception;probe_emit(e);
+    e.flag0=status;e.flag1=fatal_policy.blocking;e.flag2=exception;e.flag3=fatal_policy.reason;probe_emit(e);
 }
 static void fatal_clear(void *player,int reason) {
     int was_blocking=fatal_policy.blocking;
@@ -273,7 +273,12 @@ static int fatal_sync(void *player) {
     void *connection=read_reference(player,connection_field);if(!connection)return 0;
     if(fatal_policy.player && (fatal_policy.player!=(uintptr_t)player || fatal_policy.connection!=(uintptr_t)connection || fatal_policy.map!=(uintptr_t)last_map_info))
         fatal_clear(player,2);
-    if(!fatal_policy.player)fatal_reset(&fatal_policy,(uintptr_t)player,(uintptr_t)connection,(uintptr_t)last_map_info);
+    if(!fatal_policy.player){
+        fatal_reset(&fatal_policy,(uintptr_t)player,(uintptr_t)connection,(uintptr_t)last_map_info);
+        /* Bootstrap once from validated map entry. The 1 kHz guard poll must
+         * never masquerade as a server heartbeat or hide a first-hit stall. */
+        fatal_policy.last_update_ns=monotonic_ns();
+    }
     return 1;
 }
 static int fatal_local_nexusing(void *connection) {
@@ -327,8 +332,9 @@ static void fatal_record(void *player,int hp,int result) {
     Record r={.epoch=start_epoch+(double)(now-start_ns)/1e9,.action=GUARD_NEXUS_DEATH,
               .result=result,.slot=-1,.player_hp=hp,.player_max=max};
     record_event(&r);
-    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\n",
-         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result);
+    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\treason=%d\twindow_ns=%llu\thits=%u\n",
+         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result,fatal_policy.reason,
+         (unsigned long long)fatal_window_ns(&fatal_policy),fatal_policy.count);
 }
 #endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
@@ -338,7 +344,7 @@ static int fatal_intervene(void *player,int damage,uint64_t calculation) {
 #ifdef EXALT_HIT_PROBE
     if(fatal_verify_hp && hp>0)prediction_hp=1;
 #endif
-    int decision=fatal_damage(&fatal_policy,prediction_hp,damage);
+    int decision=fatal_damage(&fatal_policy,prediction_hp,damage,monotonic_ns());
     if(decision==FATAL_REQUEST) {
         fatal_emit(20,player,calculation,damage,decision,0);
 #ifdef EXALT_CLIENT_FATAL
@@ -509,7 +515,7 @@ static void hp_observed(void *self,int value,const void *info) {
 #else
             int record_update=1;
 #endif
-            fatal_server_hp(&fatal_policy,after.hp);
+            fatal_server_hp(&fatal_policy,after.hp,after.ns);
             if(record_update)fatal_emit(28,self,after.id,after.hp,after.update_source,0);
 #ifdef EXALT_CLIENT_FATAL
             live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
@@ -566,9 +572,20 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
     void *player=probe_player();
     int observe=probe_active() && player && self==read_reference(player,connection_field);
     ProbeEvent e={0};uint64_t saved_context=probe_update_context;int saved_source=probe_update_source;
+    int tracking=observe && fatal_sync(player);
+    uint64_t snapshots=fatal_policy.snapshots;
+    if(tracking)fatal_tick(&fatal_policy,monotonic_ns());
     if(observe){e=probe_snapshot(16,player,__builtin_return_address(0));e.update_context=e.id;e.update_source=1;
         probe_update_context=e.id;probe_update_source=1;probe_emit(e);}
     update_original(self,opaque_message,info);
+    /* A tick can omit an unchanged HP stat. Reconcile its current HP once at
+     * completion, and count the tick heartbeat independently of HP changes. */
+    if(tracking && fatal_sync(player) && snapshots==fatal_policy.snapshots){
+        int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
+        int record_update=fatal_policy.pending>0 || fatal_policy.blocking;
+        fatal_server_hp(&fatal_policy,hp,monotonic_ns());
+        if(record_update)fatal_emit(28,player,e.id,hp,4,0); /* Tick omitted unchanged HP. */
+    }
     if(observe){ProbeEvent after=probe_snapshot(17,player,NULL);after.correlation=e.id;probe_emit(after);}
     probe_update_context=saved_context;probe_update_source=saved_source;
 }
@@ -687,9 +704,9 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("fatal_policy\tversion=6\treconciliation=authoritative_hp_window\thealing_credit=1\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=7\treconciliation=bounded_recent_hits\twindow_min_ns=400000000\twindow_max_ns=2000000000\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_CLIENT_FATAL
-    note("incident_history\tversion=1\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
+    note("incident_history\tversion=2\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\tautomatic_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
 #endif
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);

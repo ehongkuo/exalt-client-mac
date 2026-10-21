@@ -29,6 +29,12 @@ __attribute__((visibility("default"))) void guard_benchmark(const char *name,int
  uint64_t fields=benchmark_reads(),cpu=bench_cpu_ns(),drain_ns=0;
  for(int i=0;i<count;++i){
   if(kind==5){fatal_clear((void*)40,0);benchmark_reset(1);}
+  else if(kind==1 || kind==4 || kind==6){
+   /* Independent 100-hit batches prevent the capacity failsafe from turning
+    * a nonlethal-path benchmark into a latched-escape benchmark. Both refs
+    * receive identical resets, outside the timed path samples. */
+   fatal_clear((void*)40,0);benchmark_reset(1000000000);
+  }
   uint64_t begin=bench_wall_ns();
   for(int j=0;j<100;++j){
    switch(kind){

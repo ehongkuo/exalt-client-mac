@@ -41,7 +41,11 @@ static int update_sequence=41;static uint32_t update_time=1000;static int next_s
 static unsigned update_forwarded,stats_forwarded;
 void update_fixture_body(void *self,void *message,const void *info) {
  assert(self==(void*)70 && message==(void*)3 && info==(void*)0x5678);
- ++update_forwarded;stats_fixture(self,(void*)40,(void*)3,1,info);++update_sequence;update_time+=200;
+ ++update_forwarded;
+#if !defined(FATAL_ENVIRONMENT) || FATAL_ENVIRONMENT!=25
+ stats_fixture(self,(void*)40,(void*)3,1,info);
+#endif
+ ++update_sequence;update_time+=200;
 }
 void stats_fixture_body(void *self,void *actor,void *stats,uint8_t flag,const void *info) {
  assert(self==(void*)70 && (actor==(void*)40 || actor==(void*)3) && stats==(void*)3 && flag==1 && info==(void*)0x5678);
@@ -78,11 +82,16 @@ int damage_fixture_body(void *self,float value,const void *info) {
 #else
  assert(self==(void*)0x3456);
 #endif
- assert(value==50.5f && info==(void*)0x5678);++damage_forwarded;
+ assert(info==(void*)0x5678);++damage_forwarded;
+#if defined(FATAL_ENVIRONMENT) && (FATAL_ENVIRONMENT==23 || FATAL_ENVIRONMENT==27)
+ return (int)value;
+#else
+ assert(value==50.5f);
 #ifdef FATAL_FALSE_POSITIVE
  return 110;
 #else
  return 50;
+#endif
 #endif
 }
 void death_fixture_body(void *self,void *message,const void *info) {
@@ -130,10 +139,10 @@ uint64_t fixture_body(void *self,int tick,uint32_t bullet,int value,int owner,ui
  ++enemy_forwarded;return 0xabcdef0123456789ULL;
 }
 void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,uint8_t flag,void *projectile,uint8_t a,uint8_t b,const void *info) {
- assert(self==(void*)40 && killed==0 && (value==400 || value==50 || value==60 || value==70 || value==110) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && (a>=1 && a<=3) && b==0 && info==(void*)0x4567);
+ assert(self==(void*)40 && killed==0 && (value==400 || value==50 || value==60 || value==70 || value==110 || value==6 || value==8) && conditions==(void*)0x2345 && flag==1 && projectile==(void*)0x3456 && (a>=1 && a<=3) && b==0 && info==(void*)0x4567);
  ++notify_forwarded;
 #if defined(LETHAL_BURST) || defined(FATAL_BURST)
- #if !defined(FATAL_RECONCILE) && !defined(FATAL_FALSE_POSITIVE)
+ #if !defined(FATAL_RECONCILE) && !defined(FATAL_FALSE_POSITIVE) && (!defined(FATAL_ENVIRONMENT) || FATAL_ENVIRONMENT<23)
  if(notify_forwarded==4)assigned_hp=0;
 #endif
 #endif
@@ -260,6 +269,51 @@ static void burst(void *unused) {
  stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  assert(!nexus_invocations && assigned_hp==0);
  puts("manual_request_does_not_hide_later_death=1");
+#elif FATAL_ENVIRONMENT==23
+ next_stats_hp=41;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ const int hits[]={6,8,8,8,8};
+ for(unsigned i=0;i<5;++i){
+  assert(damage_fixture(DAMAGE_ARGUMENT,(float)hits[i],(void*)0x5678)==hits[i]);
+  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+  notify_fixture((void*)40,0,hits[i],(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ }
+ next_stats_hp=42;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(damage_fixture(DAMAGE_ARGUMENT,8.0f,(void*)0x5678)==0);
+ incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
+ assert(report_forwarded==5 && notify_forwarded==5 && nexus_calls==1 && nexus_hp_at_request==42);
+ assert(damage_fixture(DAMAGE_ARGUMENT,6.0f,(void*)0x5678)==0);
+ puts("beach_capture_escaped_before_sixth_report=1");
+#elif FATAL_ENVIRONMENT==24
+ for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ next_stats_hp=300;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ for(int i=0;i<3;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
+ for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(!nexus_invocations && assigned_hp==300);
+ puts("healing_and_fresh_updates_retire_old_burst=1");
+#elif FATAL_ENVIRONMENT==25
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ for(int i=0;i<10;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(!nexus_invocations && assigned_hp==200);
+ puts("omitted_hp_ticks_keep_heartbeat_and_retire_old_damage=1");
+#elif FATAL_ENVIRONMENT==26
+ next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ usleep(1600000);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ assert(nexus_calls==1 && nexus_hp_at_request==200);
+ puts("stalled_updates_escape_on_next_positive_hit=1");
+#elif FATAL_ENVIRONMENT==27
+ next_stats_hp=1000;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ for(int i=0;i<128;++i)assert(damage_fixture(DAMAGE_ARGUMENT,1.0f,(void*)0x5678)==1);
+ assert(damage_fixture(DAMAGE_ARGUMENT,1.0f,(void*)0x5678)==0);
+ assert(nexus_calls==1 && nexus_hp_at_request==1000);
+ puts("ledger_capacity_does_not_silently_forget_hits=1");
+#elif FATAL_ENVIRONMENT==28
+ /* No incoming tick/HP assignment precedes this first hit after map entry. */
+ usleep(1600000);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ assert(nexus_calls==1 && nexus_hp_at_request==200);
+ puts("first_hit_after_missing_updates_does_not_restart_stall_clock=1");
 #endif
  return;
 #endif
@@ -294,8 +348,8 @@ static void burst(void *unused) {
  next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  notify_fixture((void*)40,0,70,(void*)0x2345,1,(void*)0x3456,3,0,(void*)0x4567);
  send_fixture((void*)500,(void*)3,(void*)0x6002);
- assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
- assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
+ assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
  send_fixture((void*)500,(void*)3,(void*)0x6002);
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
@@ -334,7 +388,7 @@ static void burst(void *unused) {
   assert(actual==0);
 #else
   #ifdef FATAL_RECONCILE
-  assert(actual==(i<3?50:0));
+  assert(actual==(i<2?50:0));
 #else
   assert(actual==(i<3?50:0));
 #endif
@@ -398,7 +452,7 @@ static void verify_forwarding(void *unused) {
  assert(report_forwarded==7 && notify_forwarded==7 && assigned_hp==0);
 #else
  #ifdef FATAL_RECONCILE
- assert(report_forwarded==4 && notify_forwarded==4 && assigned_hp==200);
+ assert(report_forwarded==3 && notify_forwarded==3 && assigned_hp==200);
 #else
  #ifdef VERIFY_EARLY
  assert(report_forwarded==0 && notify_forwarded==0 && assigned_hp==200);

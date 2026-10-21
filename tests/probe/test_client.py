@@ -103,6 +103,34 @@ class ClientInterventionTests(unittest.TestCase):
   self.run_client('armed=1,potion=0,death=1',environment=22)
   self.assertEqual([e['value'] for e in self.events if e['phase']==199],[7,6])
   self.assertTrue(all(e['complete'] for e in analyze.incident_summary(self.events)))
+ def test_beach_capture_survives_hp_increase_and_blocks_lethal_report(self):
+  self.run_client('armed=1,potion=0,death=1',environment=23)
+  self.assertIn('beach_capture_escaped_before_sixth_report=1',self.output)
+  decision=next(e for e in self.events if e['phase']==20)
+  self.assertEqual((decision['hp'],decision['value'],decision['projectile']),(42,8,46))
+  self.assertEqual(decision['flag3'],1)
+  self.assertTrue(any(e['phase']==199 and e['value']==22 for e in self.events),'automatic escape preserves history')
+ def test_healing_and_later_snapshots_do_not_keep_old_damage_forever(self):
+  self.run_client('armed=1,potion=0,death=1',environment=24)
+  self.assertIn('healing_and_fresh_updates_retire_old_burst=1',self.output)
+  self.assertFalse(any(e['phase']==20 for e in self.events))
+ def test_ticks_without_hp_assignment_keep_network_heartbeat_fresh(self):
+  self.run_client('armed=1,potion=0,death=1',environment=25)
+  self.assertIn('omitted_hp_ticks_keep_heartbeat_and_retire_old_damage=1',self.output)
+  self.assertFalse(any(e['phase']==20 for e in self.events))
+ def test_stalled_update_escape_reason_is_explicit(self):
+  self.run_client('armed=1,potion=0,death=1',environment=26)
+  decision=next(e for e in self.events if e['phase']==20)
+  self.assertEqual((decision['hp'],decision['value'],decision['flag3']),(200,50,2))
+  self.assertIn('reason=2',self.log)
+ def test_full_ledger_escape_reason_is_explicit(self):
+  self.run_client('armed=1,potion=0,death=1',environment=27)
+  decision=next(e for e in self.events if e['phase']==20)
+  self.assertEqual((decision['hp'],decision['value'],decision['flag3']),(1000,1,3))
+ def test_first_hit_after_missing_updates_uses_map_entry_clock(self):
+  self.run_client('armed=1,potion=0,death=1',environment=28)
+  self.assertIn('first_hit_after_missing_updates_does_not_restart_stall_clock=1',self.output)
+  self.assertEqual(next(e for e in self.events if e['phase']==20)['flag3'],2)
  def test_meter_limits_preserve_dry_run_disabled_and_missing_fields(self):
   for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
    with self.subTest(settings=settings,no_context=no_context):
@@ -166,13 +194,13 @@ class ClientInterventionTests(unittest.TestCase):
   self.assertEqual(decision['hp'],40)
   self.assertEqual(decision['value'],50)
   self.assertEqual(decision['projectile'],50)
- def test_mixed_paths_accumulate_in_one_authoritative_window(self):
+ def test_mixed_paths_accumulate_across_hp_updates(self):
   self.run_client('armed=1,potion=0,death=1',mixed=True)
   self.assertIn('mixed_paths_rebased_and_preserved_same_window_burst=1',self.output)
   self.assertIn('nexus_calls=1',self.output)
   decision=next(e for e in self.events if e['phase']==20)
-  self.assertEqual(decision['projectile'],220)
-  self.assertEqual(decision['update_context'],(1<<64)-40)
+  self.assertEqual(decision['projectile'],210)
+  self.assertEqual(decision['update_context'],(1<<64)-30)
   self.assertEqual([e['caller'] for e in self.secondary_reports],['0x183f880'])
  def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
   for boundary in ('0x196ed90UL','0x183f880UL'):
@@ -220,7 +248,7 @@ class ClientInterventionTests(unittest.TestCase):
   self.run_client('armed=1,potion=0,nexus=0,death=1',reconcile=True)
   resets=[e for e in self.events if e['phase']==28]
   self.assertEqual([e['flag1'] for e in resets],[0,1])
-  self.assertEqual([e['projectile'] for e in resets],[0,0])
+  self.assertEqual([e['projectile'] for e in resets],[50,0])
   self.assertEqual(self.live['nexus_sent'],'1')
  def test_disabling_toggle_mid_escape_keeps_pending_escape_blocked(self):
   self.run_client('armed=1,potion=0,nexus=0,death=1',toggle=True)
