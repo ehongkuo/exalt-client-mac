@@ -108,8 +108,59 @@ static void probe_publish(ProbeEvent e) {
     probe_events[head%PROBE_CAPACITY]=e;
     atomic_store_explicit(&probe_head,head+1,memory_order_release);
 }
+#ifdef EXALT_CLIENT_FATAL
+/* Main-thread-only, bounded history. No file I/O or allocations on hook paths.
+ * Stored events use phase 100 + original phase; work_ns/projectile are signed
+ * pending/projected HP aliases. Phase 199 ends a dump: at most one manual Nexus
+ * history and one terminal history per scope. */
+#define INCIDENT_CAPACITY 64
+static ProbeEvent incident_history[INCIDENT_CAPACITY];
+static uint64_t incident_count;
+static void *incident_map,*incident_player;
+static int incident_dumped,incident_manual_dumped;
+static void incident_scope(void *player) {
+    /* Do not dereference/retain these identity addresses, or clear the history
+     * while the player is temporarily unavailable during death UI teardown. */
+    if(player && (incident_map!=last_map_info || incident_player!=player)){
+        incident_map=last_map_info;incident_player=player;
+        incident_count=0;incident_dumped=0;incident_manual_dumped=0;
+    }
+}
+static int incident_phase(int phase) {
+    return phase==1 || phase==3 || phase==4 || phase==5 || phase==6 || phase==7 || phase==10 ||
+           phase==11 || phase==12 || phase==13 || phase==27;
+}
+static void incident_remember(ProbeEvent e) {
+    if(!incident_phase(e.phase))return;
+    if(incident_dumped)return;
+    if(!e.ns)e.ns=monotonic_ns();
+    e.work_ns=(uint64_t)fatal_policy.pending;
+    e.projectile=(uint64_t)fatal_policy.projected;
+    incident_history[incident_count++%INCIDENT_CAPACITY]=e;
+    int manual=e.phase==7 && !e.flag0;
+    if(e.phase!=13 && !manual &&
+       !((e.phase==4 || e.phase==6 || e.phase==10) && e.hp<=0))return;
+    if(manual && incident_manual_dumped)return;
+    if(manual)incident_manual_dumped=1;else incident_dumped=1;
+    uint64_t first=incident_count>INCIDENT_CAPACITY?incident_count-INCIDENT_CAPACITY:0;
+    uint64_t dropped_before=atomic_load_explicit(&probe_drops,memory_order_relaxed);
+    for(uint64_t i=first;i<incident_count;++i){
+        ProbeEvent saved=incident_history[i%INCIDENT_CAPACITY];
+        saved.phase+=100;probe_publish(saved);
+    }
+    ProbeEvent end=e;end.id=++probe_sequence;end.phase=199;end.value=e.phase;
+    end.flag0=config.armed;end.flag1=fatal_policy.blocking;end.flag2=config.death;
+    end.owner=(int)(incident_count-first);
+    end.flag3=atomic_load_explicit(&probe_drops,memory_order_relaxed)!=dropped_before;
+    probe_publish(end);
+    /* A manual request can fail. Keep collecting so a later death in the same
+     * scope still has its own history, without repeatedly dumping on zero HP. */
+    if(manual)incident_count=0;
+}
+#endif
 static void probe_emit(ProbeEvent e) {
 #ifdef EXALT_CLIENT_FATAL
+    incident_remember(e);
     if(e.phase<20)return;
 #endif
     probe_publish(e);
@@ -134,13 +185,21 @@ static int probe_active(void) {
 }
 static ProbeEvent probe_snapshot(int phase,void *player,void *caller) {
 #ifdef EXALT_CLIENT_FATAL
-    /* Phases below 20 are diagnostic-only and discarded by probe_emit. Keep
-     * correlation/source routing, plus the post-setter HP used by the policy,
-     * without timestamps or unrelated IL2CPP reads in production. */
+    /* Only damage/HP boundaries enter the bounded incident history. Never
+     * sample unrelated fields or clock every update/stats entry. */
     if(phase<20){
-        ProbeEvent e={.id=++probe_sequence,.callsite=probe_callsite(caller),
+        ProbeEvent e={.id=++probe_sequence,.phase=phase,.callsite=probe_callsite(caller),.hp=-1,.max=-1,
+            .in_nexus=in_nexus,
+            .valid=(guard_ok?1:0)|(map_ok?2:0)|(!map_unknown_logged?4:0)|
+                (player && validated_player==(uintptr_t)player?8:0)|(config.death?16:0)|
+                (fatal_enabled?32:0)|(!in_nexus?64:0)|
+                (player && fatal_policy.player==(uintptr_t)player?128:0),
             .update_context=probe_update_context,.update_source=probe_update_source};
-        if(phase==6 && player)il2cpp_field_get_value(player,player_hp_field,&e.hp);
+        if(incident_phase(phase)){
+            incident_scope(player);
+            e.ns=monotonic_ns();
+            if(player)il2cpp_field_get_value(player,player_hp_field,&e.hp);
+        }
         return e;
     }
 #endif
@@ -179,7 +238,11 @@ static void fatal_emit(int phase,void *player,uint64_t correlation,int value,int
 #ifdef EXALT_CLIENT_FATAL
     /* Normal prediction bookkeeping is already published in shared live data.
      * Keep escape/failure/suppression evidence, not one log record per hit. */
-    if(phase==27)return;
+    if(phase==27){
+        ProbeEvent e={.id=++probe_sequence,.phase=27,.value=value,.flag0=status,
+            .flag1=fatal_policy.blocking,.correlation=correlation,.hp=-1,.max=-1};
+        incident_remember(e);return;
+    }
 #endif
     ProbeEvent e=probe_snapshot(phase,player,NULL);e.correlation=correlation;e.value=value;
     e.projectile=(uint64_t)fatal_policy.pending;e.update_context=(uint64_t)fatal_policy.projected;
@@ -403,7 +466,7 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
 #endif
     }
     notify_original(self,flag0,value,conditions,flag1,projectile,a,b,info);
-    if(observe){ProbeEvent after=probe_snapshot(10,self,NULL);after.correlation=e.id;after.projectile=(uintptr_t)projectile;after.value=value;probe_emit(after);}
+    if(observe){ProbeEvent after=probe_snapshot(10,self,NULL);after.correlation=e.id;after.callsite=e.callsite;after.projectile=(uintptr_t)projectile;after.value=value;probe_emit(after);}
 }
 static void hp_observed(void *self,int value,const void *info) {
     if(!probe_on_main()){atomic_fetch_add(&probe_off_main,1);hp_original(self,value,info);return;}
@@ -439,7 +502,7 @@ static void hp_observed(void *self,int value,const void *info) {
         }
     }
     hp_original(self,value,info);
-    if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
+    if(observe){ProbeEvent after=probe_snapshot(6,self,NULL);after.correlation=e.id;after.callsite=e.callsite;after.value=value;after.update_context=e.update_context;after.update_source=e.update_source;probe_emit(after);
         if(fatal_enabled && fatal_policy.player==(uintptr_t)self && (after.update_source==1 || after.update_source==2)){
 #ifdef EXALT_CLIENT_FATAL
             int record_update=fatal_policy.pending>0 || fatal_policy.blocking;
@@ -478,9 +541,6 @@ static int damage_observed(void *raw_arg,float input,const void *raw_info) {
     audited=0;
 #endif
     int observe=probe_active() && player;
-#ifndef EXALT_HIT_PROBE
-    observe=observe && audited;
-#endif
     /* The audited caller does not populate an instance argument. Preserve opaque
      * native arguments, but never inspect them or use them as projectile IDs. */
     ProbeEvent e={0};
@@ -628,6 +688,9 @@ static void probe_install(void) {
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
     probe_installed=1;note("fatal_policy\tversion=6\treconciliation=authoritative_hp_window\thealing_credit=1\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+#ifdef EXALT_CLIENT_FATAL
+    note("incident_history\tversion=1\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
+#endif
 #ifdef EXALT_HIT_PROBE
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
@@ -641,6 +704,7 @@ static void hit_probe_tick(void *player,uint64_t now) {
     if(!ready)return;
     probe_install();
 #ifdef EXALT_CLIENT_FATAL
+    incident_scope(player);
     live_data.death_status=probe_installed?1:probe_attempted?-1:0;
 #endif
     if(!probe_installed)return;
@@ -656,6 +720,14 @@ static void hit_probe_tick(void *player,uint64_t now) {
     damage_context_emit(player,0);
 #endif
 }
+#ifdef EXALT_CLIENT_FATAL
+static void hit_probe_terminal_sample(void *player,int hp,int max) {
+    /* Reuse HP already read by run_guard. No new polling/field reads during
+     * ordinary frames; cover terminal writes outside the installed hooks. */
+    if(incident_dumped || !player || hp>0 || max<=0 || in_nexus || !probe_active())return;
+    ProbeEvent e=probe_snapshot(4,player,NULL);e.hp=hp;e.max=max;incident_remember(e);
+}
+#endif
 static void hit_probe_drain(void) {
 #ifdef EXALT_CLIENT_FATAL
     if(!probe_installed)return;

@@ -827,6 +827,9 @@ done:
     }
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_tick(own, begin);
+#ifdef EXALT_CLIENT_FATAL
+    if(r.status==0)hit_probe_terminal_sample(own,r.player_hp,r.player_max);
+#endif
 #endif
     if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;

@@ -27,6 +27,27 @@ def read_events(log):
                 continue
     return events
 
+def incident_summary(events):
+    """Decode the bounded production history without replaying it as live damage."""
+    def signed(value):return value-(1<<64) if value>=(1<<63) else value
+    result=[];history=[]
+    for e in events:
+        if 100<=e['phase']<199:
+            history.append(e)
+        elif e['phase']==199:
+            result.append(dict(trigger_phase=e['value'],armed=bool(e['flag0']),
+                blocking=bool(e['flag1']),enabled=bool(e['flag2']),
+                complete=not e['flag3'] and len(history)==e['owner'],
+                history=[dict(id=row['id'],before_trigger_ms=(e['ns']-row['ns'])/1e6,
+                    phase=row['phase']-100,caller=hex(row['callsite']),hp=row['hp'],correlation=row['correlation'],
+                    eligibility_bits=row['valid'] if row['phase']!=127 else None,
+                    value=row['value'],source=row['update_source'],context=row['update_context'],
+                    pending=signed(row['work_ns']),projected=signed(row['projectile']),
+                    flag0=row['flag0'],flag1=row['flag1'],flag2=row['flag2'],flag3=row['flag3']) for row in history],
+                limitation='Last 64 main-thread boundaries only; manual Nexus also saves history. A terminal incoming event does not identify the original damage producer. Queue drops or abrupt process exit can lose the incident.'))
+            history=[]
+    return result
+
 def analyze(path,threshold=None):
     if Path(path).suffix=='.bin':
         spec=importlib.util.spec_from_file_location('recover_flight',Path(__file__).with_name('recover_flight.py'))
@@ -134,7 +155,7 @@ def analyze(path,threshold=None):
         observed_transitions=[{'event_id':e['id'],'ns':e['ns'],'reason':e['flag0'],'was_blocking':bool(e['value'])} for e in events if e['phase']==25],
         deaths_while_blocking=[e['id'] for e in events if e['phase']==26],counters=fatal_counters,
         limitation='A local Nexusing flag is not server acceptance. Suppression covers audited projectile, ground and radius/AOE paths. Other HP-loss mechanisms are unproven. The retained-damage model can escape early and does not establish true HP.')
-    return {'schema':4,'fatal_intervention':fatal,'shadow_ledger':({'trace':[],'limitation':'Live intervention changed damage handling; the legacy observation-only hypotheses are not replayed for this session.'} if fatal['decisions'] or any(e['phase']==27 for e in events) else shadow.replay(events,threshold)),'update_boundaries':updates,
+    return {'schema':4,'incidents':incident_summary(events),'fatal_intervention':fatal,'shadow_ledger':({'trace':[],'limitation':'Live intervention changed damage handling; the legacy observation-only hypotheses are not replayed for this session.'} if fatal['decisions'] or any(e['phase']==27 for e in events) else shadow.replay(events,threshold)),'update_boundaries':updates,
         'hp_update_contexts':[{'event_id':e['id'],'hp':e['hp'],'context':e['update_context'],'source':e['update_source']} for e in events if e['phase']==6],'damage_calculations':len(damage),'pre_report_damage_pairs':damage_pairs,
         'unclassified_damage_calculations':[{'id':e['id'],'caller':hex(e['callsite']),'value':e['value']} for e in unclassified_damage],
         'damage_contexts':[{'id':e['id'],'ns':e['ns'],'generation':e['generation'],
@@ -152,7 +173,7 @@ def analyze(path,threshold=None):
         'notification_callsites':sorted({hex(e['callsite']) for e in notifications}),
         'hp_assignments':assignments_after,'manual_nexus_entries':nexus,
         'notification_to_next_sampled_hp_decrease_ms_median':statistics.median(leads) if leads else None,
-        'probe_snapshot_work_us_max':max((e['work_ns']/1000 for e in events),default=None),
+        'probe_snapshot_work_us_max':max((e['work_ns']/1000 for e in events if e['phase']<100),default=None),
         'completion_counters':counters,'environment_trace':environment,
         'limitation':'Pairing is a temporal association. HP assignments and map transitions are local observations, not verified server acknowledgements. Only audited projectile calculations enter shadow estimates; unknown callers are listed separately. Context values do not establish damage cause. Intervened sessions are not replayed as observation-only estimates.'}
 

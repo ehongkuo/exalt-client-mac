@@ -227,6 +227,39 @@ static void burst(void *unused) {
  hp_fixture((void*)40,-7,(void*)0x5678);
  assert(assigned_hp==-7 && !nexus_invocations);
  puts("already_nonpositive_not_revived=1");
+#elif FATAL_ENVIRONMENT==17
+ for(int i=0;i<200;++i)hp_fixture((void*)40,200,(void*)0x5678);
+ next_stats_hp=0;
+ stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
+ death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
+ assert(!nexus_invocations && assigned_hp==0);
+ puts("bounded_incoming_incident=1");
+#elif FATAL_ENVIRONMENT==18
+ /* A direct terminal write inside notification, bypassing the HP setter. */
+ for(int i=0;i<4;++i)
+  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
+ death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
+ assert(!nexus_invocations && assigned_hp==0);
+ puts("direct_notification_incident=1");
+#elif FATAL_ENVIRONMENT==19
+ death_fixture((void*)20,(void*)0x1234,(void*)0x5678);
+ assert(!nexus_invocations && assigned_hp==200);
+ puts("death_screen_incident=1");
+#elif FATAL_ENVIRONMENT==20
+ nexus_fixture((void*)70,(void*)0x5678);
+ assert(!nexus_invocations && assigned_hp==200);
+ puts("manual_nexus_history=1");
+#elif FATAL_ENVIRONMENT==21
+ assigned_hp=0;hp_has_assignment=1; /* No hooked setter, notification or death UI. */
+ puts("direct_write_for_poll_fallback=1");
+#elif FATAL_ENVIRONMENT==22
+ nexus_fixture((void*)70,(void*)0x5678);
+ nexus_fixture((void*)70,(void*)0x5678);
+ next_stats_hp=0;
+ stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(!nexus_invocations && assigned_hp==0);
+ puts("manual_request_does_not_hide_later_death=1");
 #endif
  return;
 #endif

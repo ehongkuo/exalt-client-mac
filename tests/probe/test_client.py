@@ -66,6 +66,43 @@ class ClientInterventionTests(unittest.TestCase):
     self.assertNotIn('guard_environment_nexus',self.log)
     self.assertFalse(any(e['phase']==20 for e in self.events))
     self.assertEqual(self.live['death_pending'],'0')
+    self.assertFalse(any(e['phase']>=100 for e in self.events),'normal play keeps incident history in memory')
+ def test_incident_history_wraps_and_dumps_once_on_incoming_zero(self):
+  self.run_client('armed=1,potion=0,death=1',environment=17)
+  history=[e for e in self.events if 100<=e['phase']<199]
+  markers=[e for e in self.events if e['phase']==199]
+  self.assertEqual(len(history),64)
+  self.assertEqual(len(markers),1)
+  self.assertTrue(analyze.incident_summary(self.events)[0]['complete'])
+  self.assertEqual(markers[0]['value'],6)
+  self.assertEqual((history[-1]['phase'],history[-1]['hp'],history[-1]['update_source']),(106,0,2))
+  self.assertEqual([e['id'] for e in history],sorted(e['id'] for e in history))
+  self.assertTrue(all(e['ns']>0 for e in history))
+  self.assertIn('nexus_calls=0',self.output)
+ def test_incident_catches_notification_that_bypasses_hp_setter(self):
+  self.run_client('armed=1,potion=0,death=1',environment=18)
+  markers=[e for e in self.events if e['phase']==199]
+  self.assertEqual(len(markers),1)
+  self.assertEqual(markers[0]['value'],10)
+  notifications=[e for e in self.events if e['phase']==110]
+  self.assertEqual([e['hp'] for e in notifications],[200,200,200,0])
+  self.assertIn('nexus_calls=0',self.output)
+ def test_incident_catches_death_screen_without_a_setter_or_notification(self):
+  self.run_client('armed=1,potion=0,death=1',environment=19)
+  self.assertEqual([e['value'] for e in self.events if e['phase']==199],[13])
+  self.assertTrue(any(e['phase']==113 for e in self.events))
+ def test_manual_nexus_saves_history_at_positive_hp(self):
+  self.run_client('armed=1,potion=0,death=1',environment=20)
+  self.assertEqual([e['value'] for e in self.events if e['phase']==199],[7])
+  self.assertEqual([e['hp'] for e in self.events if e['phase']==107],[200])
+ def test_poll_fallback_captures_direct_unhooked_terminal_write(self):
+  self.run_client('armed=1,potion=0,death=1',environment=21)
+  self.assertEqual([e['value'] for e in self.events if e['phase']==199],[4])
+  self.assertEqual([e['hp'] for e in self.events if e['phase']==104],[0])
+ def test_manual_request_does_not_hide_later_death_in_same_scope(self):
+  self.run_client('armed=1,potion=0,death=1',environment=22)
+  self.assertEqual([e['value'] for e in self.events if e['phase']==199],[7,6])
+  self.assertTrue(all(e['complete'] for e in analyze.incident_summary(self.events)))
  def test_meter_limits_preserve_dry_run_disabled_and_missing_fields(self):
   for settings,no_context in (('armed=0,potion=0,death=1',False),('armed=1,potion=0,death=0',False),('armed=1,potion=0,death=1',True)):
    with self.subTest(settings=settings,no_context=no_context):
