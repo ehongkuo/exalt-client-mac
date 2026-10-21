@@ -103,3 +103,38 @@ All recorded benchmark workloads had zero queue drops. These use fake IL2CPP API
 not live-game latency or server measurements. Results and source hashes are retained locally in
 `build/death-investigation-2026-10-20/performance-installed/results.json`. The history adds a fixed
 8192 bytes; resident-process differences are too noisy to use as a memory-allocation measurement.
+
+## Second death: beach projectile capture, 18:41:44 Pacific
+
+The user reported a different test character dying on the beach. The recorded map was Realm of the
+Mad God. `guard-19822.tsv` confirms the new recorder was loaded, protection was armed/enabled, the
+terminal 64-record history is complete, and no hook queue drops or observed off-main calls occurred.
+The preserved snapshot SHA-256 is `9727a5330aad1526c068a6a9cf5430869a576f184f75e47cffde1f29874d531a`.
+Raw evidence and a compact decoded sequence are in ignored `build/death-investigation-second/`.
+
+| Time before terminal HP write | Observation |
+|---|---|
+| 369–202 ms | At HP 41, audited projectile calculations 6, 8, 8, 8, 8 accumulate pending 38; projected HP is 3. All five hit reports and notifications pass. |
+| 201.858 ms | Incoming stat setter `0x184c115` changes HP 41 → 42. Pending is 38 at setter return, then the current policy resets it to zero. |
+| 169.498 ms | Next audited 8-damage projectile raises pending to only 8 and predicts HP 34. It is reported without Nexus. |
+| 19.183 ms | A 6-damage projectile raises pending to 14 and predicts HP 28. It is also reported. |
+| 2.250 ms | Incoming stat setter changes HP 42 → 21; pending 14 is cleared again. |
+| 0 ms | Incoming death caller `0x1840e64` sets HP 21 → 0 through the deliberately excluded death-handler route. |
+
+Entry eligibility masks are 255: guard/map readiness, known map, validated controlled player,
+enabled intervention, outside Nexus and a policy bound to the player all pass. Calculator input,
+return value and local notification agree for the nonzero hits in this history. No request was made.
+This is not an unclassified local projectile route or a failed Nexus invocation in the retained interval.
+
+A compiled replay against the actual `fatal_policy.h` reproduces pending 38/projected 3, then
+pending 0/projected 42 after the update, then pending 8/projected 34 after the next hit. Retaining
+the 38 recent predicted damage would instead produce projected -4 on that next hit and request
+escape approximately 169 ms before the terminal handler. This is a counterfactual request, not
+proof of server acceptance or survival. The original boss death still lacks this detailed history.
+
+The snapshot proves loss of the pending prediction at the update. It does not identify which
+individual reports the server had processed when emitting HP 42, nor whether every HP difference
+was damage versus healing. Retaining predictions fixes this replay's missed request but can count
+already-applied damage when healing overlaps it. A correction must address both this replay and the
+previous stale-damage/healing regression; do not substitute unlimited damage accumulation or claim
+that an HP assignment acknowledges all prior hit reports. The installed tracing build is unchanged.
