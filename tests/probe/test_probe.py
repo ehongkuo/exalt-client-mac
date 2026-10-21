@@ -87,7 +87,7 @@ class ProbeTests(unittest.TestCase):
   self.assertTrue(all(e['flag0']==8 and e['value']==-1 and e['owner']==-1 for e in contexts))
   self.assertIn('damage_context_ready\tconditions=0\tbreath=0\tfrostbite=0',log)
  def test_incoming_identifiers_are_not_damage(self):
-  log=self.fixture();self.assertIn('hit_probe_ready\tv7',log)
+  log=self.fixture();self.assertIn('hit_probe_ready\tv8',log)
   events=analysis.read_events(log)
   reports=[e for e in events if e['phase']==1]
   notifications=[e for e in events if e['phase']==3]

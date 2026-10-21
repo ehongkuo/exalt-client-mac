@@ -286,7 +286,7 @@ static void burst(void *unused) {
 #elif FATAL_ENVIRONMENT==24
  for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  next_stats_hp=300;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- for(int i=0;i<3;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
+ for(int i=0;i<12;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
  for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(!nexus_invocations && assigned_hp==300);
  puts("healing_and_fresh_updates_retire_old_burst=1");
@@ -295,7 +295,7 @@ static void burst(void *unused) {
  for(int i=0;i<10;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(!nexus_invocations && assigned_hp==200);
- puts("omitted_hp_ticks_keep_heartbeat_and_retire_old_damage=1");
+ puts("omitted_hp_ticks_keep_heartbeat_without_retiring_damage=1");
 #elif FATAL_ENVIRONMENT==26
  next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  usleep(1600000);

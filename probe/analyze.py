@@ -135,15 +135,19 @@ def analyze(path,threshold=None):
         'after_sequence':e['tick_sequence'],'before_time':update_entries[e['correlation']]['server_time'],'after_time':e['server_time'],
         'before_hp':update_entries[e['correlation']]['hp'],'after_hp':e['hp']}
         for e in events if e['phase']==17 and e['correlation'] in update_entries]
-    fatal_counters={}
+    fatal_counters={};quiet_rebases=[]
     for line in log.splitlines():
         cells=line.split('\t')
+        if cells[0]=='guard_quiet_rebase':
+            fields={key:int(value) for key,value in (cell.split('=',1) for cell in cells[1:] if '=' in cell)
+                    if value.isdecimal() or (value.startswith('-') and value[1:].isdecimal())}
+            quiet_rebases.append(fields)
         if cells[0]=='fatal_summary':
             for cell in cells[1:]:
                 key,_,value=cell.partition('=')
                 if value.isdecimal():fatal_counters[key]=int(value)
     def signed64(value):return value-(1<<64) if value>=(1<<63) else value
-    fatal=dict(decisions=[{'event_id':e['id'],'ns':e['ns'],'hp':e['hp'],'damage':e['value'],
+    fatal=dict(quiet_rebases=quiet_rebases,decisions=[{'event_id':e['id'],'ns':e['ns'],'hp':e['hp'],'damage':e['value'],
             'retained_damage':e['projectile'],'projected_hp':signed64(e['update_context']),
             'reason':{1:'projected_lethal',2:'stale_updates',3:'ledger_capacity'}.get(e['flag3'],'legacy_or_unknown')} for e in events if e['phase']==20],
         request_results=[{'event_id':e['id'],'ns':e['ns'],'calculation_id':e['correlation'],'local_nexusing':bool(e['flag0']),

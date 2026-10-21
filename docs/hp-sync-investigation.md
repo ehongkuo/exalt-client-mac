@@ -1,7 +1,8 @@
 # Normal HP synchronization and intervention timing
 
 Status: native send/receive boundaries mapped; exact snapshot-to-hit coverage remains unverified.
-The synchronization probe is observation-only. No revised escape decision is implemented here.
+The synchronization probe remains observation-only. Policy v8 separately implements the practical
+quiet-period rebase in [Nexus integration](nexus-on-death.md); exact snapshot coverage remains unverified.
 
 ## Normal gameplay, without companion actions
 

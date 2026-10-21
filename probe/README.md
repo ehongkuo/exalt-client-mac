@@ -48,12 +48,13 @@ projected HP = current observed HP - audited damage since the last incoming HP a
 request Nexus when projected HP <= 0
 ```
 
-Each incoming authoritative HP assignment starts a fresh prediction window, including unchanged
-or higher HP (damage may be offset by healing). This restores the previously working client's
-baseline behavior and prevents old combat damage from causing full-health escapes. Hits between
-updates still accumulate across projectile, ground and area paths. An HP update is not a per-report
-acknowledgement, so late/in-flight report ordering remains a limitation. A positive update rearms a
-failed request; an already confirmed escape remains latched. See the [audit](../docs/damage-status-audit.md).
+Incoming HP assignments update the baseline while retaining unresolved damage. Net decreases
+retire estimates oldest-first; increases do not acknowledge hits. Individual estimates do not expire
+on a timer during combat. Version 8 can clear remaining damage after a healthy quiet interval and a
+new HP-bearing tick, with no intervening input. The 2–8 second adaptive settlement allowance is a
+timing assumption, not an acknowledgement or verified maximum latency. Omitted-HP ticks only
+refresh liveness. See [policy details and limitations](../docs/nexus-on-death.md).
+A positive update rearms a failed request; an already confirmed escape remains latched.
 
 ## Trace and analysis
 

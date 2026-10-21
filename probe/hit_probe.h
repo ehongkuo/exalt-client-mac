@@ -583,7 +583,7 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
     ProbeEvent e={0};uint64_t saved_context=probe_update_context;int saved_source=probe_update_source;
     int tracking=observe && fatal_sync(player);
     uint64_t snapshots=fatal_policy.snapshots;
-    if(tracking)fatal_tick(&fatal_policy,monotonic_ns());
+    uint64_t tick_entry_ns=monotonic_ns(),sequence_at_entry=fatal_policy.damage_sequence;
     if(observe){e=probe_snapshot(16,player,__builtin_return_address(0));e.update_context=e.id;e.update_source=1;
         probe_update_context=e.id;probe_update_source=1;probe_emit(e);}
 #ifdef EXALT_SYNC_TRACE
@@ -593,6 +593,7 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
 #ifdef EXALT_SYNC_TRACE
     if(sync_entry.id)sync_tick_return(self,sync_entry);
 #endif
+    int hp_assigned=snapshots!=fatal_policy.snapshots;
     /* A tick can omit an unchanged HP stat. Reconcile its current HP once at
      * completion, and count the tick heartbeat independently of HP changes. */
     if(tracking && fatal_sync(player) && snapshots==fatal_policy.snapshots){
@@ -600,6 +601,22 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
         int record_update=fatal_policy.pending>0 || fatal_policy.blocking;
         fatal_server_hp(&fatal_policy,hp,monotonic_ns());
         if(record_update)fatal_emit(28,player,e.id,hp,4,0); /* Tick omitted unchanged HP. */
+    }
+    if(tracking && fatal_sync(player)){
+        int hp=0,sequence=0;uint32_t server_time=0;
+        il2cpp_field_get_value(player,player_hp_field,&hp);
+        il2cpp_field_get_value(self,probe_tick_field,&sequence);
+        il2cpp_field_get_value(self,probe_time_field,&server_time);
+        if(fatal_server_tick(&fatal_policy,hp,tick_entry_ns,(uint32_t)sequence,server_time,
+                             sequence_at_entry,hp_assigned)){
+            note("guard_quiet_rebase\thp=%d\tretired=%lld\tquiet_ns=%llu\tallowance_ns=%llu\ttick=%d\tserver_value=%u\tassumed_settled=1\n",
+                 hp,(long long)fatal_policy.last_rebase_pending,
+                 (unsigned long long)(tick_entry_ns-fatal_policy.last_damage_ns),
+                 (unsigned long long)fatal_window_ns(&fatal_policy),sequence,server_time);
+#ifdef EXALT_CLIENT_FATAL
+            live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
+#endif
+        }
     }
     if(observe){ProbeEvent after=probe_snapshot(17,player,NULL);after.correlation=e.id;probe_emit(after);}
     probe_update_context=saved_context;probe_update_source=saved_source;
@@ -719,7 +736,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("fatal_policy\tversion=7\treconciliation=bounded_recent_hits\twindow_min_ns=400000000\twindow_max_ns=2000000000\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv7\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=8\treconciliation=quiet_period_rebase\twindow_min_ns=2000000000\twindow_max_ns=8000000000\thealthy_gap_max_ns=1000000000\thp_bearing_tick_required=1\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_SYNC_TRACE
     sync_install();
 #endif

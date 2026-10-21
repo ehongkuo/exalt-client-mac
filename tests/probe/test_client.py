@@ -51,7 +51,8 @@ class ClientInterventionTests(unittest.TestCase):
    self.output=result.stdout
    self.log=next(p.glob('guard-*.tsv')).read_text()
    self.events=analyze.read_events(self.log)
-   self.secondary_reports=analyze.analyze(next(p.glob('guard-*.tsv')))['fatal_intervention']['suppressed_secondary_reports']
+   self.analysis=analyze.analyze(next(p.glob('guard-*.tsv')))
+   self.secondary_reports=self.analysis['fatal_intervention']['suppressed_secondary_reports']
    self.assertFalse(list(p.glob('hit-flight-*.bin')),'client does not write diagnostic flight files')
    self.assertFalse(any(e['phase']<20 and e['phase']!=15 for e in self.events),'client records intervention and nonpositive-HP events')
    dump=p/'dump'
@@ -113,10 +114,23 @@ class ClientInterventionTests(unittest.TestCase):
  def test_healing_and_later_snapshots_do_not_keep_old_damage_forever(self):
   self.run_client('armed=1,potion=0,death=1',environment=24)
   self.assertIn('healing_and_fresh_updates_retire_old_burst=1',self.output)
+  self.assertIn('guard_quiet_rebase',self.log)
+  self.assertIn('assumed_settled=1',self.log)
+  rebases=self.analysis['fatal_intervention']['quiet_rebases']
+  self.assertEqual(len(rebases),1)
+  self.assertEqual((rebases[0]['hp'],rebases[0]['retired']),(300,150))
+  self.assertGreaterEqual(rebases[0]['quiet_ns'],rebases[0]['allowance_ns'])
   self.assertFalse(any(e['phase']==20 for e in self.events))
  def test_ticks_without_hp_assignment_keep_network_heartbeat_fresh(self):
   self.run_client('armed=1,potion=0,death=1',environment=25)
-  self.assertIn('omitted_hp_ticks_keep_heartbeat_and_retire_old_damage=1',self.output)
+  self.assertIn('omitted_hp_ticks_keep_heartbeat_without_retiring_damage=1',self.output)
+  self.assertFalse(self.analysis['fatal_intervention']['quiet_rebases'])
+  # The fixture enters Nexus before exit, clearing shared live state.
+  updates=self.analysis['fatal_intervention']['server_hp_updates']
+  self.assertEqual(len(updates),10)
+  self.assertTrue(all(e['retained_damage']==50 for e in updates))
+  transition=next(e for e in self.events if e['phase']==25 and e['flag0']==1)
+  self.assertEqual(transition['projectile'],100)
   self.assertFalse(any(e['phase']==20 for e in self.events))
  def test_stalled_update_escape_reason_is_explicit(self):
   self.run_client('armed=1,potion=0,death=1',environment=26)

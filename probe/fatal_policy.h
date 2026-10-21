@@ -5,23 +5,32 @@
 enum { FATAL_PASS, FATAL_REQUEST, FATAL_BLOCK, FATAL_LATE, FATAL_INVALID };
 enum { FATAL_REASON_NONE, FATAL_REASON_LETHAL, FATAL_REASON_STALE, FATAL_REASON_CAPACITY };
 #define FATAL_HIT_CAPACITY 128
-#define FATAL_MIN_WINDOW_NS 400000000ULL
-#define FATAL_MAX_WINDOW_NS 2000000000ULL
+#define FATAL_MIN_WINDOW_NS 2000000000ULL
+#define FATAL_MAX_WINDOW_NS 8000000000ULL
+#define FATAL_HEALTHY_GAP_NS 1000000000ULL
+#define FATAL_MIN_TICK_GAP_NS 20000000ULL
 typedef struct { uint64_t ns; int damage; } FatalHit;
 typedef struct {
  uintptr_t player,connection,map;
  int64_t pending,projected,overflow;
  int attempted,blocking,reason,last_hp,have_hp;
  uint64_t last_update_ns,cadence_anchor_ns,interval_ns,jitter_ns,snapshots;
+ uint64_t last_damage_ns,damage_sequence,last_tick_ns,healthy_since_ns;
+ uint64_t rebases,last_rebase_ns;
+ int64_t last_rebase_pending;
+ uint32_t tick_sequence,server_time;
+ unsigned have_tick;
  unsigned head,count;
  FatalHit hits[FATAL_HIT_CAPACITY];
 } FatalPolicy;
 static inline void fatal_reset(FatalPolicy *p,uintptr_t player,uintptr_t connection,uintptr_t map) {
  *p=(FatalPolicy){.player=player,.connection=connection,.map=map,.interval_ns=200000000ULL};
 }
-/* Timing is a bounded heuristic, NOT a per-hit server acknowledgement. */
+/* Quiet settlement allowance, NOT a proven network bound or acknowledgement.
+ * A full quiet interval AND healthy progressing ticks AND a new HP-bearing tick
+ * are required. Never expire individual hits during continuing combat. */
 static inline uint64_t fatal_window_ns(const FatalPolicy *p) {
- uint64_t window=2*p->interval_ns+4*p->jitter_ns;
+ uint64_t window=4*p->interval_ns+8*p->jitter_ns;
  return window<FATAL_MIN_WINDOW_NS?FATAL_MIN_WINDOW_NS:window>FATAL_MAX_WINDOW_NS?FATAL_MAX_WINDOW_NS:window;
 }
 static inline void fatal_tick(FatalPolicy *p,uint64_t now) {
@@ -41,7 +50,8 @@ static inline void fatal_pop(FatalPolicy *p) {
  p->head=(p->head+1)%FATAL_HIT_CAPACITY;--p->count;
 }
 static inline void fatal_server_hp(FatalPolicy *p,int hp,uint64_t now) {
- fatal_tick(p,now);++p->snapshots;
+ if(p->last_update_ns && now<p->last_update_ns)return;
+ ++p->snapshots;
  if(hp<=0 || p->blocking){
   p->pending=0;p->overflow=0;p->head=0;p->count=0;
  } else {
@@ -55,13 +65,38 @@ static inline void fatal_server_hp(FatalPolicy *p,int hp,uint64_t now) {
    else {hit->damage-=(int)debit;p->pending-=debit;debit=0;}
   }
   if(debit>0 && p->overflow){int64_t credit=debit<p->overflow?debit:p->overflow;p->overflow-=credit;p->pending-=credit;}
-  /* Age retirement requires a fresh HP observation. A local hit cannot erase
-   * estimates merely because a timer elapsed during a network stall. */
-  uint64_t window=fatal_window_ns(p);
-  while(p->count && now>=p->hits[p->head].ns && now-p->hits[p->head].ns>=window)fatal_pop(p);
  }
  p->last_hp=hp;p->have_hp=1;p->projected=(int64_t)hp-p->pending;
  if(hp>0 && !p->blocking){p->attempted=0;p->reason=FATAL_REASON_NONE;}
+}
+/* Called once after a completed authoritative tick, never from polling or a
+ * standalone stat setter. entry_ns prevents handler runtime from aging reports.
+ * sequence_at_entry prevents a reentrant new input being erased by this tick.
+ * Timestamps are used only for progress; their clock is not compared with ours. */
+static inline int fatal_server_tick(FatalPolicy *p,int hp,uint64_t entry_ns,
+                                   uint32_t tick_sequence,uint32_t server_time,
+                                   uint64_t sequence_at_entry,int hp_assigned) {
+ if(p->last_update_ns && entry_ns<p->last_update_ns){p->healthy_since_ns=0;return 0;}
+ if(p->have_tick){
+  uint32_t ticks=tick_sequence-p->tick_sequence,stamp=server_time-p->server_time;
+  if(!ticks || ticks>=0x80000000U || !stamp || stamp>=0x80000000U){
+   p->healthy_since_ns=0;return 0;
+  }
+  uint64_t gap=entry_ns-p->last_tick_ns;
+  if(gap<FATAL_MIN_TICK_GAP_NS || gap>FATAL_HEALTHY_GAP_NS || ticks!=1)
+   p->healthy_since_ns=entry_ns;
+ } else p->healthy_since_ns=entry_ns;
+ if(!p->healthy_since_ns)p->healthy_since_ns=entry_ns;
+ p->have_tick=1;p->tick_sequence=tick_sequence;p->server_time=server_time;
+ p->last_tick_ns=entry_ns;fatal_tick(p,entry_ns);
+ uint64_t window=fatal_window_ns(p);
+ if(p->blocking || hp<=0 || !p->pending || !hp_assigned || !p->last_damage_ns ||
+    sequence_at_entry!=p->damage_sequence || entry_ns<p->last_damage_ns ||
+    entry_ns-p->last_damage_ns<window || entry_ns-p->healthy_since_ns<window)return 0;
+ p->last_rebase_pending=p->pending;p->last_rebase_ns=entry_ns;++p->rebases;
+ p->pending=0;p->overflow=0;p->head=0;p->count=0;
+ p->last_hp=hp;p->have_hp=1;p->projected=hp;
+ return 1;
 }
 static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {
  if(p->blocking)return FATAL_BLOCK;
@@ -70,12 +105,15 @@ static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {
  if(!p->have_hp){p->have_hp=1;p->last_hp=hp;}
  if(!p->last_update_ns)fatal_tick(p,now);
  if(damage>0){
+  p->last_damage_ns=now;++p->damage_sequence;
   if(p->count<FATAL_HIT_CAPACITY){
    p->hits[(p->head+p->count)%FATAL_HIT_CAPACITY]=(FatalHit){.ns=now,.damage=damage};++p->count;
   } else p->overflow+=damage;
  }
  p->pending+=damage;p->projected=(int64_t)hp-p->pending;
- uint64_t stale=3*fatal_window_ns(p);if(stale<1500000000ULL)stale=1500000000ULL;
+ uint64_t cadence=2*p->interval_ns+4*p->jitter_ns;
+ if(cadence>2000000000ULL)cadence=2000000000ULL;
+ uint64_t stale=3*cadence;if(stale<1500000000ULL)stale=1500000000ULL;
  int reason=p->pending>0 && p->projected<=0?FATAL_REASON_LETHAL:
      damage>0 && p->overflow>0?FATAL_REASON_CAPACITY:
      damage>0 && now>=p->last_update_ns && now-p->last_update_ns>stale?FATAL_REASON_STALE:FATAL_REASON_NONE;

@@ -2,7 +2,11 @@
 #include <assert.h>
 #include <stdio.h>
 #define MS(x) ((uint64_t)(x)*1000000ULL+1)
-static void fresh(FatalPolicy *p,int hp) {fatal_reset(p,1,2,3);fatal_server_hp(p,hp,MS(0));}
+static void fresh(FatalPolicy *p,int hp) {fatal_reset(p,1,2,3);fatal_server_hp(p,hp,MS(0));(void)fatal_server_tick(p,hp,MS(0),1,1000,0,1);}
+static int tick(FatalPolicy *p,int hp,int ms,int has_hp) {
+ fatal_server_hp(p,hp,MS(ms));
+ return fatal_server_tick(p,hp,MS(ms),p->tick_sequence+1,p->server_time+200,p->damage_sequence,has_hp);
+}
 static void invariant(const FatalPolicy *p) {
  int64_t sum=p->overflow;
  assert(p->count<=FATAL_HIT_CAPACITY && p->head<FATAL_HIT_CAPACITY);
@@ -48,18 +52,74 @@ int main(void) {
  fatal_server_hp(&p,190,MS(120));assert(p.pending==80 && p.projected==110);
  invariant(&p);
 
- /* Prior healing regression: recent healing credits the baseline, while older
-  * combat estimates retire on subsequent fresh observations, never forever. */
+ /* Healing supplies a new baseline without individually expiring old hits.
+  * Only a quiet interval with healthy ticks and an HP stat can clear them. */
  fresh(&p,935);assert(fatal_damage(&p,935,703,MS(1))==FATAL_PASS);
- fatal_server_hp(&p,1154,MS(200));assert(fatal_damage(&p,1154,10,MS(220))==FATAL_PASS);
- const int healing[]={1169,1174,1189,1204,1206};
- for(unsigned i=0;i<5;++i)fatal_server_hp(&p,healing[i],MS(400+200*i));
- for(int i=0;i<3;++i)assert(fatal_damage(&p,1206,110,MS(1220+i))==FATAL_PASS);
+ for(int ms=200;ms<=2000;ms+=200){assert(!tick(&p,1206,ms,1));assert(p.pending==703);}
+ assert(tick(&p,1206,2200,1));assert(!p.pending && p.projected==1206 && p.rebases==1);
+ for(int i=0;i<3;++i)assert(fatal_damage(&p,1206,110,MS(2220+i))==FATAL_PASS);
  assert(p.pending==330 && p.projected==876);
- for(int i=0;i<1000;++i){
-  uint64_t t=MS(1600+200*i);fatal_server_hp(&p,1206,t);
-  assert(fatal_damage(&p,1206,110,t+1)==FATAL_PASS);invariant(&p);
+
+ /* Continuous inputs never age out, even while healing masks every hit. */
+ fresh(&p,10000);
+ for(int ms=100;ms<=6100;ms+=200){
+  assert(fatal_damage(&p,10000,10,MS(ms))==FATAL_PASS);
+  assert(!tick(&p,10000,ms+100,1));
  }
+ assert(p.pending==310 && !p.rebases);invariant(&p);
+
+ /* A last-moment new input postpones the WHOLE quiet rebase. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(fatal_damage(&p,1000,1,MS(2099))==FATAL_PASS);
+ assert(!tick(&p,1000,2200,1) && p.pending==101);
+ for(int ms=2400;ms<=4000;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(tick(&p,1000,4200,1));
+
+ /* Unchanged-HP ticks keep liveness but are not new HP-bearing snapshots. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ for(int ms=200;ms<=3000;ms+=200)assert(!tick(&p,1000,ms,0));
+ assert(p.pending==100 && !p.rebases);
+ assert(tick(&p,1000,3200,1) && !p.pending);
+
+ /* A standalone setter after a quiet interval cannot stand in for a tick. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ fatal_server_hp(&p,1000,MS(10000));assert(p.pending==100 && !p.rebases);
+
+ /* A stall and compressed backlog require a fresh healthy interval. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ assert(!tick(&p,1000,4000,1));assert(!tick(&p,1000,4001,1));
+ for(int ms=4200;ms<=6000;ms+=200)assert(!tick(&p,1000,ms,1));
+ int settled=0;for(int ms=6200;ms<=10000 && !settled;ms+=200)settled=tick(&p,1000,ms,1);
+ assert(settled && !p.pending);
+
+ /* Duplicate, out-of-order and skipped tick identifiers cannot settle damage. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
+ assert(!fatal_server_tick(&p,1000,MS(2200),p.tick_sequence,p.server_time,p.damage_sequence,1));
+ assert(p.pending==100);
+ assert(!fatal_server_tick(&p,1000,MS(2400),p.tick_sequence-1,p.server_time-200,p.damage_sequence,1));
+ assert(!fatal_server_tick(&p,1000,MS(2600),p.tick_sequence+2,p.server_time+400,p.damage_sequence,1));
+ for(int ms=2800;ms<=4400;ms+=200)assert(!tick(&p,1000,ms,1));
+ settled=0;for(int ms=4600;ms<=10000 && !settled;ms+=200)settled=tick(&p,1000,ms,1);
+ assert(settled && !p.pending);
+
+ /* Handler reentrancy: a damage event during update processing survives it. */
+ fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ for(int ms=200;ms<=2000;ms+=200)assert(!tick(&p,1000,ms,1));
+ uint64_t sequence=p.damage_sequence;
+ assert(fatal_damage(&p,1000,10,MS(2200))==FATAL_PASS);
+ fatal_server_hp(&p,1000,MS(2201));
+ assert(!fatal_server_tick(&p,1000,MS(2200),p.tick_sequence+1,p.server_time+200,sequence,1));
+ assert(p.pending==110);
+
+ /* Protocol counters can wrap; backwards local clocks cannot rebase. */
+ fresh(&p,1000);p.tick_sequence=UINT32_MAX;p.server_time=UINT32_MAX-100;
+ assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
+ assert(!fatal_server_tick(&p,1000,MS(200),0,99,p.damage_sequence,1));
+ assert(p.tick_sequence==0 && p.server_time==99);
+ assert(!fatal_server_tick(&p,1000,MS(100),1,299,p.damage_sequence,1));
+ assert(p.pending==100);
 
  /* Continuous masked healing is inherently ambiguous. Keep its exposure bounded;
   * at low HP a conservative escape is expected, rather than inventing a heal. */
@@ -78,7 +138,7 @@ int main(void) {
  fresh(&p,1000);assert(fatal_damage(&p,1000,100,MS(1))==FATAL_PASS);
  assert(fatal_damage(&p,1000,1,MS(2000))==FATAL_REQUEST);
  assert(p.reason==FATAL_REASON_STALE && p.pending==101);
- fatal_server_hp(&p,1000,MS(3000));assert(p.pending==1 && p.projected==999);
+ fatal_server_hp(&p,1000,MS(3000));assert(p.pending==101 && p.projected==899);
 
  /* Buffer exhaustion requests escape and retains overflow as aggregate debt. */
  fresh(&p,100000);
@@ -98,9 +158,10 @@ int main(void) {
  fresh(&p,100000);
  const int gaps[]={200,200,350,40,1000,1200,200,700};uint64_t t=MS(0);
  for(int i=0;i<20000;++i){
-  t+=(uint64_t)gaps[i%8]*1000000ULL;fatal_server_hp(&p,100000-(i%7),t);
-  (void)fatal_damage(&p,100000-(i%7),3,t+1);invariant(&p);
+  t+=(uint64_t)gaps[i%8]*1000000ULL;fatal_server_hp(&p,100000-3*i,t);
+  (void)fatal_server_tick(&p,100000-3*i,t,p.tick_sequence+1,p.server_time+200,p.damage_sequence,1);
+  (void)fatal_damage(&p,100000-3*i,3,t+1);invariant(&p);
  }
  uint64_t last=p.last_update_ns;fatal_tick(&p,last-1);assert(p.last_update_ns==last);
- printf("Fatal policy: beach replay, healing recovery, delayed/jittered updates, stalls, fixed capacity, failure/latch and overflow passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
+ printf("Fatal policy: beach replay, quiet settlement, healing, ongoing damage, omitted HP, stalls/backlog, identifier ordering/wrap, reentrancy, capacity and latch passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
 }

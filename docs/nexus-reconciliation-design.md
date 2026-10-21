@@ -1,6 +1,8 @@
 # Proposed Nexus reconciliation design
 
-Review proposal, not an implemented or protocol-validated protection guarantee.
+Strict-model reference proposal, not a protocol-validated protection guarantee. Policy v8 implements
+a practical quiet-period rebase separately; it retains net-debit inference and does not implement
+the exact whole-event candidate frontier below. See [current policy](nexus-on-death.md).
 
 Objective: authorize each damaging input only if every still-plausible history leaves the character alive after it. Otherwise invoke Nexus before forwarding that input. This is the latest safe decision given the available observations and model, not necessarily the true last survivable hit.
 

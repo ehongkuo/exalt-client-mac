@@ -4,19 +4,39 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
-Policy version 7 retains recent projectile, ground and area damage across HP updates in a fixed
-128-entry ledger. Observed HP decreases retire estimates oldest-first; HP increases supply a higher
-baseline without discarding recent hits or counting healing twice. Older estimates retire only with
-a fresh server observation beyond an adaptive 400–2000 ms window. The window starts at 400 ms and
-tracks twice the smoothed update interval plus four times observed jitter. Ticks omitting an unchanged
-HP stat still advance the heartbeat and reconcile once at completion.
+Policy version 8 retains projectile, ground and area damage in the same fixed 128-entry ledger.
+Observed HP decreases still retire estimates oldest-first by their net amount; this is an inference,
+not identification of individual hits. HP increases supply a higher baseline without discarding
+pending hits or adding a separate estimated healing credit. The strict whole-event/history model
+in [the design proposal](nexus-reconciliation-design.md) is not implemented or assumed proven.
 
-This is a timing heuristic, not a verified hit acknowledgement. It can retire damage too soon when
-processing delay exceeds the window despite regular updates, or retain already-applied damage when
-healing masks it. Conservative early escapes remain possible. A positive hit requests Nexus if updates
-have stalled longer than max(1500 ms, three retention windows), or the 128-entry ledger fills. Zero
-damage alone does not trigger these two failsafes. Logs distinguish projected-lethal (reason 1), stale
-updates (2), and ledger capacity (3). There is no fixed percentage-HP escape threshold.
+Individual hits no longer expire by age. A quiet rebase clears the remaining ledger only after:
+
+- No positive predicted damage inputs for the settlement allowance.
+- A continuous interval of progressing tick IDs and server-origin timing values for that allowance.
+- A completed tick actually assigns the controlled player's HP, including a same-value assignment.
+- No new damage input occurs inside that tick handler and no escape is already latched.
+
+The allowance is max(2 seconds, four smoothed tick intervals plus eight observed jitter values),
+capped at 8 seconds. These are explicit candidate policy parameters, not a measured upper bound on
+server processing or network delay. Receive gaps over 1 second, bunched ticks under 20 ms, or skipped
+IDs restart the healthy interval. Duplicate/reversed tick IDs or timing values cannot qualify and
+invalidate the interval. Counters support UInt32 wrap. A tick omitting unchanged HP updates liveness
+but cannot itself rebase. A standalone stat setter and elapsed local time also cannot rebase.
+
+The rebase condition assumes earlier reports have settled during healthy, quiet communication. It
+is not a server acknowledgement. A long-delayed stream that still appears healthy can violate that
+assumption. During continuous damage with healing, estimates can remain conservative and trigger an
+early escape; quiet rebasing needs a new HP-bearing tick to recover. This change does not establish
+coverage for untracked HP losses or equality between local and server damage calculations.
+
+A positive hit still requests Nexus when projected HP is nonpositive, updates are stale, or the
+ledger fills. Staleness uses the prior cadence-based rule (at least 1.5 seconds, at most 6 seconds),
+independently of the new settlement allowance. Only validated progressing completed ticks refresh
+that heartbeat. Zero damage does not restart the quiet timer or trigger the stale/capacity failsafes.
+Logs distinguish projected-lethal (reason 1), stale updates (2), and capacity (3). There is no fixed
+percentage-HP escape threshold. Each actual rebase writes one `guard_quiet_rebase` record containing
+retired damage, quiet duration, allowance, tick ID and `assumed_settled=1`; the analyzer includes it.
 
 Suppression starts only after local Nexusing is confirmed; an already-started escape survives settings
 changes and HP updates. Dry run never invokes Nexus or suppresses damage. See the
