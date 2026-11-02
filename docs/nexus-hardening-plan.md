@@ -30,7 +30,7 @@ leave damage pending (D), never retire too much.
    to quantify C outside condition changes.
 4. Take a probe capture to decode the condition bits for Poison, Bleeding, Sick, Armored,
    Armor Broken, Exposed, Curse and Invulnerable. Check whether a bullet-carried effect changes the
-   recorded condition mask before the next server update. Phase 4 depends on this.
+   recorded condition mask before the next server update. Phase 3 depends on this.
 
 ### Phase 0 status
 
@@ -74,15 +74,7 @@ the hit's notification and the next incoming HP assignment. A change at or befor
 tick that carries the effect indicates local application; a change only with a server update
 indicates server control.
 
-## Phase 1: safety reserve (A, B, C)
-
-- Request Nexus when projected HP falls to the reserve or below, not 0 or below.
-- Add the reserve as a saved setting sent to the guard, with Off available.
-- Start with a fixed percentage of max HP (max HP is already read). Later versions may derive it
-  from the Phase 0 mismatch data.
-- Cost: earlier escapes, measured by replay. Open decision: the default reserve size.
-
-## Phase 2: unexplained-drop detection (B)
+## Phase 1: unexplained-drop detection (B)
 
 - Retire hits on an HP decrease only when the decrease matches a sum of the oldest pending hits,
   within a small regeneration tolerance taken from recent per-update HP increases.
@@ -91,17 +83,17 @@ indicates server control.
 - Needs no condition decoding, so it also covers future DoTs, scripted damage and hazards.
 - Check by replay that false escapes during heavy combat with healing do not rise materially.
 
-## Phase 3: late-arrival protection (A)
+## Phase 2: late-arrival protection (A)
 
-1. Risk-scaled rebase: rebase after 800 ms only if clearing pending damage would not bring
-   projected HP near the reserve. Otherwise require a longer quiet interval, for example 1.6 s.
+1. Risk-scaled rebase: rebase after 800 ms only if clearing pending damage would leave projected HP
+   well clear of zero. Otherwise require a longer quiet interval, for example 1.6 s.
 2. Probation after a rebase: hold the cleared amount for about 2 s. An unexplained decrease in that
    period is attributed to the cleared amount, not to new hits. Log it and lengthen the session's
    quiet interval, capped at 2 s. This also produces evidence on whether 800 ms is sufficient.
 3. Research in parallel: look for an incoming message that identifies an applied hit. A keyed
    acknowledgement would replace the timing assumption, with items 1 and 2 kept as fallbacks.
 
-## Phase 4: condition awareness (B, C)
+## Phase 3: condition awareness (B, C)
 
 Requires the Phase 0 capture.
 
@@ -114,7 +106,7 @@ Requires the Phase 0 capture.
 - If bullet-carried effects prove not to be applied locally first, apply the same worst-case
   projection briefly after a hit from an effect-carrying bullet.
 
-## Phase 5: fewer false escapes (D)
+## Phase 4: fewer false escapes (D)
 
 - Credit the guard's own potions: it knows when it drank and the amount. Add the potion amount back
   to the matching decrease, except near max HP where the heal may have been capped.
@@ -129,6 +121,22 @@ Requires the Phase 0 capture.
 4. The live [beach stress tests](beach-stress-tests.md).
 5. Update [Nexus on death](nexus-on-death.md) and the README.
 
-Order: 0, 1, 2, 3; then 4 after the condition capture, and 5 when convenient. Phases 1–3 change only
-the prediction policy and are easy to revert. Phase 4 is the only one that adds production
+Order: 0, 1, 2; then 3 after the condition capture, and 4 when convenient. Phases 1–2 change only
+the prediction policy and are easy to revert. Phase 3 is the only one that adds production
 game-memory reads.
+
+## Deferred fallback: safety reserve (A, B, C)
+
+The goal is to make the three prediction assumptions hold, not to buffer against them: every HP
+loss is tracked (B), server damage equals the local calculation (C), and settlement fits the quiet
+allowance (A). A reserve, escaping when projected HP falls to a margin rather than to zero, is
+deferred until that work is done.
+
+Revisit it if, after Phases 1–3, captures and replay still show HP losses the model cannot explain,
+damage mismatches that cannot be predicted, or settlement later than the allowance, at a rate that
+makes a missed escape an unacceptable risk.
+
+A complete implementation exists on branch `feat/nexus-safety-reserve` (closed PR #13): a saved
+`reserve=N` setting (0–25% of max HP), live protocol version 7, reason 4, and
+`replay_policy.py --reserve`. Its replay of the 5 passive captures (all at 225 max HP) found no
+requests without a death at 5% (11 HP) and one at 10% (22 HP), on the closest 22 HP margin.
