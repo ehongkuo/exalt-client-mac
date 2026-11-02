@@ -81,3 +81,7 @@ setter routes gets the same hatch. A distinct local frostbite/suffocation calcul
 not yet been located, so source-specific routing remains unverified. This is a coverage limit, not a
 reason to restore meter-limit escapes or received-HP escape attempts. See the
 [client-side boundary audit](damage-status-audit.md#client-side-boundary-audit).
+
+## Planned hardening
+
+Known gaps and the proposed fixes are tracked in the [hardening plan](nexus-hardening-plan.md).
