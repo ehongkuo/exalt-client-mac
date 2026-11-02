@@ -134,12 +134,13 @@ def inspect_log(text, expected_sha=None):
             item = pending.pop()
             if -delta > item['damage'] or e['hp'] <= 0:
                 uncertain_prior_reports = True
-                unresolved.append(dict(**item, reason='excess_or_terminal_hp_loss', observation_ended_ns=e['ns']))
+                unresolved.append(dict(**item, reason='excess_or_terminal_hp_loss', observation_ended_ns=e['ns'],
+                    net_hp_loss=-delta, terminal=e['hp'] <= 0))
                 continue
             quality = ('isolated_exact' if -delta == item['damage'] and not item['healing_observed']
                        else 'isolated_healing_compatible')
             samples.append(dict(**item, hp_assignment_id=e['id'], hp_before=before['hp'], hp_after=e['hp'],
-                net_hp_loss=-delta, quality=quality, visibility_ms=(e['ns'] - item['start_ns']) / 1e6,
+                net_hp_loss=-delta, damage_residual=-delta-item['damage'], quality=quality, visibility_ms=(e['ns'] - item['start_ns']) / 1e6,
                 report_handoff_ms=(item['report_ns'] - item['start_ns']) / 1e6,
                 confirmed_acknowledgement=False, prior_unresolved_reports=uncertain_prior_reports))
     if events:
@@ -202,11 +203,22 @@ def scan(paths, expected_sha=None):
     quarantined = sum(s['prior_unresolved_reports'] for s in samples)
     fifo = [item['visibility_ms'] for r in runs for item in r.get('fifo_hypothesis', [])]
     unresolved = sum(len(r['unresolved']) for r in runs)
+    # Server HP loss minus local damage. Isolated matches can only be <= 0 (healing);
+    # a positive excess on an isolated report is evidence of server damage above the
+    # local calculation, or of an untracked loss in the same update.
+    residuals = Counter(s['damage_residual'] for s in samples if not s['prior_unresolved_reports'])
+    excess = [u['net_hp_loss'] - u['damage'] for r in runs for u in r['unresolved']
+              if u['reason'] == 'excess_or_terminal_hp_loss' and not u['terminal']]
+    mismatch = dict(isolated_residuals={str(k): v for k, v in sorted(residuals.items())},
+                    isolated_exact_fraction=residuals[0] / sum(residuals.values()) if residuals else None,
+                    excess_losses=len(excess), max_excess=max(excess, default=None),
+                    meaning='Negative residuals are compatible with healing. Excess losses cannot separate '
+                            'server-side damage from an untracked loss in the same update.')
     return dict(schema=1, expected_game_sha256=expected_sha, runs=runs, duplicate_copies_excluded=duplicates,
         isolated_exact=percentiles(exact), isolated_healing_compatible=percentiles(compatible),
         positive_reports=sum(r['positive_reports'] for r in runs),
         damage_runs=sum(r['eligible'] and r['positive_reports']>0 for r in runs),
-        unresolved_reports=unresolved, quarantined_candidates=quarantined, fifo_hypothesis=percentiles(fifo), usable_runs=sum(r['eligible'] for r in runs),
+        unresolved_reports=unresolved, damage_mismatch=mismatch, quarantined_candidates=quarantined, fifo_hypothesis=percentiles(fifo), usable_runs=sum(r['eligible'] for r in runs),
         reliable_p99_established=False, automatic_threshold_change=False,
         statistical_target=dict(quantile=.99, confidence=.95, minimum_independent_representative_samples=299,
             meaning='299 iid representative observations give a 95% chance that the sample maximum reaches the population p99. This is not a precise p99 estimate; correlated sessions and selective matching weaken it.'),
@@ -222,6 +234,9 @@ def markdown(result):
         row = result[key]
         values = [f"{row[k]:.1f} ms" if k in row else '—' for k in ['median_ms', 'observed_p90_ms', 'max_ms']]
         lines.append(f"| {label} | {row['count']} | {' | '.join(values)} |")
+    m = result['damage_mismatch']
+    lines += ['', f"Damage mismatch (server HP loss minus local damage), isolated reports: {m['isolated_residuals'] or 'none'}; "
+              f"excess non-terminal losses: {m['excess_losses']} (max {m['max_excess']}). {m['meaning']}"]
     lines += ['', f"Unresolved reports: {result['unresolved_reports']}; later candidates quarantined because prior reports are unresolved: {result['quarantined_candidates']}. Neither group establishes latency.", '',
         '**A reliable population p99 is not established. No production timing was changed.**', '', result['limitation'], '',
         result['statistical_target']['meaning'], '', '## Run eligibility', '']
@@ -242,7 +257,7 @@ def main():
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(result, indent=2) + '\n')
     args.report.write_text(markdown(result))
-    print(json.dumps({k:result[k] for k in ['usable_runs', 'isolated_exact', 'isolated_healing_compatible', 'unresolved_reports', 'quarantined_candidates', 'fifo_hypothesis', 'reliable_p99_established']}, indent=2))
+    print(json.dumps({k:result[k] for k in ['usable_runs', 'isolated_exact', 'isolated_healing_compatible', 'unresolved_reports', 'damage_mismatch', 'quarantined_candidates', 'fifo_hypothesis', 'reliable_p99_established']}, indent=2))
 
 
 if __name__ == '__main__':

@@ -32,6 +32,48 @@ leave damage pending (D), never retire too much.
    Armor Broken, Exposed, Curse and Invulnerable. Check whether a bullet-carried effect changes the
    recorded condition mask before the next server update. Phase 4 depends on this.
 
+### Phase 0 status
+
+Items 1–3 are implemented:
+
+- `tests/probe/fatal_policy_tests.c` pins the v8 outcomes for A–F.
+- `probe/replay_policy.py` replays captures through `probe/policy_replay.c`, compiled against one or
+  more policy headers, and reports each scope as `escape_before_death`, `missed_death`,
+  `request_without_death` or `quiet`, with minimum projected HP and rebase counts. Compare a
+  candidate with `--policy probe/fatal_policy.h --policy CANDIDATE.h`. Outcomes are ground truth only
+  for passive captures; only probe and sync-capture builds record the needed events.
+- `probe/analyze_latency.py` reports `damage_mismatch`: server HP loss minus local damage for
+  isolated reports, and non-terminal excess losses.
+
+First results, 2 November 2026: 8 local captures contain replayable events (5 passive). Policy v8
+produced no requests or deaths in them; the closest projected margin was 22 HP. Isolated residuals
+were 0 three times and -1 once. One isolated 23-damage report in `guard-31242.tsv` was followed by
+a 53 HP loss in one update: 30 HP not explained by the local calculation, from server-side damage
+or an untracked loss. A single case; it is an example of C or B, not a rate.
+
+```sh
+python3 probe/replay_policy.py --input build --input "$HOME/Library/Application Support/Exalt Client Mac/logs" \
+  --json build/policy-replay/v8.json
+```
+
+### Condition capture (item 4)
+
+No code change is needed: the diagnostic records the condition-mask words (phase 29, `flag2=1`) at
+each damage notification, each HP assignment, and on any change during polling.
+
+1. `sh probe/build-probe.sh`, then open `build/damage-diagnostic/Start Hit Diagnostic.command`
+   (observation only). Use a disposable character; enter Nexus and wait for readiness.
+2. For each effect, start at full HP, take one hit from an enemy known to inflict it, step away until
+   the condition ends, then take one plain hit for comparison. Note the effect and approximate time.
+3. Cover bullet-carried debuffs (Armor Broken, Exposed, Curse, Sick, Bleeding, Poison) and
+   self/ally buffs (Armored, Invulnerable, a defense buff), including a buff expiring during combat.
+4. Manually Nexus, wait five seconds and quit normally to bundle the session.
+
+Analysis: map each effect to the mask bit that changes, and compare when the bit changes relative to
+the hit's notification and the next incoming HP assignment. A change at or before the next server
+tick that carries the effect indicates local application; a change only with a server update
+indicates server control.
+
 ## Phase 1: safety reserve (A, B, C)
 
 - Request Nexus when projected HP falls to the reserve or below, not 0 or below.

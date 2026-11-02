@@ -107,6 +107,15 @@ class LatencyTests(unittest.TestCase):
     def test_build_mismatch_is_not_pooled(self):
         self.assertFalse(latency.inspect_log(log([]), expected_sha='different-build')['eligible'])
 
+    def test_damage_mismatch_reports_residuals_and_excess(self):
+        with tempfile.TemporaryDirectory() as d:
+            # Exact, healing-compatible (-1), then a 30-damage report followed by a 45 loss.
+            Path(d, 'guard-1.tsv').write_text(log(shot(1, 10)+hp(4, 210, 100, 70)+shot(6, 300)+hp(9, 500, 100, 71)))
+            Path(d, 'guard-2.tsv').write_text(log(shot(1, 10)+hp(4, 210, 100, 55)).replace('timing\t1', 'timing\t2'))
+            m = latency.scan([d])['damage_mismatch']
+        self.assertEqual(m['isolated_residuals'], {'-1': 1, '0': 1})
+        self.assertEqual((m['isolated_exact_fraction'], m['excess_losses'], m['max_excess']), (.5, 1, 15))
+
     def test_small_sample_p99_is_not_presented_as_established(self):
         summary = latency.percentiles([100,200,600])
         self.assertEqual(summary['observed_p99_ms'], 600)

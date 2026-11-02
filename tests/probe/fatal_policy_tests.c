@@ -171,5 +171,42 @@ int main(void) {
   (void)fatal_damage(&p,100000-3*i,3,t+1);invariant(&p);
  }
  uint64_t last=p.last_update_ns;fatal_tick(&p,last-1);assert(p.last_update_ns==last);
- printf("Fatal policy: beach replay, quiet settlement, healing, ongoing damage, omitted HP, stalls/backlog, identifier ordering/wrap, reentrancy, capacity and latch passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
+
+ /* Known gaps from docs/nexus-hardening-plan.md. These pin CURRENT v8 outcomes,
+  * including the two missed escapes; a fix must update the matching assertion. */
+ /* A: a hit settled later than 800 ms during healthy ticks is forgotten. Server
+  * truth 400-150-200-100=-50, yet neither later hit requests Nexus. */
+ fresh(&p,400);for(int ms=200;ms<=400;ms+=200)assert(!tick(&p,400,ms,1));
+ assert(fatal_damage(&p,400,150,MS(400))==FATAL_PASS);
+ for(int ms=600;ms<=1000;ms+=200)assert(!tick(&p,400,ms,1));
+ assert(tick(&p,400,1200,1) && !p.pending && p.last_rebase_pending==150);
+ assert(fatal_damage(&p,400,200,MS(1300))==FATAL_PASS);
+ assert(fatal_damage(&p,400,100,MS(1350))==FATAL_PASS && p.projected==100);
+
+ /* B: an untracked 100 HP loss retires the tracked 100-damage hit. Server truth
+  * 200-100-100=0 before the next hit, which still passes. */
+ fresh(&p,200);assert(fatal_damage(&p,200,100,MS(1))==FATAL_PASS);
+ assert(!tick(&p,100,100,1) && !p.pending && p.projected==100);
+ assert(fatal_damage(&p,100,60,MS(200))==FATAL_PASS && p.projected==40);
+
+ /* C: the policy charges only the local calculation. If the server applies 100
+  * for a hit computed as 40, the drop retires it and leaves no record of the gap. */
+ fresh(&p,100);assert(fatal_damage(&p,100,40,MS(1))==FATAL_PASS && p.projected==60);
+ assert(!tick(&p,1,200,1) && !p.pending && p.projected==1);
+
+ /* D: a same-update heal hides a hit; conservative early escape (real HP 70). */
+ fresh(&p,200);assert(fatal_damage(&p,200,80,MS(1))==FATAL_PASS);
+ assert(!tick(&p,220,300,1) && p.pending==80 && p.projected==140);
+ assert(fatal_damage(&p,220,150,MS(400))==FATAL_REQUEST && p.reason==FATAL_REASON_LETHAL);
+
+ /* E: any positive hit after a 2 s update stall escapes, regardless of HP. */
+ fresh(&p,500);assert(fatal_damage(&p,500,20,MS(2100))==FATAL_REQUEST);
+ assert(p.reason==FATAL_REASON_STALE && p.projected==480);
+
+ /* F: an overestimate remainder persists across ticks that omit unchanged HP. */
+ fresh(&p,300);assert(fatal_damage(&p,300,50,MS(1))==FATAL_PASS);
+ assert(!tick(&p,260,400,1) && p.pending==10);
+ for(int ms=600;ms<=3000;ms+=200)assert(!tick(&p,260,ms,0));
+ assert(p.pending==10 && !p.rebases);
+ printf("Fatal policy: beach replay, quiet settlement, healing, ongoing damage, omitted HP, stalls/backlog, identifier ordering/wrap, reentrancy, capacity, latch and known gaps A-F passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
 }
