@@ -9,8 +9,9 @@ Dry Run before it is armed, and is judged against recorded captures.
 What the guard can and cannot observe:
 
 1. The client detects hits (projectiles, ground and area damage) and reports each one to the server.
-   A report identifies the hit, not its amount: the server computes the damage itself. The guard's
-   number is a local prediction of that calculation.
+   A report identifies the hit, not its amount: the server computes the damage itself, from the same
+   base damage and defense and conditions. The guard reads the client's own calculation and treats it
+   as exact: isolated hits in captures matched to within 1 HP, which regeneration accounts for.
 2. Not every HP loss passes through a hook the guard sees. Captures show suffocation losses with no
    matching report, and some damage over time is driven by the server.
 3. The server owns HP. It applies the damage it computes, plus all healing (regeneration, potions,
@@ -37,7 +38,7 @@ The scenarios below were run against the real `probe/fatal_policy.h`.
 |---|---|---|---|
 | A | The server applies a hit later than the 800 ms quiet allowance while ticks stay healthy. The quiet rebase forgets the hit. | Missed escape | The remaining assumption; Phase 2 |
 | B | Untracked HP loss (DoT, scripted or server-only damage) is treated as a tracked hit and retires it. | Missed escape | Removed by Phase 1: amounts never retire hits |
-| C | Server damage exceeds the local calculation, mainly when a protective buff ends or a debuff arrives from an untracked source before the client learns of it. | Missed escape | Limited to hits still pending; Phase 3 |
+| C | Server damage exceeds the local calculation, mainly when a protective buff ends or a debuff arrives from an untracked source before the client learns of it. | Missed escape | Assumed exact; monitored (Phase 3) |
 | D | Healing in the same update as a hit hides part of the hit. | Early escape only | Removed by Phase 1 |
 | E | A positive hit after a stall of at least 1.5 s escapes regardless of HP. | Early escape only, intended | Unchanged |
 | F | Leftover pending damage persists while HP is unchanged, because updates that leave out HP cannot trigger a quiet rebase. | Early escape only | Removed by Phase 1 |
@@ -52,7 +53,8 @@ The scenarios below were run against the real `probe/fatal_policy.h`.
    to quantify C outside condition changes.
 4. Take a probe capture to decode the condition bits for Poison, Bleeding, Sick, Armored,
    Armor Broken, Exposed, Curse and Invulnerable. Check whether a bullet-carried effect changes the
-   recorded condition mask before the next server update. Phase 3 depends on this.
+   recorded condition mask before the next server update. Optional now: Phase 3 needs it only if
+   monitoring finds a mismatch.
 
 ### Phase 0 status
 
@@ -138,19 +140,15 @@ tolerance. It is superseded: the tolerance depends on healing, which cannot be p
 A shorter W on a stable connection reduces double counting; a longer W during lag protects against
 A. The second matters most.
 
-## Phase 3: damage amount while pending (C)
+## Phase 3: damage mismatch monitoring (C)
 
-Requires the Phase 0 condition capture. With Phase 1, a damage mismatch matters only while the hit
-is pending, but it still matters when the next hit decides an escape.
+Local damage is assumed to equal the server's. Phase 1 also limits any mismatch to hits that are
+still pending. No condition-aware projection is planned.
 
-- Read the condition mask in the production build (two array reads per calculation and update).
-  Today only the diagnostic build reads it.
-- While a protective buff (Armored, Invulnerable, defense buffs) is active, project each pending hit
-  at its worst case, its damage before defense, if Phase 0 confirms the calculator input is that
-  value. The game's applied damage is unchanged.
-- If bullet-carried effects prove not to be applied locally first, apply the same worst-case
-  projection briefly after a hit from an effect-carrying bullet.
-- Use `damage_mismatch` from captures to decide whether any further allowance is needed.
+- Keep `damage_mismatch` in `probe/analyze_latency.py` and run it on every new capture.
+- Revisit only if captures show isolated hits whose server decrease exceeds the local damage by more
+  than regeneration explains. The Phase 0 condition capture would then show whether a buff or debuff
+  desynchronized; worst-case projection while protective buffs are active is the fallback.
 
 ## Validation for every phase
 
@@ -160,10 +158,10 @@ is pending, but it still matters when the next hit decides an escape.
 4. The live [beach stress tests](beach-stress-tests.md).
 5. Update [Nexus on death](nexus-on-death.md) and the README.
 
-Order: 0, 1, 2; then 3 after the condition capture. Phases 1–2 change only the prediction policy and
-are easy to revert. Phase 3 is the only one that adds production game-memory reads.
+Order: 0, 1, 2; 3 runs alongside as captures arrive. Phases 1–2 change only the prediction policy and
+are easy to revert, and no phase adds production game-memory reads.
 
-Useful captures beyond the condition capture: a laggy session, combat with healers or pets nearby,
+Useful captures: a laggy session, combat with healers or pets nearby,
 damage over time and suffocation, and gear changes that alter max HP.
 
 ## Deferred fallback: safety reserve (A, C)
@@ -172,8 +170,8 @@ The goal is to make the prediction assumptions hold, not to buffer against them:
 the window (A) and server damage equals the local calculation (C). A reserve, escaping when projected
 HP falls to a margin rather than to zero, is deferred until that work is done.
 
-Revisit it if, after Phases 1–3, captures and replay still show settlement later than the window or
-damage mismatches that cannot be predicted, at a rate that makes a missed escape an unacceptable
+Revisit it if, after Phases 1–2, captures and replay still show settlement later than the window, or
+monitoring shows damage mismatches, at a rate that makes a missed escape an unacceptable
 risk.
 
 A complete implementation exists on branch `feat/nexus-safety-reserve` (closed PR #13): a saved
