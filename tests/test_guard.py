@@ -18,6 +18,10 @@ def live_control(path,request,armed,potion,ceiling,nexus):
   subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_control.c'),'-o',str(CONTROL)],check=True)
  args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)]
  if request=='join':args=args[:4]   # FILE join REQUEST NAME
+ # The guard creates the live file during startup; on a loaded machine that can
+ # lag the fixed delays the tests use, so wait for it instead of failing.
+ deadline=time.monotonic()+5
+ while time.monotonic()<deadline and not (Path(path).exists() and Path(path).stat().st_size>=4096):time.sleep(.01)
  subprocess.run([str(CONTROL),*args],check=True)
 
 def live_join(path,request,name):
@@ -54,6 +58,10 @@ class GuardTests(unittest.TestCase):
    if data_dir:(p/'data').mkdir();env['EXALT_GUARD_DIR']=str(p/'data')
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
    if during:
+    # Time the action from the guard's start (its live file), not from process launch,
+    # which can lag on a loaded machine and collapse the test's intended spacing.
+    deadline=time.monotonic()+5
+    while time.monotonic()<deadline and not (logdir/'guard-live.bin').exists():time.sleep(.01)
     time.sleep(during[0]); during[1](logdir/'guard-live.bin')
    out,_=game.communicate(timeout=12)
    self.assertEqual(game.returncode,0)
