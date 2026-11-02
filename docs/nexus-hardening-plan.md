@@ -1,24 +1,46 @@
 # Nexus on death hardening plan
 
-Status: proposed, 2 November 2026. No gameplay policy has changed. This plan addresses the
-remaining gaps in policy version 8 ([current policy](nexus-on-death.md)). Each phase is a separate PR,
-runs in Dry Run before it is armed, and is judged against recorded captures.
+Status: revised 2 November 2026. No gameplay policy has changed. This plan addresses the remaining
+gaps in policy version 8 ([current policy](nexus-on-death.md)). Each phase is a separate PR, runs in
+Dry Run before it is armed, and is judged against recorded captures.
+
+## Model
+
+What the guard can and cannot observe:
+
+1. The client detects hits (projectiles, ground and area damage) and reports each one to the server.
+   A report identifies the hit, not its amount: the server computes the damage itself. The guard's
+   number is a local prediction of that calculation.
+2. Not every HP loss passes through a hook the guard sees. Captures show suffocation losses with no
+   matching report, and some damage over time is driven by the server.
+3. The server owns HP. It applies the damage it computes, plus all healing (regeneration, potions,
+   pets, allies), and sends HP in periodic updates, about every 200 ms. An update carries only the
+   net result.
+4. Because HP is net, the guard cannot tell from an update which reported hits it already contains.
+   Splitting a decrease into specific hits requires guessing the healing in the same interval, and
+   healing varies too much in combat to guess safely.
+5. The round trip from reporting a hit to receiving an update that contains it varies. Measured
+   samples are few: 11 inferred visibilities from one session ranged 167–667 ms (median 301 ms), and
+   4 more had a 392 ms median ([calibration](damage-latency-calibration.md)). Mostly under 800 ms
+   is consistent with that, but the tail is unmeasured, especially under lag, and round trips are
+   quantized to the update interval.
+
+The plan therefore uses timing, not HP amounts, to decide when a hit has been applied. Server HP is
+the baseline and already accounts for every heal and every untracked loss; the guard adds only the
+hits the server cannot have applied yet.
 
 ## Issues addressed
 
 The scenarios below were run against the real `probe/fatal_policy.h`.
 
-| ID | Issue | Effect |
-|---|---|---|
-| A | The server applies a hit later than the 800 ms quiet allowance while ticks stay healthy. The quiet rebase forgets the hit. | Missed escape |
-| B | Untracked HP loss (DoT, scripted or server-only damage) is treated as a tracked hit and retires it. | Missed escape |
-| C | Server damage exceeds the local calculation, mainly when a protective buff ends or a debuff arrives from an untracked source before the client learns of it. Bullet-carried effects are likely applied locally first; unverified. | Missed escape |
-| D | Healing (potion, pet, ally, regeneration) arriving in the same update as a hit hides part of the hit. | Early escape only |
-| E | A positive hit after a stall of at least 1.5 s escapes regardless of HP. | Early escape only, intended |
-| F | Leftover pending damage persists while HP is unchanged, because updates that leave out HP cannot trigger a quiet rebase. | Early escape only |
-
-Regeneration and heals are never predicted. They raise the baseline once observed and can only
-leave damage pending (D), never retire too much.
+| ID | Issue | Effect | After this plan |
+|---|---|---|---|
+| A | The server applies a hit later than the 800 ms quiet allowance while ticks stay healthy. The quiet rebase forgets the hit. | Missed escape | The remaining assumption; Phase 2 |
+| B | Untracked HP loss (DoT, scripted or server-only damage) is treated as a tracked hit and retires it. | Missed escape | Removed by Phase 1: amounts never retire hits |
+| C | Server damage exceeds the local calculation, mainly when a protective buff ends or a debuff arrives from an untracked source before the client learns of it. | Missed escape | Limited to hits still pending; Phase 3 |
+| D | Healing in the same update as a hit hides part of the hit. | Early escape only | Removed by Phase 1 |
+| E | A positive hit after a stall of at least 1.5 s escapes regardless of HP. | Early escape only, intended | Unchanged |
+| F | Leftover pending damage persists while HP is unchanged, because updates that leave out HP cannot trigger a quiet rebase. | Early escape only | Removed by Phase 1 |
 
 ## Phase 0: measurement
 
@@ -74,44 +96,61 @@ the hit's notification and the next incoming HP assignment. A change at or befor
 tick that carries the effect indicates local application; a change only with a server update
 indicates server control.
 
-## Phase 1: unexplained-drop detection (B)
+## Phase 1: per-hit settlement by age (A, B, D, F)
 
-- Retire hits on an HP decrease only when the decrease matches a sum of the oldest pending hits,
-  within a small regeneration tolerance taken from recent per-update HP increases.
-- An unmatched decrease is treated as untracked damage: retire nothing, log it, and restart the
-  quiet timer.
-- Needs no condition decoding, so it also covers future DoTs, scripted damage and hazards.
-- Check by replay that false escapes during heavy combat with healing do not rise materially.
+Replace amount-based retirement and the global quiet rebase with one rule:
 
-## Phase 2: late-arrival protection (A)
+> projected HP = latest server HP − damage of hits that update cannot yet contain
 
-1. Risk-scaled rebase: rebase after 800 ms only if clearing pending damage would leave projected HP
-   well clear of zero. Otherwise require a longer quiet interval, for example 1.6 s.
-2. Probation after a rebase: hold the cleared amount for about 2 s. An unexplained decrease in that
-   period is attributed to the cleared amount, not to new hits. Log it and lengthen the session's
-   quiet interval, capped at 2 s. This also produces evidence on whether 800 ms is sufficient.
-3. Research in parallel: look for an incoming message that identifies an applied hit. A keyed
-   acknowledgement would replace the timing assumption, with items 1 and 2 kept as fallbacks.
+- A hit is pending until the latest healthy, progressing server update arrived at least the
+  settlement window W after the hit was reported. Then it is assumed contained in server HP and
+  retired. The comparison uses the update's arrival time, not the current time, so a stall never
+  retires hits against stale HP.
+- HP decreases and increases change only the baseline. They never retire or restore hits, so
+  healing, regeneration and untracked losses need no estimate.
+- In sustained combat old hits expire one at a time instead of waiting for 800 ms without damage.
+  A hit the server applied early is counted twice until its window ends: a bounded error toward
+  escaping.
+- Updates that omit HP mean HP is unchanged; check in captures before relying on that to age hits
+  (closes F).
+- Keep the stale escape (E), the capacity escape and the escape latch. W stays at 800 ms in this
+  phase, so the change can be judged alone.
+- Keep the v9 unexplained-decrease counter as a diagnostic only: an HP decrease larger than the
+  pending hits, or one shortly after hits were retired, is logged for Phase 2.
 
-## Phase 3: condition awareness (B, C)
+The v9 prototype (PR #15) retired hits whose sum matched a decrease within a learned regeneration
+tolerance. It is superseded: the tolerance depends on healing, which cannot be predicted in combat.
 
-Requires the Phase 0 capture.
+## Phase 2: learned settlement window (A)
+
+1. Measure settlement in server updates from clean samples only: a single pending hit, no HP
+   increase in the interval, and a decrease equal to the local damage. Skip anything ambiguous.
+2. Set W from recent samples: a high percentile plus one update interval, with a floor of two
+   update intervals and a ceiling of about 2 s. Use 800 ms until enough samples exist.
+3. Lengthen W immediately when update spacing grows or becomes irregular, without waiting for new
+   samples.
+4. Probation: an unexplained decrease shortly after hits were retired means W was too short. Count
+   it as a late sample and widen W.
+5. Research in parallel: find an incoming message that proves the server processed a report, either
+   a keyed acknowledgement or an echo of a later client message (the connection is ordered). Either
+   would replace the timing assumption, with W kept as a fallback.
+
+A shorter W on a stable connection reduces double counting; a longer W during lag protects against
+A. The second matters most.
+
+## Phase 3: damage amount while pending (C)
+
+Requires the Phase 0 condition capture. With Phase 1, a damage mismatch matters only while the hit
+is pending, but it still matters when the next hit decides an escape.
 
 - Read the condition mask in the production build (two array reads per calculation and update).
   Today only the diagnostic build reads it.
-- While a DoT condition is active, retire no hits on an HP decrease.
-- While a protective buff (Armored, Invulnerable, defense buffs) is active, project each hit at its
-  worst case, its damage before defense, if Phase 0 confirms the calculator input is that value. The
-  game's applied damage is unchanged.
+- While a protective buff (Armored, Invulnerable, defense buffs) is active, project each pending hit
+  at its worst case, its damage before defense, if Phase 0 confirms the calculator input is that
+  value. The game's applied damage is unchanged.
 - If bullet-carried effects prove not to be applied locally first, apply the same worst-case
   projection briefly after a hit from an effect-carrying bullet.
-
-## Phase 4: fewer false escapes (D)
-
-- Credit the guard's own potions: it knows when it drank and the amount. Add the potion amount back
-  to the matching decrease, except near max HP where the heal may have been capped.
-- Do not estimate regeneration to retire hits; an overestimate errs toward a missed escape.
-  Leftovers are cleared by the quiet rebase.
+- Use `damage_mismatch` from captures to decide whether any further allowance is needed.
 
 ## Validation for every phase
 
@@ -121,20 +160,21 @@ Requires the Phase 0 capture.
 4. The live [beach stress tests](beach-stress-tests.md).
 5. Update [Nexus on death](nexus-on-death.md) and the README.
 
-Order: 0, 1, 2; then 3 after the condition capture, and 4 when convenient. Phases 1–2 change only
-the prediction policy and are easy to revert. Phase 3 is the only one that adds production
-game-memory reads.
+Order: 0, 1, 2; then 3 after the condition capture. Phases 1–2 change only the prediction policy and
+are easy to revert. Phase 3 is the only one that adds production game-memory reads.
 
-## Deferred fallback: safety reserve (A, B, C)
+Useful captures beyond the condition capture: a laggy session, combat with healers or pets nearby,
+damage over time and suffocation, and gear changes that alter max HP.
 
-The goal is to make the three prediction assumptions hold, not to buffer against them: every HP
-loss is tracked (B), server damage equals the local calculation (C), and settlement fits the quiet
-allowance (A). A reserve, escaping when projected HP falls to a margin rather than to zero, is
-deferred until that work is done.
+## Deferred fallback: safety reserve (A, C)
 
-Revisit it if, after Phases 1–3, captures and replay still show HP losses the model cannot explain,
-damage mismatches that cannot be predicted, or settlement later than the allowance, at a rate that
-makes a missed escape an unacceptable risk.
+The goal is to make the prediction assumptions hold, not to buffer against them: settlement fits
+the window (A) and server damage equals the local calculation (C). A reserve, escaping when projected
+HP falls to a margin rather than to zero, is deferred until that work is done.
+
+Revisit it if, after Phases 1–3, captures and replay still show settlement later than the window or
+damage mismatches that cannot be predicted, at a rate that makes a missed escape an unacceptable
+risk.
 
 A complete implementation exists on branch `feat/nexus-safety-reserve` (closed PR #13): a saved
 `reserve=N` setting (0–25% of max HP), live protocol version 7, reason 4, and
