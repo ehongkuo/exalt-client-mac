@@ -60,6 +60,7 @@ python3 "$src/tests/probe/test_probe.py"
 python3 "$src/tests/probe/test_client.py"
 python3 "$src/tests/probe/test_incident.py"
 python3 "$src/tests/probe/test_latency.py"
+python3 "$src/tests/probe/test_replay.py"
 python3 "$src/tests/probe/test_shadow_ledger.py"
 # UI regression: compact, back, compact again and back must each show the right window and
 # never quit the app (it briefly shows its window, fed by a synthetic writer; never touches
