@@ -585,13 +585,14 @@ static void check_control(void) {
     last_control_seq = seq;
     if (!c.request || c.request == last_control_request) return;
     last_control_request = c.request;
-    int ok = c.death >= 0 && c.death <= 1 && guard_apply(&config, &guard, c.armed, c.potion, c.ceiling, c.nexus);
-    if (ok) config.death = c.death;
+    int ok = c.death >= 0 && c.death <= 1 && c.reserve >= 0 && c.reserve <= GUARD_RESERVE_MAX &&
+             guard_apply(&config, &guard, c.armed, c.potion, c.ceiling, c.nexus);
+    if (ok) { config.death = c.death; config.reserve = c.reserve; }
     live_data.control_request = c.request;
     live_data.control_result = ok ? CONTROL_APPLIED : CONTROL_REJECTED;
     live_data.potion = config.potion; live_data.ceiling = config.ceiling; live_data.nexus = config.nexus;
-    if (ok) note("guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\tsource=app\trequest=%u\n",
-                 config.armed, config.potion, config.ceiling, config.nexus, config.death, c.request);
+    if (ok) note("guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\treserve=%d\tsource=app\trequest=%u\n",
+                 config.armed, config.potion, config.ceiling, config.nexus, config.death, config.reserve, c.request);
     else note("guard_config_rejected\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\trequest=%u\n",
               c.armed, c.potion, c.ceiling, c.nexus, c.request);
 }
@@ -697,7 +698,7 @@ static void publish_live(const Record *r, uint64_t now) {
     if (now - gap_window_start >= NSEC_PER_SEC) { gap_window_start = now; gap_window_max = 0; }
     if (gap_us > gap_window_max) gap_window_max = gap_us;
     live_data.status = r->status;
-    live_data.armed = config.armed; live_data.death = config.death;
+    live_data.armed = config.armed; live_data.death = config.death; live_data.death_reserve = config.reserve;
     live_data.hp = r->player_hp; live_data.max_hp = r->player_max; live_data.hud_hp = r->hp;
     live_data.map_known = map_ok && !map_unknown_logged;
     live_data.in_nexus = in_nexus;
@@ -896,8 +897,8 @@ __attribute__((constructor)) static void start(void) {
 #endif
     fputs("status\tguard_loaded\t1000Hz\n", logfile);
     if (!parsed) fputs("status\tguard_config_invalid\n", logfile);
-    fprintf(logfile, "guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\tquickslots=sequential\n",
-            config.armed, config.potion, config.ceiling, config.nexus, config.death);
+    fprintf(logfile, "guard_config\tarmed=%d\tpotion=%d\tceiling=%d\tnexus=%d\tdeath=%d\treserve=%d\tquickslots=sequential\n",
+            config.armed, config.potion, config.ceiling, config.nexus, config.death, config.reserve);
     fflush(logfile);
     open_live(folder);
     struct timespec epoch; clock_gettime(CLOCK_REALTIME, &epoch);

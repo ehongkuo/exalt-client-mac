@@ -575,6 +575,9 @@ struct GuardPanel {
                 .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
             Text("Attempts to escape before lethal projectile, ground, area, or locally calculated damage. Requires Armed. May escape early when damage or update timing is uncertain. Meter limits alone do not trigger escape; environmental coverage remains unverified.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
+            thresholdRow("Reserve", value: $settings.draft.reserve, range: 0...GuardSettings.maxReserve, tint: coral,
+                         help: "Escape when predicted HP would fall to this share of max HP, not only at zero. Covers damage the prediction cannot see. Off: escape at zero.")
+                .disabled(!settings.draft.nexusOnDeath)
             if let s, s.nexusOnDeath || s.deathBlocking {
                 Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")
                     .font(.system(size: 11, weight: .medium))
@@ -599,7 +602,8 @@ struct GuardPanel {
             }
         }
     }
-    private func thresholdRow(_ title: String, value: Binding<Int>, tint: Color, help: String) -> some View {
+    private func thresholdRow(_ title: String, value: Binding<Int>, range: ClosedRange<Int> = 0...100, tint: Color,
+                              help: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.system(size: 12, weight: .medium))
@@ -608,7 +612,7 @@ struct GuardPanel {
                     .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(tint)
             }
             Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0.rounded()) }),
-                   in: 0...100, step: 1)
+                   in: Double(range.lowerBound)...Double(range.upperBound), step: 1)
                 .tint(tint)
             Text(help).font(.system(size: 10)).foregroundStyle(.secondary)
         }

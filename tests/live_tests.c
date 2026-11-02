@@ -15,7 +15,7 @@ static void *app(void *unused) {
     (void)unused;
     LiveControl *control = live_control(file);
     for (uint32_t i = 1; i <= 1000000; ++i) {
-        LiveControlData d = {.request = i, .armed = (int32_t)i, .potion = (int32_t)i, .ceiling = (int32_t)i, .nexus = (int32_t)i, .death = (int32_t)i};
+        LiveControlData d = {.request = i, .armed = (int32_t)i, .potion = (int32_t)i, .ceiling = (int32_t)i, .nexus = (int32_t)i, .death = (int32_t)i, .reserve = (int32_t)i};
         control_write(control, &d);
     }
     atomic_store(&control_done, 1);
@@ -65,7 +65,8 @@ int main(void) {
         LiveControlData c;
         if (!control_read(live_control(file), &c)) continue;
         assert(c.armed == (int32_t)c.request && c.potion == (int32_t)c.request &&
-               c.ceiling == (int32_t)c.request && c.nexus == (int32_t)c.request && c.death == (int32_t)c.request);
+               c.ceiling == (int32_t)c.request && c.nexus == (int32_t)c.request && c.death == (int32_t)c.request &&
+               c.reserve == (int32_t)c.request);
         assert(c.request >= last_request);
         last_request = c.request; ++control_reads;
     }

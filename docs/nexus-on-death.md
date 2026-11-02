@@ -34,8 +34,16 @@ A positive hit still requests Nexus when projected HP is nonpositive, updates ar
 ledger fills. Staleness uses the prior cadence-based rule (at least 1.5 seconds, at most 6 seconds),
 independently of the new settlement allowance. Only validated progressing completed ticks refresh
 that heartbeat. Zero damage does not restart the quiet timer or trigger the stale/capacity failsafes.
-Logs distinguish projected-lethal (reason 1), stale updates (2), and capacity (3). There is no fixed
-percentage-HP escape threshold. Each actual rebase writes one `guard_quiet_rebase` record containing
+Logs distinguish projected-lethal (reason 1), stale updates (2), capacity (3) and reserve (4).
+
+A **safety reserve** (default 5% of max HP, 0–25%, Off available) also requests Nexus when a damage
+input leaves projected HP at or below the reserve. It absorbs damage the ledger cannot see: untracked
+losses, server damage above the local calculation, and settlement later than the quiet allowance.
+It applies only while damage is pending, so low HP alone never escapes; it is not a percentage-HP
+trigger. The cost is earlier escapes when the prediction was right. A percentage scales with max HP:
+5% is 11 HP at 225 max HP and 61 HP at 1228. `guard_death_nexus` records the reserve in HP.
+
+Each actual rebase writes one `guard_quiet_rebase` record containing
 retired damage, quiet duration, allowance, tick ID and `assumed_settled=1`; the analyzer includes it.
 
 Suppression starts only after local Nexusing is confirmed; an already-started escape survives settings

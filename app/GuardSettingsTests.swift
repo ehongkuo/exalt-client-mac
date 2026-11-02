@@ -30,12 +30,18 @@ enum SettingsTests {
         check(death.text.hasSuffix(",death=1"), "death toggle reaches launcher")
         check(!s.nexusOnDeath, "old settings keep death off")
         check(GuardSettings(text: "death=2") == nil, "death must be boolean")
+        check(s.reserve == GuardSettings.defaultReserve, "old settings get the default reserve")
+        let reserve = GuardSettings(armed: true, potion: 0, ceiling: 0, nexusOnDeath: true, reserve: 0)
+        check(reserve.text == "armed=1,potion=0,ceiling=0,reserve=0,death=1", "reserve off reaches launcher")
+        check(GuardSettings(text: reserve.text) == reserve, "reserve round trip")
+        check(GuardSettings(text: "reserve=26") == nil, "reserve above maximum rejected")
 
         let migrated = GuardSettings(text: "armed=1,potion=20,ceiling=80,nexus=30,death=1")!
         check(migrated.armed && migrated.potion == 20 && migrated.ceiling == 80 && migrated.nexusOnDeath,
               "legacy Nexus cannot reject or alter remaining settings")
         check(migrated.text == "armed=1,potion=20,ceiling=80,death=1", "legacy Nexus dropped from saved format")
         var oldLive = LiveData(); oldLive.armed = 1; oldLive.potion = 20; oldLive.ceiling = 80; oldLive.nexus = 100
+        oldLive.death_reserve = Int32(GuardSettings.defaultReserve)
         check(GuardSnapshot(oldLive).settings.text == "armed=1,potion=20,ceiling=80", "legacy live slot ignored")
 
         // Saved file: written atomically, read back.
@@ -63,6 +69,8 @@ enum SettingsTests {
 
         check(feed.send(death, request: 8), "send death toggle")
         check(feed.peekControl(&seen) && seen.death == 1, "guard receives death toggle")
+        check(seen.reserve == Int32(GuardSettings.defaultReserve), "guard receives default reserve")
+        check(feed.send(reserve, request: 9) && feed.peekControl(&seen) && seen.reserve == 0, "guard receives reserve off")
         try! SettingsFile.save(death, to: file)
         check(SettingsFile.load(file) == death, "death toggle persisted")
 

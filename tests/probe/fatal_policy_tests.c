@@ -208,5 +208,23 @@ int main(void) {
  assert(!tick(&p,260,400,1) && p.pending==10);
  for(int ms=600;ms<=3000;ms+=200)assert(!tick(&p,260,ms,0));
  assert(p.pending==10 && !p.rebases);
- printf("Fatal policy: beach replay, quiet settlement, healing, ongoing damage, omitted HP, stalls/backlog, identifier ordering/wrap, reentrancy, capacity, latch and known gaps A-F passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
+
+ /* Safety reserve: a projection at or below it escapes, before zero. Gap B with a
+  * 50 HP reserve now escapes on the 60 hit (projected 40), and the reason is distinct. */
+ fresh(&p,200);p.reserve=50;assert(fatal_damage(&p,200,100,MS(1))==FATAL_PASS);
+ assert(!tick(&p,100,100,1) && !p.pending);
+ assert(fatal_damage(&p,100,60,MS(200))==FATAL_REQUEST && p.reason==FATAL_REASON_RESERVE);
+ /* The boundary is inclusive; above it passes, and lethal keeps its own reason. */
+ fresh(&p,200);p.reserve=50;assert(fatal_damage(&p,200,149,MS(1))==FATAL_PASS && p.projected==51);
+ fresh(&p,200);p.reserve=50;assert(fatal_damage(&p,200,150,MS(1))==FATAL_REQUEST && p.reason==FATAL_REASON_RESERVE);
+ fresh(&p,200);p.reserve=50;assert(fatal_damage(&p,200,200,MS(1))==FATAL_REQUEST && p.reason==FATAL_REASON_LETHAL);
+ /* Zero damage with nothing pending never requests, even below the reserve. */
+ fresh(&p,30);p.reserve=50;assert(fatal_damage(&p,30,0,MS(1))==FATAL_PASS);
+ /* Gap A: a 25% reserve (100 of 400) catches the forgotten late hit's follow-up. */
+ fresh(&p,400);p.reserve=100;for(int ms=200;ms<=400;ms+=200)assert(!tick(&p,400,ms,1));
+ assert(fatal_damage(&p,400,150,MS(400))==FATAL_PASS);
+ for(int ms=600;ms<=1200;ms+=200)(void)tick(&p,400,ms,1);
+ assert(!p.pending && fatal_damage(&p,400,200,MS(1300))==FATAL_PASS);
+ assert(fatal_damage(&p,400,100,MS(1350))==FATAL_REQUEST && p.reason==FATAL_REASON_RESERVE);
+ printf("Fatal policy: beach replay, quiet settlement, healing, ongoing damage, omitted HP, stalls/backlog, identifier ordering/wrap, reentrancy, capacity, latch, known gaps A-F and safety reserve passed; policy_bytes=%zu ledger_bytes=%zu\n",sizeof p,sizeof p.hits);
 }

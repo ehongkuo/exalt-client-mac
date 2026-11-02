@@ -28,13 +28,13 @@ class ProbeTests(unittest.TestCase):
    if crash:args.append('-DABRUPT_EXIT')
    if bad_bytes:args.append('-DBAD_REPORT_BYTES')
    subprocess.run(args,check=True)
-   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'probe.dylib');env['EXALT_GUARD']='armed=1,potion=50,nexus=25'
+   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'probe.dylib');env['EXALT_GUARD']='armed=1,potion=50,nexus=25,reserve=0'  # fixtures assert zero-threshold timing
    env['EXALT_VERIFY_ONE_HP']='1' if verify_hp else '0'
    env['EXALT_FATAL_INTERVENTION']='1' if fatal or unaudited else '0'
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
    time.sleep(1.15)
    if not crash:
-    guard.live_control(p/'guard-live.bin',1,1,50,80,25)
+    guard.live_control(p/'guard-live.bin',1,1,50,80,25,0,0)
     guard.live_join(p/'guard-live.bin',1,'Caller')
    out,_=game.communicate(timeout=10)
    self.assertEqual(game.returncode,23 if crash else 0)

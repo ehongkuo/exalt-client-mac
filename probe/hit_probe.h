@@ -335,15 +335,17 @@ static void fatal_record(void *player,int hp,int result) {
     Record r={.epoch=start_epoch+(double)(now-start_ns)/1e9,.action=GUARD_NEXUS_DEATH,
               .result=result,.slot=-1,.player_hp=hp,.player_max=max};
     record_event(&r);
-    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\treason=%d\twindow_ns=%llu\thits=%u\n",
-         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result,fatal_policy.reason,
+    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\treserve=%lld\tresult=%d\treason=%d\twindow_ns=%llu\thits=%u\n",
+         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,(long long)fatal_policy.reserve,result,fatal_policy.reason,
          (unsigned long long)fatal_window_ns(&fatal_policy),fatal_policy.count);
 }
 #endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
     if(!fatal_sync(player))return damage;
-    int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
+    int hp=0,max=0;il2cpp_field_get_value(player,player_hp_field,&hp);
     int prediction_hp=hp;
+    il2cpp_field_get_value(player,max_field,&max);
+    fatal_policy.reserve=max>0?(int64_t)max*config.reserve/100:0;
 #ifdef EXALT_HIT_PROBE
     if(fatal_verify_hp && hp>0)prediction_hp=1;
 #endif

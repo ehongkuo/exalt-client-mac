@@ -48,6 +48,11 @@ static void test_decide(void) {
     assert(guard_parse(&c, "armed=1,potion=50,ceiling=80,nexus=25,death=1") && c.death == 1);
     assert(!guard_parse(&c, "death=2") && c.death == 0);
     assert(guard_parse(&c, "armed=1,potion=50,nexus=25") && c.death == 0);
+    assert(c.reserve == GUARD_RESERVE_DEFAULT);
+    assert(guard_parse(&c, "armed=1,potion=50,reserve=0,death=1") && c.reserve == 0);
+    assert(guard_parse(&c, "reserve=25") && c.reserve == 25);
+    assert(!guard_parse(&c, "reserve=26") && c.reserve == GUARD_RESERVE_DEFAULT);
+    guard_parse(&c, "armed=1,potion=50,nexus=25");
 
     GuardState s = {0};
     assert(D(&s, &c, 1, 1000, 1000, 0, 1) == GUARD_NONE);

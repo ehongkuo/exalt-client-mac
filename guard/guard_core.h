@@ -7,11 +7,15 @@
 #include <string.h>
 #include <strings.h>
 
+#define GUARD_RESERVE_DEFAULT 5
+#define GUARD_RESERVE_MAX 25
+
 typedef struct {
     int armed;             /* 0 = dry run: decide and log, never call the game */
     int potion;            /* threshold in percent of max HP; 0 disables */
     int nexus;             /* legacy compatibility only, always zero */
     int death;             /* predictive projectile escape */
+    int reserve;           /* Nexus on death safety reserve, percent of max HP; 0 disables */
     int ceiling;           /* once drinking, keep going until HP is over this percent; 0 = stop above potion */
     uint64_t min_interval_ns;  /* never two potions closer than this */
     uint64_t heal_timeout_ns;  /* after a potion, wait this long for the heal to show before another */
@@ -29,7 +33,7 @@ typedef struct {
 } GuardState;
 
 static inline void guard_defaults(GuardConfig *c) {
-    *c = (GuardConfig){.armed = 0, .potion = 50, .nexus = 0, .ceiling = 0, .min_interval_ns = 250000000ULL,
+    *c = (GuardConfig){.armed = 0, .potion = 50, .nexus = 0, .ceiling = 0, .reserve = GUARD_RESERVE_DEFAULT, .min_interval_ns = 250000000ULL,
                         .heal_timeout_ns = 1000000000ULL,
                         .settle_ns = 500000000ULL};
 }
@@ -54,7 +58,7 @@ static inline int guard_valid(int armed, int potion, int ceiling, int nexus) {
     return 1;
 }
 
-/* Parses "armed=1,potion=50,death=1"; validates and discards legacy nexus values.
+/* Parses "armed=1,potion=50,reserve=5,death=1"; validates and discards legacy nexus values.
  * On any error the config is reset to defaults (dry run) and 0 is returned. */
 static inline int guard_parse(GuardConfig *c, const char *text) {
     guard_defaults(c);
@@ -73,6 +77,7 @@ static inline int guard_parse(GuardConfig *c, const char *text) {
         else if (key == 5 && !strncmp(text, "nexus", 5)) ok = guard_number(value, value_length, 0, 100, &parsed.nexus);
         else if (key == 7 && !strncmp(text, "ceiling", 7)) ok = guard_number(value, value_length, 0, 100, &parsed.ceiling);
         else if (key == 5 && !strncmp(text, "death", 5)) ok = guard_number(value, value_length, 0, 1, &parsed.death);
+        else if (key == 7 && !strncmp(text, "reserve", 7)) ok = guard_number(value, value_length, 0, GUARD_RESERVE_MAX, &parsed.reserve);
         if (!ok) goto invalid;
         text += length + (end ? 1 : 0);
     }

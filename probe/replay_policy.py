@@ -17,7 +17,7 @@ from analyze import read_events
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = Path(__file__).with_name('policy_replay.c')
 TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER = 0x196ed65, 0x183f7be
-REASONS = {0: 'none', 1: 'lethal', 2: 'stale', 3: 'capacity'}
+REASONS = {0: 'none', 1: 'lethal', 2: 'stale', 3: 'capacity', 4: 'reserve'}
 
 
 def build_driver(policy, out_dir):
@@ -41,9 +41,9 @@ def inputs(events):
             lines.append((scope, f"G {e['ns']}"))
         phase, ns = e['phase'], e['ns']
         if phase == 12 and e['flag0'] and e['flag1']:
-            lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
+            lines.append((scope, f"D {ns} {e['hp']} {e['value']} {e['max']}"))
         elif phase == 3 and e['callsite'] in (TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER):
-            lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
+            lines.append((scope, f"D {ns} {e['hp']} {e['value']} {e['max']}"))
         elif phase == 6 and e['update_source'] in (1, 2):
             lines.append((scope, f"H {ns} {e['hp']}"))
         elif phase == 16:
@@ -57,10 +57,10 @@ def inputs(events):
     return lines, deaths, scopes, ends
 
 
-def replay(binary, events):
+def replay(binary, events, reserve=0):
     lines, deaths, scopes, ends = inputs(events)
     feed = '\n'.join(line for _, line in lines) + '\n'
-    out = subprocess.run([str(binary)], input=feed, capture_output=True, text=True, check=True).stdout.splitlines()
+    out = subprocess.run([str(binary), str(reserve)], input=feed, capture_output=True, text=True, check=True).stdout.splitlines()
     # The driver prints exactly one row per D/H/R, in order; pair them back to scopes.
     owners = [scope for scope, line in lines if line[0] in 'DHR']
     if len(owners) != len(out):
@@ -113,9 +113,11 @@ def passive(text):
     return bool(ready) and all('fatal_intervention=0' in l for l in ready)
 
 
-def run(paths, policies, out_dir):
-    binaries = {str(p): build_driver(p, out_dir) for p in policies}
-    report = dict(schema=1, policies=list(binaries), captures=[],
+def run(paths, policies, out_dir, reserves=(0,)):
+    built = {str(p): build_driver(p, out_dir) for p in policies}
+    # One configuration per policy and reserve; keys read 'POLICY@N%'.
+    binaries = {f'{p}@{r}%': (b, r) for p, b in built.items() for r in reserves}
+    report = dict(schema=2, configurations=list(binaries), captures=[],
                   limitation='Deaths and survival come from passive captures only. A request without a death '
                              'is an early escape under that policy, unless the player was about to Nexus anyway. '
                              'Untracked damage and server-side calculation are not modeled.')
@@ -125,8 +127,8 @@ def run(paths, policies, out_dir):
             continue
         entry = dict(path=str(file.resolve()), sha256=hashlib.sha256(text.encode()).hexdigest(),
                      passive=passive(text), results={})
-        for policy, binary in binaries.items():
-            entry['results'][policy] = replay(binary, events)
+        for name, (binary, reserve) in binaries.items():
+            entry['results'][name] = replay(binary, events, reserve)
         report['captures'].append(entry)
     totals = {}
     for policy in binaries:
@@ -146,11 +148,13 @@ def main():
     parser.add_argument('--input', type=Path, action='append', required=True)
     parser.add_argument('--policy', type=Path, action='append',
                         help='Policy header to replay; repeat to compare. Default: probe/fatal_policy.h')
+    parser.add_argument('--reserve', type=int, action='append',
+                        help='Safety reserve in percent of max HP; repeat to compare. Default: 0')
     parser.add_argument('--json', type=Path)
     args = parser.parse_args()
     policies = args.policy or [ROOT / 'probe/fatal_policy.h']
     with tempfile.TemporaryDirectory() as out_dir:
-        report = run(args.input, policies, out_dir)
+        report = run(args.input, policies, out_dir, args.reserve or [0])
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, indent=2) + '\n')

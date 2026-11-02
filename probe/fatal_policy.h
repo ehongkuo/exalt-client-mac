@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <limits.h>
 enum { FATAL_PASS, FATAL_REQUEST, FATAL_BLOCK, FATAL_LATE, FATAL_INVALID };
-enum { FATAL_REASON_NONE, FATAL_REASON_LETHAL, FATAL_REASON_STALE, FATAL_REASON_CAPACITY };
+enum { FATAL_REASON_NONE, FATAL_REASON_LETHAL, FATAL_REASON_STALE, FATAL_REASON_CAPACITY, FATAL_REASON_RESERVE };
 #define FATAL_HIT_CAPACITY 128
 #define FATAL_QUIET_WINDOW_NS 800000000ULL
 #define FATAL_HEALTHY_GAP_NS 1000000000ULL
@@ -12,6 +12,8 @@ typedef struct { uint64_t ns; int damage; } FatalHit;
 typedef struct {
  uintptr_t player,connection,map;
  int64_t pending,projected,overflow;
+ /* Safety reserve in HP, set by the caller before each fatal_damage. 0 = off. */
+ int64_t reserve;
  int attempted,blocking,reason,last_hp,have_hp;
  uint64_t last_update_ns,cadence_anchor_ns,interval_ns,jitter_ns,snapshots;
  uint64_t last_damage_ns,damage_sequence,last_tick_ns,healthy_since_ns;
@@ -113,7 +115,10 @@ static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {
  uint64_t cadence=2*p->interval_ns+4*p->jitter_ns;
  if(cadence>2000000000ULL)cadence=2000000000ULL;
  uint64_t stale=3*cadence;if(stale<1500000000ULL)stale=1500000000ULL;
+ /* A projection at or below the reserve escapes too: it absorbs damage the
+  * ledger cannot see (untracked losses, server calculation, late settlement). */
  int reason=p->pending>0 && p->projected<=0?FATAL_REASON_LETHAL:
+     p->pending>0 && p->projected<=p->reserve?FATAL_REASON_RESERVE:
      damage>0 && p->overflow>0?FATAL_REASON_CAPACITY:
      damage>0 && now>=p->last_update_ns && now-p->last_update_ns>stale?FATAL_REASON_STALE:FATAL_REASON_NONE;
  if(!p->attempted && reason){p->attempted=1;p->reason=reason;return FATAL_REQUEST;}

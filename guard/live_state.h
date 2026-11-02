@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define LIVE_MAGIC 0x44475845u  /* "EXGD" */
-#define LIVE_VERSION 6u
+#define LIVE_VERSION 7u
 #define LIVE_SLOTS 8
 #define LIVE_EVENTS 16
 #define LIVE_FILE_SIZE 4096
@@ -70,12 +70,14 @@ typedef struct {
     char join_name[32];
     int32_t death, death_status, death_blocking; /* setting, hooks: 0 waiting / 1 ready / -1 refused, escape latch */
     int64_t death_pending, death_predicted;
+    int32_t death_reserve;                   /* safety reserve, percent of max HP; 0 = off */
 } LiveData;
 
 /* Settings sent by the app. request increases with every change; 0 means none yet. */
 typedef struct {
     uint32_t request;
     int32_t armed, potion, ceiling, nexus, death; /* legacy nexus values are discarded */
+    int32_t reserve;              /* Nexus on death safety reserve, percent of max HP */
 } LiveControlData;
 
 /* A Join click: the party member to join, by the plain name shown in the game. request

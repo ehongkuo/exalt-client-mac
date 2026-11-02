@@ -82,6 +82,13 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(r['outcome'], 'request_without_death')
         self.assertEqual(r['requests'][0]['reason'], 'stale')
 
+    def test_reserve_turns_untracked_loss_into_an_escape(self):
+        c = Capture(200)
+        c.tick(0, 200);c.hit(10, 100);c.tick(200, 100);c.hit(300, 60);c.tick(400, 0)
+        r = replay.replay(self.binary, read_events(c.text()), reserve=5)[0]  # 50 of 1000 max HP
+        self.assertEqual(r['outcome'], 'escape_before_death')
+        self.assertEqual(r['requests'][0]['reason'], 'reserve')
+
     def test_passive_and_duplicate_captures(self):
         c = Capture(100);c.hit(0, 10)
         self.assertTrue(replay.passive(c.text()))
@@ -92,7 +99,7 @@ class ReplayTests(unittest.TestCase):
             (Path(d)/'b/guard-1.tsv').write_text(c.text()[:-40])
             self.assertEqual(len(replay.captures([d])), 1)
             report = replay.run([d], [POLICY], self.dir.name)
-            self.assertEqual(report['passive_outcomes'][str(POLICY)], {'quiet': 1})
+            self.assertEqual(report['passive_outcomes'][f'{POLICY}@0%'], {'quiet': 1})
 
 
 if __name__ == '__main__':

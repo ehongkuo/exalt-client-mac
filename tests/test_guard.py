@@ -11,13 +11,17 @@ POTION,NEXUS='1','2'
 DUMP=None
 CONTROL=None
 
-def live_control(path,request,armed,potion,ceiling,nexus):
+def live_control(path,request,armed,potion,ceiling,nexus,*death_reserve):
  global CONTROL
  if CONTROL is None:
   CONTROL=Path(tempfile.mkdtemp(prefix='exalt-live-control-'))/'live-control'
   subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_control.c'),'-o',str(CONTROL)],check=True)
- args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)]
+ args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus),*map(str,death_reserve)]
  if request=='join':args=args[:4]   # FILE join REQUEST NAME
+ # The guard creates the live file during startup; on a loaded machine that can
+ # lag the fixed delays the tests use, so wait for it instead of failing.
+ deadline=time.monotonic()+5
+ while time.monotonic()<deadline and not (Path(path).exists() and Path(path).stat().st_size>=4096):time.sleep(.01)
  subprocess.run([str(CONTROL),*args],check=True)
 
 def live_join(path,request,name):
@@ -54,6 +58,10 @@ class GuardTests(unittest.TestCase):
    if data_dir:(p/'data').mkdir();env['EXALT_GUARD_DIR']=str(p/'data')
    game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
    if during:
+    # Time the action from the guard's start (its live file), not from process launch,
+    # which can lag on a loaded machine and collapse the test's intended spacing.
+    deadline=time.monotonic()+5
+    while time.monotonic()<deadline and not (logdir/'guard-live.bin').exists():time.sleep(.01)
     time.sleep(during[0]); during[1](logdir/'guard-live.bin')
    out,_=game.communicate(timeout=12)
    self.assertEqual(game.returncode,0)
@@ -87,7 +95,7 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(potions,[(POTION,'0')])
   self.assertEqual([a for a in acts if a[0]==NEXUS],[])
   self.assertEqual({r[SLOT] for r in rows if r[ACTION]==POTION},{'1'})
-  self.assertIn('guard_config\tarmed=0\tpotion=50\tceiling=0\tnexus=0\tdeath=0\tquickslots=sequential',log)
+  self.assertIn('guard_config\tarmed=0\tpotion=50\tceiling=0\tnexus=0\tdeath=0\treserve=5\tquickslots=sequential',log)
   self.assertIn('guard_ready\n',log)
   self.assertIn('guard_quickslot_base\t1000001',log)
  def test_armed_potions_preserve_pacing_without_threshold_nexus(self):
@@ -192,7 +200,7 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture('armed=0,potion=50,nexus=25',
    during=(0.8,lambda f:live_control(f,1,1,50,0,25)))
   self.assertEqual(calls,{'potion_calls':1,'potion_arg':1000002,'nexus_calls':0})
-  self.assertIn('guard_config\tarmed=1\tpotion=50\tceiling=0\tnexus=0\tdeath=0\tsource=app\trequest=1',log)
+  self.assertIn('guard_config\tarmed=1\tpotion=50\tceiling=0\tnexus=0\tdeath=0\treserve=5\tsource=app\trequest=1',log)
   self.assertEqual((self.live['control_request'],self.live['control_result'],self.live['armed']),('1','1','1'))
  def test_invalid_potion_settings_from_app_are_rejected(self):
   log,rows,calls=self.run_fixture('armed=0,potion=50,nexus=25',

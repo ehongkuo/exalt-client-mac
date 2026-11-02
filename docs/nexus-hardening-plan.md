@@ -82,6 +82,13 @@ indicates server control.
   from the Phase 0 mismatch data.
 - Cost: earlier escapes, measured by replay. Open decision: the default reserve size.
 
+Status: implemented. `reserve=N` (0–25, default 5) is a saved setting, sent live through
+`LiveControlData` (live protocol version 7) and applied as `max HP × N / 100` before each damage
+decision; reason 4 marks reserve escapes. `replay_policy.py --reserve N` replays a reserve; repeat it
+to compare. On the 5 passive captures (all at 225 max HP): 0% and 5% produced no requests; 10% (22 HP)
+produced one request without a death, on the closest 22 HP margin. The data cannot yet size the
+reserve for high-max-HP characters; 5% stays the default until more passive captures exist.
+
 ## Phase 2: unexplained-drop detection (B)
 
 - Retire hits on an HP decrease only when the decrease matches a sum of the oldest pending hits,

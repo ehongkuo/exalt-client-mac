@@ -33,7 +33,8 @@ class ClientInterventionTests(unittest.TestCase):
    if reconcile:args.append('-DFATAL_RECONCILE')
    if toggle:args.append('-DFATAL_CLIENT_TOGGLE')
    subprocess.run(args,check=True)
-   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings;env['EXALT_VERIFY_ONE_HP']='1' # production must ignore diagnostic threshold
+   env=os.environ.copy();env['DYLD_INSERT_LIBRARIES']=str(p/'guard.dylib');env['EXALT_GUARD']=settings if 'reserve=' in settings else settings+',reserve=0'  # fixtures assert zero-threshold timing
+   env['EXALT_VERIFY_ONE_HP']='1' # production must ignore diagnostic threshold
    process=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
    if toggle:
     tool=p/'control'

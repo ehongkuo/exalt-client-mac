@@ -16,6 +16,9 @@ struct GuardSettings: Equatable {
     var armed: Bool
     var nexusOnDeath: Bool
     var potion: Int, ceiling: Int
+    /// Nexus on death safety reserve, percent of max HP; 0 is off. Matches GUARD_RESERVE_* in guard_core.h.
+    var reserve: Int
+    static let defaultReserve = 5, maxReserve = 25
 
     static let standard = GuardSettings(armed: false, potion: 50, ceiling: 80)
 
@@ -26,16 +29,20 @@ struct GuardSettings: Equatable {
         }
         if ceiling > 0 && potion == 0 { return "A ceiling needs a potion trigger." }
         if ceiling > 0 && ceiling <= potion { return "Ceiling must be above the potion trigger." }
+        if !(0...Self.maxReserve).contains(reserve) { return "Reserve must be between 0 and \(Self.maxReserve)." }
         return nil
     }
-    var text: String { "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling)" + (nexusOnDeath ? ",death=1" : "") }
+    var text: String {
+        "armed=\(armed ? 1 : 0),potion=\(potion),ceiling=\(ceiling)" + (reserve != Self.defaultReserve ? ",reserve=\(reserve)" : "")
+            + (nexusOnDeath ? ",death=1" : "")
+    }
 
-    init(armed: Bool, potion: Int, ceiling: Int, nexusOnDeath: Bool = false) {
-        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexusOnDeath = nexusOnDeath
+    init(armed: Bool, potion: Int, ceiling: Int, nexusOnDeath: Bool = false, reserve: Int = GuardSettings.defaultReserve) {
+        self.armed = armed; self.potion = potion; self.ceiling = ceiling; self.nexusOnDeath = nexusOnDeath; self.reserve = reserve
     }
     /// Parses the launcher format; nil for anything the guard would reject.
     init?(text: String) {
-        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 0, "death": 0]
+        var values = ["armed": 0, "potion": 50, "ceiling": 0, "nexus": 0, "death": 0, "reserve": Self.defaultReserve]
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         for pair in trimmed.split(separator: ",") {
@@ -45,7 +52,8 @@ struct GuardSettings: Equatable {
             values[key] = value
         }
         guard let armed = values["armed"], armed <= 1, values["death"]! <= 1, values["nexus"]! <= 100 else { return nil }
-        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexusOnDeath: values["death"]! == 1)
+        self.init(armed: armed == 1, potion: values["potion"]!, ceiling: values["ceiling"]!, nexusOnDeath: values["death"]! == 1,
+                  reserve: values["reserve"]!)
         if problem != nil { return nil }
     }
 }
@@ -122,6 +130,7 @@ struct GuardSnapshot: Equatable {
     var partyCalls: UInt32
     var lastCall: PartyCall?
     var nexusOnDeath: Bool, deathReady: Bool, deathBlocking: Bool
+    var reserve: Int
     var deathStatus: Int32
     var deathPending: Int64, deathPredicted: Int64
     var joinRequest: UInt32, joinResult: Int32
@@ -151,7 +160,7 @@ struct GuardSnapshot: Equatable {
             potionsDry: Int(d.potions_dry), nexusDry: Int(d.nexus_dry),
             lowestHP: Int(d.lowest_hp), lowestMaxHP: Int(d.lowest_max_hp), lowestEpoch: d.lowest_epoch,
             logName: withUnsafeBytes(of: d.log_name) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) })
-        nexusOnDeath = d.death != 0; deathStatus = d.death_status
+        nexusOnDeath = d.death != 0; deathStatus = d.death_status; reserve = Int(d.death_reserve)
         deathReady = d.death_status == 1; deathBlocking = d.death_blocking != 0
         deathPending = d.death_pending; deathPredicted = d.death_predicted
         joinRequest = d.join_request; joinResult = d.join_result
@@ -174,7 +183,7 @@ struct GuardSnapshot: Equatable {
     var totalPotions: Int { stacks.reduce(0, +) }
     /// Where drinking stops: the ceiling, or the potion threshold when there is none.
     var stopPercent: Int { ceiling > 0 ? ceiling : potion }
-    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexusOnDeath: nexusOnDeath) }
+    var settings: GuardSettings { GuardSettings(armed: armed, potion: potion, ceiling: ceiling, nexusOnDeath: nexusOnDeath, reserve: reserve) }
 }
 
 /// Counts for the current game session, kept by the guard.
@@ -338,7 +347,8 @@ final class LiveFeed {
         remapIfNeeded()
         guard let map, writable else { return false }
         var data = LiveControlData(request: request, armed: settings.armed ? 1 : 0, potion: Int32(settings.potion),
-                                   ceiling: Int32(settings.ceiling), nexus: 0, death: settings.nexusOnDeath ? 1 : 0)
+                                   ceiling: Int32(settings.ceiling), nexus: 0, death: settings.nexusOnDeath ? 1 : 0,
+                                   reserve: Int32(settings.reserve))
         guard_control_send(map, &data)
         return true
     }

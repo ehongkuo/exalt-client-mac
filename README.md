@@ -71,6 +71,7 @@ The defaults are a 50% potion trigger and an 80% potion ceiling, with Nexus on d
 - **Potion trigger:** start drinking at or below this percentage. Off disables automatic potions.
 - **Ceiling:** continue drinking until HP is above this percentage. Off stops drinking above the potion trigger. If the potion trigger is Off, the ceiling must also be Off.
 - **Nexus on death:** enable predicted lethal-damage intervention, the only automatic Nexus mode. Requires Armed and prepared hooks.
+- **Reserve:** with Nexus on death, also escape when a hit would leave predicted HP at or below this percentage of max HP, to cover damage the prediction cannot see. Default 5%, up to 25%. Off escapes only at zero.
 
 To use **only Nexus on death**:
 
