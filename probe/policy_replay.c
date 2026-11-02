@@ -26,7 +26,11 @@ int main(void) {
    printf("D %llu %d %d %d %lld %lld\n",ns,damage,decision,p.reason,(long long)p.pending,(long long)p.projected);
   } else if(kind[0]=='H'){if(scanf("%d",&hp)!=1)return 2;
    fatal_server_hp(&p,hp,ns);
+#ifdef FATAL_REGEN_HP_PER_S /* policies with explained-drop retirement count unexplained drops */
+   printf("H %llu %d %lld %lld %llu\n",ns,hp,(long long)p.pending,(long long)p.projected,(unsigned long long)p.unexplained);
+#else
    printf("H %llu %d %lld %lld\n",ns,hp,(long long)p.pending,(long long)p.projected);
+#endif
   } else if(kind[0]=='R'){unsigned seq=0,stamp=0;if(scanf("%d %u %u",&hp,&seq,&stamp)!=3)return 2;
    if(!in_tick){printf("R %llu %d 0 0 %lld\n",ns,hp,(long long)p.projected);continue;}
    in_tick=0;

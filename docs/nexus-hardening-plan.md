@@ -83,6 +83,23 @@ indicates server control.
 - Needs no condition decoding, so it also covers future DoTs, scripted damage and hazards.
 - Check by replay that false escapes during heavy combat with healing do not rise materially.
 
+Status: implemented as policy version 9. A fixed 20 HP/s regeneration bound was too strict: in
+`guard-88966.tsv` regeneration ran at about 35 HP/s and server decreases were typically 4–11 HP below
+the local damage, so 28 of 33 hits went unexplained. The tolerance now uses the median of recent
+HP-increase rates (capped at 100 HP/s) plus 10% for local overestimates. Replay against v8:
+
+| Capture | Hits | Unexplained | Closest margin v8 → v9 | Requests |
+|---|---:|---:|---:|---:|
+| `guard-88966.tsv` (oxygen test D06) | 33 | 3 | 495 → 495 HP | 0 |
+| `guard-31242.tsv` | 11 | 0 | 22 → 24 HP | 0 |
+| `guard-40486.tsv` | 4 | 0 | 64 → 64 HP | 0 |
+
+The three unexplained decreases in `guard-88966.tsv` are two suffocation losses (−21 and −13 with
+no matching hit) and one decrease after a 33 hit was masked by a heal in the same update; all three
+keep the hits pending, which is the intended conservative outcome. Remaining limit: an untracked loss
+that falls inside a pending hit's matching window still retires that hit (fixture B, coincident
+amounts). Phase 3's condition awareness addresses DoTs specifically.
+
 ## Phase 2: late-arrival protection (A)
 
 1. Risk-scaled rebase: rebase after 800 ms only if clearing pending damage would leave projected HP

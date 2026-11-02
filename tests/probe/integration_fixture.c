@@ -345,7 +345,7 @@ static void burst(void *unused) {
  next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  notify_fixture((void*)40,0,60,(void*)0x2345,1,(void*)0x3456,2,0,(void*)0x4567);
  send_fixture((void*)500,(void*)3,(void*)0x6001);
- next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ next_stats_hp=150;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678); /* Explains the 50 hit, not the 60. */
  notify_fixture((void*)40,0,70,(void*)0x2345,1,(void*)0x3456,3,0,(void*)0x4567);
  send_fixture((void*)500,(void*)3,(void*)0x6002);
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);

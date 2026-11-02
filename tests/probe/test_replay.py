@@ -70,10 +70,17 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(r['outcome'], 'missed_death')
         self.assertEqual(r['min_projected'], 40)
 
+    def test_unexplained_loss_keeps_hit_pending_and_escapes(self):
+        # Gap B with unequal amounts: a 70 loss cannot be the pending 100 hit.
+        c = Capture(200)
+        c.tick(0, 200);c.hit(10, 100);c.tick(200, 130);c.hit(300, 60);c.tick(400, 0)
+        r = self.scope(c)
+        self.assertEqual((r['outcome'], r['unexplained']), ('escape_before_death', 1))
+
     def test_quiet_rebase_and_stale_request_without_death(self):
         c = Capture(500)
-        for ms in range(0, 1400, 200):c.tick(ms, 500 if ms < 400 else 450)
-        c.hit(250, 60)  # 50 visible, 10 left for the quiet rebase
+        for ms in range(0, 1600, 200):c.tick(ms, 500 if ms < 400 else 450)
+        c.hit(250, 80)  # a 50 drop cannot be the 80 hit: unexplained, it restarts the quiet interval
         c.rows.sort(key=lambda row: row['ns'])
         r = self.scope(c)
         self.assertEqual((r['outcome'], r['rebases']), ('quiet', 1))

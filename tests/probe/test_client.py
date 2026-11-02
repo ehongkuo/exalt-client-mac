@@ -207,13 +207,13 @@ class ClientInterventionTests(unittest.TestCase):
   decision=next(e for e in self.events if e['phase']==20)
   self.assertEqual(decision['hp'],40)
   self.assertEqual(decision['value'],50)
-  self.assertEqual(decision['projectile'],50)
+  self.assertEqual(decision['projectile'],100) # a 160 drop cannot be the 50 hit, so it stays pending
  def test_mixed_paths_accumulate_across_hp_updates(self):
   self.run_client('armed=1,potion=0,death=1',mixed=True)
   self.assertIn('mixed_paths_rebased_and_preserved_same_window_burst=1',self.output)
   self.assertIn('nexus_calls=1',self.output)
   decision=next(e for e in self.events if e['phase']==20)
-  self.assertEqual(decision['projectile'],210)
+  self.assertEqual(decision['projectile'],180)
   self.assertEqual(decision['update_context'],(1<<64)-30)
   self.assertEqual([e['caller'] for e in self.secondary_reports],['0x183f880'])
  def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):

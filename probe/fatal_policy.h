@@ -8,6 +8,14 @@ enum { FATAL_REASON_NONE, FATAL_REASON_LETHAL, FATAL_REASON_STALE, FATAL_REASON_
 #define FATAL_QUIET_WINDOW_NS 800000000ULL
 #define FATAL_HEALTHY_GAP_NS 1000000000ULL
 #define FATAL_MIN_TICK_GAP_NS 20000000ULL
+/* Regeneration credited when matching an HP drop to hits: the median of recent
+ * HP-increase rates (robust to occasional heals and max-HP caps), a default before
+ * any increase is seen, and a ceiling so sustained healing cannot widen matching
+ * without bound. A local estimate may also exceed the server's by a few percent. */
+#define FATAL_REGEN_HP_PER_S 20
+#define FATAL_REGEN_MAX_HP_PER_S 100
+#define FATAL_REGEN_SAMPLES 5
+#define FATAL_DAMAGE_SLACK_PERCENT 10
 typedef struct { uint64_t ns; int damage; } FatalHit;
 typedef struct {
  uintptr_t player,connection,map;
@@ -15,7 +23,10 @@ typedef struct {
  int attempted,blocking,reason,last_hp,have_hp;
  uint64_t last_update_ns,cadence_anchor_ns,interval_ns,jitter_ns,snapshots;
  uint64_t last_damage_ns,damage_sequence,last_tick_ns,healthy_since_ns;
- uint64_t rebases,last_rebase_ns;
+ uint64_t rebases,last_rebase_ns,last_hp_ns;
+ /* HP decreases no tracked prefix of hits can explain; evidence of untracked loss. */
+ uint64_t unexplained;int64_t last_unexplained;
+ int64_t regen_rates[FATAL_REGEN_SAMPLES];unsigned regen_count,regen_head; /* HP per second */
  int64_t last_rebase_pending;
  uint32_t tick_sequence,server_time;
  unsigned have_tick;
@@ -48,24 +59,62 @@ static inline void fatal_pop(FatalPolicy *p) {
  p->pending-=p->hits[p->head].damage;
  p->head=(p->head+1)%FATAL_HIT_CAPACITY;--p->count;
 }
+/* Regeneration that could have offset part of a drop since the last snapshot. */
+static inline int64_t fatal_regen_rate(const FatalPolicy *p) {
+ if(!p->regen_count)return FATAL_REGEN_HP_PER_S;
+ int64_t sorted[FATAL_REGEN_SAMPLES];unsigned n=p->regen_count;
+ for(unsigned i=0;i<n;++i){
+  int64_t v=p->regen_rates[i];unsigned j=i;
+  for(;j && sorted[j-1]>v;--j)sorted[j]=sorted[j-1];
+  sorted[j]=v;
+ }
+ int64_t median=sorted[n/2];
+ return median<FATAL_REGEN_MAX_HP_PER_S?median:FATAL_REGEN_MAX_HP_PER_S;
+}
+static inline int64_t fatal_regen_tolerance(const FatalPolicy *p,uint64_t now) {
+ uint64_t elapsed=p->last_hp_ns && now>p->last_hp_ns?now-p->last_hp_ns:0;
+ if(elapsed>1000000000ULL)elapsed=1000000000ULL;
+ return 1+(int64_t)((elapsed*(uint64_t)fatal_regen_rate(p)+999999999ULL)/1000000000ULL);
+}
+static inline void fatal_regen_sample(FatalPolicy *p,int hp,uint64_t now) {
+ if(!p->have_hp || hp<=p->last_hp || !p->last_hp_ns || now<p->last_hp_ns+FATAL_MIN_TICK_GAP_NS)return;
+ int64_t rate=(int64_t)(((uint64_t)(hp-p->last_hp)*1000000000ULL)/(now-p->last_hp_ns));
+ p->regen_rates[p->regen_head]=rate;p->regen_head=(p->regen_head+1)%FATAL_REGEN_SAMPLES;
+ if(p->regen_count<FATAL_REGEN_SAMPLES)++p->regen_count;
+}
 static inline void fatal_server_hp(FatalPolicy *p,int hp,uint64_t now) {
  if(p->last_update_ns && now<p->last_update_ns)return;
  ++p->snapshots;
  if(hp<=0 || p->blocking){
   p->pending=0;p->overflow=0;p->head=0;p->count=0;
  } else {
-  /* Net HP loss retires the oldest estimates first. Healing may mask damage,
-   * so this can retain too much; an HP increase is not a damage acknowledgement.
-   * The higher baseline itself supplies observed healing credit exactly once. */
+  fatal_regen_sample(p,hp,now);
+  /* An HP increase is not a damage acknowledgement; the higher baseline itself
+   * supplies observed healing credit exactly once. */
   int64_t debit=p->have_hp && p->last_hp>hp?(int64_t)p->last_hp-hp:0;
-  while(debit>0 && p->count){
-   FatalHit *hit=&p->hits[p->head];
-   if(debit>=hit->damage){debit-=hit->damage;fatal_pop(p);}
-   else {hit->damage-=(int)debit;p->pending-=debit;debit=0;}
+  if(debit>0 && p->overflow){
+   /* Capacity escape already requested: keep the aggregate net-debit rule. */
+   while(debit>0 && p->count){
+    FatalHit *hit=&p->hits[p->head];
+    if(debit>=hit->damage){debit-=hit->damage;fatal_pop(p);}
+    else {hit->damage-=(int)debit;p->pending-=debit;debit=0;}
+   }
+   if(debit>0){int64_t credit=debit<p->overflow?debit:p->overflow;p->overflow-=credit;p->pending-=credit;}
+  } else if(debit>0 && p->count){
+   /* Retire whole hits only when the oldest ones explain the drop: their sum is
+    * at least the drop and exceeds it by no more than possible regeneration plus
+    * a small local overestimate. Anything else (a much smaller drop, or one larger
+    * than every pending hit) may be untracked damage with the hits still
+    * unapplied, so retire nothing and restart the quiet interval. Amounts inside
+    * that window remain indistinguishable from the hits. */
+   int64_t sum=0;unsigned k=0;
+   while(k<p->count && sum<debit)sum+=p->hits[(p->head+k++)%FATAL_HIT_CAPACITY].damage;
+   int64_t slack=fatal_regen_tolerance(p,now)+sum*FATAL_DAMAGE_SLACK_PERCENT/100;
+   if(sum>=debit && sum-debit<=slack){while(k--)fatal_pop(p);}
+   else {++p->unexplained;p->last_unexplained=debit;p->last_damage_ns=now;}
   }
-  if(debit>0 && p->overflow){int64_t credit=debit<p->overflow?debit:p->overflow;p->overflow-=credit;p->pending-=credit;}
  }
- p->last_hp=hp;p->have_hp=1;p->projected=(int64_t)hp-p->pending;
+ p->last_hp=hp;p->have_hp=1;p->last_hp_ns=now;p->projected=(int64_t)hp-p->pending;
  if(hp>0 && !p->blocking){p->attempted=0;p->reason=FATAL_REASON_NONE;}
 }
 /* Called once after a completed authoritative tick, never from polling or a
@@ -94,7 +143,7 @@ static inline int fatal_server_tick(FatalPolicy *p,int hp,uint64_t entry_ns,
     entry_ns-p->last_damage_ns<window || entry_ns-p->healthy_since_ns<window)return 0;
  p->last_rebase_pending=p->pending;p->last_rebase_ns=entry_ns;++p->rebases;
  p->pending=0;p->overflow=0;p->head=0;p->count=0;
- p->last_hp=hp;p->have_hp=1;p->projected=hp;
+ p->last_hp=hp;p->have_hp=1;p->last_hp_ns=entry_ns;p->projected=hp;
  return 1;
 }
 static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {

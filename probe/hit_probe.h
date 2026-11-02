@@ -524,8 +524,13 @@ static void hp_observed(void *self,int value,const void *info) {
 #else
             int record_update=1;
 #endif
+            uint64_t unexplained=fatal_policy.unexplained;
             fatal_server_hp(&fatal_policy,after.hp,after.ns);
             if(record_update)fatal_emit(28,self,after.id,after.hp,after.update_source,0);
+            /* Evidence of untracked HP loss or server damage above the local estimate. */
+            if(fatal_policy.unexplained!=unexplained)
+                note("guard_unexplained_hp_loss\thp=%d\tloss=%lld\tpending=%lld\thits=%u\n",after.hp,
+                     (long long)fatal_policy.last_unexplained,(long long)fatal_policy.pending,fatal_policy.count);
 #ifdef EXALT_CLIENT_FATAL
             live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
 #endif

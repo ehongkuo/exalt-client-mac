@@ -4,10 +4,17 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
-Policy version 8 retains projectile, ground and area damage in the same fixed 128-entry ledger.
-Observed HP decreases still retire estimates oldest-first by their net amount; this is an inference,
-not identification of individual hits. HP increases supply a higher baseline without discarding
-pending hits or adding a separate estimated healing credit. The strict whole-event/history model
+Policy version 9 retains projectile, ground and area damage in the same fixed 128-entry ledger.
+An observed HP decrease retires whole hits oldest-first only when those hits **explain** it: their
+sum is at least the decrease and exceeds it by no more than possible regeneration plus 10% for a local
+overestimate. Regeneration is the median of the last five HP-increase rates (20 HP/s before any are
+seen, at most 100 HP/s), times the time since the previous HP update, plus 1 HP. Any other decrease,
+one much smaller than the oldest hit or larger than every pending hit, may be untracked damage with
+the hits still unapplied: nothing retires, the quiet interval restarts, and the guard logs
+`guard_unexplained_hp_loss` with the loss and the pending damage. This is still inference, not
+identification of individual hits. An untracked loss within the matching window of a pending hit
+remains indistinguishable from it. HP increases supply a higher baseline without discarding pending
+hits. The strict whole-event/history model
 in [the design proposal](nexus-reconciliation-design.md) is not implemented or assumed proven.
 
 Individual hits no longer expire by age. A quiet rebase clears the remaining ledger only after:
