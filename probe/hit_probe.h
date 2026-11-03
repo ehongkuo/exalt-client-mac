@@ -644,18 +644,23 @@ static int probe_signature(const void *method,const char **types,uint32_t count)
     return 1;
 }
 #endif
-static void probe_install(void) {
+/* A failed check leaves every hook uninstalled. The client build then ends the game: the user
+ * started it expecting Nexus on death to work. */
+static int probe_fail(const char *why) {
+    note("hit_probe_refused\t%s\n",why);probe_attempted=1;
 #ifdef EXALT_CLIENT_FATAL
-    if(probe_attempted || !config.death)return;
-#else
-    if(probe_attempted || !probe_flight)return;
+    char detail[sizeof live_data.refusal_detail];snprintf(detail,sizeof detail,"nexus_on_death %s",why);
+    for(char *c=detail;*c;++c)if(*c=='\t')*c=' ';
+    refuse(REFUSAL_DEATH,detail);
 #endif
-#ifndef HIT_PROBE_TEST
-    if(!in_nexus || !map_ok || map_unknown_logged || !guard_ok || !probe_player())return;
-#endif
+    return 0;
+}
+/* Every check runs without install, as soon as the guard is ready; install repeats them in the
+ * Nexus and then redirects. Returns 1 when all checks (and the install, if asked) succeeded. */
+static int probe_setup(int install) {
     Dl_info image;
-    if(!dladdr((const void*)il2cpp_domain_get,&image) || !image.dli_fbase)return;
-    probe_game_base=(uintptr_t)image.dli_fbase;probe_attempted=1;
+    if(!dladdr((const void*)il2cpp_domain_get,&image) || !image.dli_fbase)return probe_fail("game_base");
+    probe_game_base=(uintptr_t)image.dli_fbase;
     dispatch_queue_set_specific(dispatch_get_main_queue(),&probe_main_key,&probe_main_key,NULL);
     void *entries[9]={0};
 #ifdef HIT_PROBE_TEST
@@ -676,7 +681,7 @@ static void probe_install(void) {
         for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
             if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))fatal_socket_class=il2cpp_class_from_name(image,"DecaGames.RotMG.Managers.Net","SocketManager");}
         if(fatal_socket_class)fatal_nexusing_field=typed_field(fatal_socket_class,"FCOJPHFICAG","System.Boolean");
-        if(fatal_enabled && (!fatal_socket_field || !fatal_nexusing_field)){note("hit_probe_refused\tfatal_nexus_fields\n");return;}
+        if(fatal_enabled && (!fatal_socket_field || !fatal_nexusing_field))return probe_fail("fatal_nexus_fields");
     }
 #ifdef EXALT_HIT_PROBE
     void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
@@ -684,10 +689,10 @@ static void probe_install(void) {
     damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
     damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
 #endif
-    if(!probe_projectile_class){note("hit_probe_refused\tprojectile_class\n");return;}
+    if(!probe_projectile_class)return probe_fail("projectile_class");
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
     probe_time_field=typed_field(connection_class,"FIAJOKGHGGK","System.UInt32");
-    if(!probe_tick_field || !probe_time_field){note("hit_probe_refused\tupdate_fields\n");return;}
+    if(!probe_tick_field || !probe_time_field)return probe_fail("update_fields");
     const void *methods[]={find_method_named(connection_class,HIT_REPORT_OFFSET_NAME,2,"System.UInt32"),
         find_method_named(player_class,HIT_NOTIFY_OFFSET_NAME,7,"System.Boolean"),
         find_method_named(ancestor_named(player_class,"LKHPPBEGNOM"),HP_ASSIGN_OFFSET_NAME,1,"System.Int32"),
@@ -705,9 +710,9 @@ static void probe_install(void) {
     const uintptr_t offsets[]={HIT_REPORT_OFFSET,HIT_NOTIFY_OFFSET,HP_ASSIGN_OFFSET,NEXUS_OFFSET,DAMAGE_OFFSET,DEATH_SCREEN_OFFSET,UPDATE_OFFSET,STATS_OFFSET,SEND_OFFSET};
     if(!probe_signature(methods[0],rtypes,2)||!probe_signature(methods[1],ntypes,7)||
        !probe_signature(methods[2],htypes,1)||!probe_signature(methods[3],NULL,0)||!probe_signature(methods[4],dtypes,1)||!probe_signature(methods[5],stypes,1)||!probe_signature(methods[6],utypes,1)||!probe_signature(methods[7],atypes,3)||!probe_signature(methods[8],(const char*[]){"DCBCCBKEIHN"},1)) {
-        note("hit_probe_refused\tmethod_validation\n");return;
+        return probe_fail("method_validation");
     }
-    for(int i=0;i<9;++i){if(!at_offset(methods[i],offsets[i])){note("hit_probe_refused\tmethod_offset\n");return;}entries[i]=*(void *const*)methods[i];}
+    for(int i=0;i<9;++i){if(!at_offset(methods[i],offsets[i]))return probe_fail("method_offset");entries[i]=*(void *const*)methods[i];}
 #endif
 #ifdef HIT_PROBE_TEST
 #define send_prologue notify_prologue
@@ -720,21 +725,22 @@ static void probe_install(void) {
     if(memcmp((void*)(probe_game_base+TERRAIN_SEND_CALLER-5),terrain_report_call,5) ||
        memcmp((void*)(probe_game_base+0x1214ddbUL),terrain_send_tail,5) ||
        memcmp((void*)(probe_game_base+AREA_SEND_CALLER-5),area_send_call,5)){
-        note("hit_probe_refused\treport_boundary_bytes\n");return;
+        return probe_fail("report_boundary_bytes");
     }
     const uintptr_t sites[]={TERRAIN_NOTIFY_CALLER,AREA_NOTIFY_CALLER};
     const unsigned char dispatches[][6]={{0xff,0x90,0x18,7,0,0},{0xff,0x93,0x18,7,0,0}};
     for(int i=0;i<2;++i)if(memcmp((void*)(probe_game_base+sites[i]-6),dispatches[i],6)){
-        note("hit_probe_refused\tboundary_bytes\n");return;
+        return probe_fail("boundary_bytes");
     }
 #endif
     const unsigned char *bytes[]={report_prologue,notify_prologue,hp_prologue,nexus_prologue,damage_prologue,death_prologue,update_prologue,stats_prologue,send_prologue};
     size_t lengths[]={sizeof report_prologue,sizeof notify_prologue,sizeof hp_prologue,sizeof nexus_prologue,sizeof damage_prologue,sizeof death_prologue,sizeof update_prologue,sizeof stats_prologue,sizeof send_prologue};
     void *replacements[]={(void*)report_observed,(void*)notify_observed,(void*)hp_observed,(void*)nexus_observed,(void*)damage_observed,(void*)death_observed,(void*)update_observed,(void*)stats_observed,(void*)send_observed};
     void **originals[]={(void**)&report_original,(void**)&notify_original,(void**)&hp_original,(void**)&nexus_original,(void**)&damage_original,(void**)&death_original,(void**)&update_original,(void**)&stats_original,(void**)&send_original};
-    for(int i=0;i<9;++i)if(!entries[i]||memcmp(entries[i],bytes[i],lengths[i])){note("hit_probe_refused\tentry_bytes\tindex=%d\n",i);return;}
+    for(int i=0;i<9;++i)if(!entries[i]||memcmp(entries[i],bytes[i],lengths[i])){char why[32];snprintf(why,sizeof why,"entry_bytes\tindex=%d",i);return probe_fail(why);}
+    if(!install)return 1;
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
-        if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
+        if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();char why[32];snprintf(why,sizeof why,"redirect_error=%d",result);return probe_fail(why);}}
     #undef send_prologue
     probe_installed=1;note("fatal_policy\tversion=8\treconciliation=quiet_period_rebase\twindow_min_ns=800000000\twindow_max_ns=800000000\thealthy_gap_max_ns=1000000000\thp_bearing_tick_required=1\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_SYNC_TRACE
@@ -747,6 +753,23 @@ static void probe_install(void) {
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
 #endif
+    return 1;
+}
+static int probe_validated;
+static void probe_install(void) {
+#ifdef EXALT_CLIENT_FATAL
+    if(probe_attempted || !config.death)return;
+#else
+    if(probe_attempted || !probe_flight)return;
+#endif
+#ifndef HIT_PROBE_TEST
+    if(!guard_ok)return;
+#endif
+    if(!probe_validated && !(probe_validated=probe_setup(0)))return;
+#ifndef HIT_PROBE_TEST
+    if(!in_nexus || !map_ok || map_unknown_logged || !probe_player())return;
+#endif
+    probe_attempted=1;(void)probe_setup(1);
 }
 static void hit_probe_tick(void *player,uint64_t now) {
 #ifndef EXALT_CLIENT_FATAL

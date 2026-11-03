@@ -79,6 +79,38 @@ private func sample() -> LiveData {
         check(tracker.update(calls(1, pid: 5000), live: true, now: 31)?.count == 1, "first call of the new session")
         check(tracker.update(nil, live: true, now: 40) == nil, "no data")
 
+        // Guard refusals.
+        check(s.refusal == nil, "no refusal")
+        func refused(_ code: Int32, _ detail: String, pid: Int32 = 4242, epoch: Double = 1000) -> GuardSnapshot {
+            var d = sample(); d.pid = pid; d.refusal = code; d.sample_epoch = epoch
+            withUnsafeMutableBytes(of: &d.refusal_detail) { raw in for (i, b) in Array(detail.utf8).enumerated() { raw[i] = b } }
+            return GuardSnapshot(d)
+        }
+        check(refused(2, "method_offsets_differ").refusal == GuardRefusal(code: 2, detail: "method_offsets_differ"), "refusal decoded")
+        check(refused(1, "game_build_changed").refusal?.message.contains("game was updated") == true, "build refusal reason")
+        check(refused(99, "x").refusal?.reason == "A guard check failed.", "unknown code still explains")
+        var refusals = RefusalTracker()
+        check(refusals.update(refused(2, "a"), now: 1001)?.code == 2, "a refusal alerts")
+        check(refusals.update(refused(2, "a"), now: 1002) == nil, "once per game")
+        check(refusals.update(calls(0, pid: 5000), now: 1003) == nil, "a guarded game does not alert")
+        check(refusals.update(refused(6, "b", pid: 5001), now: 1004)?.code == 6, "the next refused game alerts")
+        check(refusals.update(refused(7, "c", pid: 5002, epoch: 100), now: 1005) == nil, "an old refusal does not alert")
+        check(refusals.update(nil, now: 1006) == nil, "no data")
+
+        // Games running without the guard.
+        var watch = UnguardedGameWatch()
+        check(watch.update(games: [4242], snapshot: calls(0), now: 0) == ([], false), "guarded game")
+        check(watch.update(games: [4242], snapshot: calls(0), now: 60) == ([], false), "stays guarded")
+        check(watch.update(games: [7000], snapshot: calls(0), now: 61) == ([], false), "grace for the guard's startup")
+        check(watch.update(games: [7000], snapshot: calls(0), now: 81) == ([7000], true), "unguarded after the grace")
+        check(watch.update(games: [7000], snapshot: calls(0), now: 82) == ([7000], false), "reported once")
+        check(watch.update(games: [7000], snapshot: calls(0, pid: 7000), now: 83) == ([], false), "guard caught up")
+        check(watch.update(games: [7100], snapshot: nil, now: 90) == ([], false), "no live file yet")
+        check(watch.update(games: [7100], snapshot: nil, now: 111) == ([7100], true), "no guard at all")
+        check(watch.update(games: [7200], snapshot: refused(2, "a", pid: 7200), now: 120) == ([], false), "a refused game is counted on its own")
+        check(watch.update(games: [7200], snapshot: refused(2, "a", pid: 7200), now: 141) == ([7200], true), "and is unguarded if it keeps running")
+        check(watch.update(games: [], snapshot: nil, now: 150) == ([], false), "game closed")
+
         // Calls alert only on waiting maps.
         func at(_ map: String, known: Bool = true, _ n: UInt32) -> GuardSnapshot {
             var s = calls(n, pid: 6000); s.map = map; s.mapKnown = known; return s

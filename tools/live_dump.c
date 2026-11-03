@@ -28,6 +28,7 @@ int main(int argc, char **argv) {
     printf("join_request=%u\njoin_result=%d\njoin_name=%s\n", d.join_request, d.join_result, d.join_name);
     printf("death=%d\ndeath_status=%d\ndeath_blocking=%d\ndeath_pending=%lld\ndeath_predicted=%lld\n",
            d.death, d.death_status, d.death_blocking, (long long)d.death_pending, (long long)d.death_predicted);
+    printf("refusal=%d\nrefusal_detail=%s\n", d.refusal, d.refusal_detail);
     unsigned n = d.event_count < LIVE_EVENTS ? d.event_count : LIVE_EVENTS;
     for (unsigned k = 0; k < n; ++k) {
         const LiveEvent *e = &d.events[(d.event_count - n + k) % LIVE_EVENTS];
