@@ -140,6 +140,11 @@ final class PartyAlerts: ObservableObject {
     private var joinSent: UInt32?
     private var lastJoinRequest: UInt32 = 0
     private var tracker = PartyAlertTracker()
+    private var refusals = RefusalTracker()
+    private var watch = UnguardedGameWatch()
+    private var lastWatch = -Double.infinity
+    /// Game processes running without the guard; the window shows a warning while any are.
+    @Published private(set) var unguarded: [Int32] = []
     private let defaults = UserDefaults.standard
     /// Notifications need a bundled app; the test build runs without one.
     private var canNotify: Bool {
@@ -165,6 +170,16 @@ final class PartyAlerts: ObservableObject {
     }
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
     func check(_ source: LiveSource) {
+        // A refused game always alerts, whatever the party alert settings say.
+        if let refusal = refusals.update(source.snapshot, now: Date().timeIntervalSince1970) { alert(refusal) }
+        if now - lastWatch >= 1 {
+            lastWatch = now
+            let games = NSWorkspace.shared.runningApplications
+                .filter { $0.executableURL?.lastPathComponent == "RotMGExalt" }.map(\.processIdentifier)
+            let result = watch.update(games: games, snapshot: source.snapshot, now: now)
+            if result.unguarded != unguarded { unguarded = result.unguarded }
+            if result.new { alertUnguarded() }
+        }
         updatePopup(source)
         // The tracker sees every snapshot even with alerts off, so turning them on never replays old calls.
         guard let call = tracker.update(source.snapshot, live: source.link.isLive, now: now),
@@ -203,6 +218,26 @@ final class PartyAlerts: ObservableObject {
         content.body = call.text
         // One notification at a time: a newer call replaces the previous banner.
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "party-call", content: content, trigger: nil))
+    }
+    func alert(_ refusal: GuardRefusal) {
+        #if !GUARD_UI_TEST
+        NSSound(named: "Basso")?.play()
+        #endif
+        guard canNotify else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Game closed: guard checks failed"
+        content.body = refusal.reason
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "guard-refusal", content: content, trigger: nil))
+    }
+    func alertUnguarded() {
+        #if !GUARD_UI_TEST
+        NSSound(named: "Basso")?.play()
+        #endif
+        guard canNotify else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "The game is running without the guard"
+        content.body = "No potions or Nexus will be used for you. Quit the game and start it from Exalt Client Mac."
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "guard-missing", content: content, trigger: nil))
     }
     func flashing(at date: Date) -> Bool { date < flashUntil }
 }
@@ -406,6 +441,8 @@ struct GuardPanel {
         #else
         VStack(alignment: .leading, spacing: 12) {
             header(s, link)
+            if let refusal = s?.refusal { refusalCard(refusal) }
+            if !alerts.unguarded.isEmpty { unguardedCard() }
             if case .offline = link {
                 // No game running (never started, or it closed): offer Start, keep the last
                 // session's summary visible, and edit settings for the next launch.
@@ -451,6 +488,34 @@ struct GuardPanel {
                 Button("Compact view") { window.showCompact() }.font(.system(size: 11)).fixedSize()
             }
         }
+    }
+
+    /// Stays until the next game starts: the guard ended this one rather than run it unprotected.
+    private func refusalCard(_ refusal: GuardRefusal) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("GAME CLOSED: GUARD CHECKS FAILED").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
+            Text(refusal.reason).font(.system(size: 13))
+            Text("The game was not left running without protection. Check: \(refusal.detail)")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(coral.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(coral.opacity(0.6)))
+    }
+
+    private func unguardedCard() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("GAME RUNNING WITHOUT THE GUARD").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
+            Text("No potions or Nexus will be used for you. Quit the game and start it from here.")
+                .font(.system(size: 13))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(coral.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(coral.opacity(0.6)))
     }
 
     private func mapCard(_ s: GuardSnapshot) -> some View {
@@ -785,7 +850,7 @@ struct CompactContent: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(link.isLive ? mint : link == .offline("Waiting for the guard") ? Color.gray : coral).frame(width: 8, height: 8)
-            if let s = snapshot, link.isLive || { if case .stale = link { return true } else { return false } }() {
+            if let s = snapshot, s.refusal == nil, link.isLive || { if case .stale = link { return true } else { return false } }() {
                 let percent = s.percent ?? 0
                 let color = s.deathBlocking ? coral : percent <= Double(s.potion) ? amber : mint
                 Text(s.armed ? "ARMED" : "DRY").font(.system(size: 10, weight: .bold)).foregroundStyle(s.armed ? mint : .gray)
@@ -816,6 +881,10 @@ struct CompactContent: View {
                         Text(s.nextSlot >= 0 ? "slot \(s.nextSlot + 1)" : "none").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
                 }
+            } else if snapshot?.refusal != nil {
+                Text("GUARD CHECKS FAILED: game closed").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
+                    .lineLimit(1)
+                Spacer()
             } else {
                 Text(link == .offline("Game closed") ? "Game closed" : "Waiting for the guard")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -908,7 +977,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
-            if alerts.settings.enabled { alerts.requestPermission() }
+            // Always: a refused game is announced whatever the party alert settings say.
+            alerts.requestPermission()
         }
         #endif
         try? FileManager.default.createDirectory(at: GuardPaths.logs(data: dataURL), withIntermediateDirectories: true,

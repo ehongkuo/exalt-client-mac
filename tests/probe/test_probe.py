@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -10,11 +11,19 @@ spec=importlib.util.spec_from_file_location('guard_tests',ROOT/'tests/test_guard
 guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 spec=importlib.util.spec_from_file_location('analysis',ROOT/'probe/analyze.py')
 analysis=importlib.util.module_from_spec(spec);spec.loader.exec_module(analysis)
+
+FIXTURE_BUILD=b'fixture game build\n'
+def build_defines(folder):
+ """A stand-in GameAssembly and its hash, so the guard's launch build check passes."""
+ (Path(folder)/'GameAssembly.dylib').write_bytes(FIXTURE_BUILD)
+ digest=hashlib.sha256(FIXTURE_BUILD).hexdigest()
+ return [f'-DGUARD_BUILD_FILE="{folder}/GameAssembly.dylib"',f'-DGUARD_BUILD_SHA256="{digest}"']
+
 class ProbeTests(unittest.TestCase):
  def fixture(self,bad_bytes=False,lethal=False,crash=False,bad_argument=False,fatal=False,denied=False,exception=False,reconcile=False,unaudited=False,context_missing=False,verify_hp=False,short_conditions=False,observe_environment=False):
   with tempfile.TemporaryDirectory(prefix='exalt-hit-probe-') as folder:
    p=Path(folder)
-   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
+   subprocess.run(['clang',*(['-DHIT_PROBE_BAD_ARGUMENT_TEST'] if bad_argument else []),*(['-DHIT_PROBE_UNAUDITED_TEST'] if unaudited else []),*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if context_missing else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_HIT_PROBE','-DHIT_PROBE_TEST','-DSESSION_NS=3500000000ULL',*build_defines(p),f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'probe.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests/probe/integration_fixture.c'),str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if observe_environment:args.append('-DOBSERVE_ENVIRONMENT')
    if short_conditions:args.append('-DSHORT_CONDITIONS')

@@ -23,6 +23,8 @@ CALL_LAYOUT = {
     'NOTIFY_CALLER': ('collision', 'notify', 'virtual'),
     'ZERO_HP_CALLER': ('zero_hp_context', 'hp', 'direct'),
 }
+# call qword ptr [rax + disp32] and [rbx + disp32], the dispatch forms seen at audited sites.
+VIRTUAL_CALLS = (b'\xff\x90', b'\xff\x93')
 
 
 def address(value):
@@ -259,7 +261,7 @@ def call_candidates(instructions, target=None, slot=None):
         if target is not None and len(raw) == 5 and raw[0] == 0xe8:
             returned = instruction['address'] + 5
             if returned + struct.unpack('<i', raw[1:])[0] == target: candidates.append(returned)
-        elif slot is not None and len(raw) == 6 and raw[:2] == b'\xff\x90' and struct.unpack('<I', raw[2:])[0] == slot:
+        elif slot is not None and len(raw) == 6 and raw[:2] in VIRTUAL_CALLS and struct.unpack('<I', raw[2:])[0] == slot:
             candidates.append(instruction['address'] + 6)
     return candidates
 
@@ -345,8 +347,9 @@ def verify_binary(profile, binary):
             if raw[0] != 0xe8 or returned + struct.unpack('<i', raw[1:])[0] != methods[call['target']]:
                 raise ValueError('Direct call mismatch: ' + call['id'])
         else:
-            expected = b'\xff\x90' + struct.pack('<I', address(call['slot_offset']))
-            if binary.read(returned - 6, 6) != expected: raise ValueError('Virtual call mismatch: ' + call['id'])
+            raw = binary.read(returned - 6, 6)
+            if raw[:2] not in VIRTUAL_CALLS or raw[2:] != struct.pack('<I', address(call['slot_offset'])):
+                raise ValueError('Virtual call mismatch: ' + call['id'])
 
 
 def generate(profile, check=False):

@@ -10,7 +10,8 @@ The commands below validate the selected profile and produce comparison reports 
 | File | Purpose |
 |---|---|
 | `active-profile.txt` | Selects the profile used for builds. |
-| `profiles/2026-10-15.json` | Current native-audited build: 13 methods, 27 referenced fields and three caller sites. |
+| `profiles/2026-11-03.json` | Current native-audited build: 13 methods, 27 referenced fields and three caller sites. The projectile damage and notification calls moved out of the collision override into the helper `BJDEACACFBD`, which the `collision` role now names. The ChatManager slot list moved to `0xc8`. |
+| `profiles/2026-10-15.json` | Previous native-audited build, kept for comparison. |
 | `profiles/2026-10-12.json` | Historical comparison reference, assembled from the earlier audited source and metadata. Runtime generation is disabled for it. |
 | `manage.py` | Profile validation, native header generation, binary verification and comparison reports. |
 | `../guard/build_profile.h` | Generated C constants, method names/owners and audited hook bytes. Checked in for ordinary native compilation. |
@@ -18,7 +19,7 @@ The commands below validate the selected profile and produce comparison reports 
 
 The signed app bundles `compatibility-profile.json` with its guard library and fingerprint. The app does
 not load arbitrary profiles at runtime. The existing exact-build launch check, signature checks, typed
-field reads and native entry-byte checks remain active. Gameplay behavior is unchanged.
+field reads and native entry-byte checks remain active. When any of them fails at startup, the guard closes the game instead of running without protection.
 
 ## Check the current build
 

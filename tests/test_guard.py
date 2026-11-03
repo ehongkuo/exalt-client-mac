@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -10,6 +11,13 @@ ACTION,RESULT,SLOT=18,19,20
 POTION,NEXUS='1','2'
 DUMP=None
 CONTROL=None
+
+FIXTURE_BUILD=b'fixture game build\n'
+def build_defines(folder):
+ """A stand-in GameAssembly and its hash, so the guard's launch build check passes."""
+ (Path(folder)/'GameAssembly.dylib').write_bytes(FIXTURE_BUILD)
+ digest=hashlib.sha256(FIXTURE_BUILD).hexdigest()
+ return [f'-DGUARD_BUILD_FILE="{folder}/GameAssembly.dylib"',f'-DGUARD_BUILD_SHA256="{digest}"']
 
 def live_control(path,request,armed,potion,ceiling,nexus):
  global CONTROL
@@ -41,14 +49,15 @@ def live_dump(path):
  return state
 
 class GuardTests(unittest.TestCase):
- def run_fixture(self, config=None, *defines, during=None, data_dir=False):
+ def run_fixture(self, config=None, *defines, during=None, data_dir=False, refusal=None, build_changed=False, guard_defines=()):
   with tempfile.TemporaryDirectory(prefix='exalt-guard-') as folder:
    p=Path(folder)
    # data_dir: the app's way, no compiled-in folder; EXALT_GUARD_DIR names the data folder.
    logdir=p/'data'/'logs' if data_dir else p
    flags=[] if data_dir else [f'-DPROBE_LOG_DIR="{p}"']
    subprocess.run(['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib','-DEXALT_CLIENT_FATAL',
-    *flags,'-DSESSION_NS=3500000000ULL',str(ROOT/'guard'/'guard.c'),'-o',str(p/'guard.dylib')],check=True)
+    *flags,*build_defines(p),*guard_defines,'-DSESSION_NS=3500000000ULL',str(ROOT/'guard'/'guard.c'),'-o',str(p/'guard.dylib')],check=True)
+   if build_changed:(p/'GameAssembly.dylib').write_bytes(b'updated game build\n')
    cmd=['clang','-arch','x86_64','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',str(ROOT/'tests'/'fixture.c'),'-o',str(p/'RotMGExalt')]
    cmd+=[f'-D{d}' for d in defines]
    subprocess.run(cmd,check=True)
@@ -64,6 +73,15 @@ class GuardTests(unittest.TestCase):
     while time.monotonic()<deadline and not (logdir/'guard-live.bin').exists():time.sleep(.01)
     time.sleep(during[0]); during[1](logdir/'guard-live.bin')
    out,_=game.communicate(timeout=12)
+   if refusal is not None:
+    # A failed check ends the game: the refusal and its reason reach the app, nothing else runs.
+    self.assertEqual(game.returncode,78)
+    log=next(logdir.glob('guard-*.tsv')).read_text()
+    self.assertIn('status\trefused',log)
+    self.assertNotIn('status\tcomplete',log)
+    self.live=live_dump(logdir/'guard-live.bin')
+    self.assertEqual(self.live['refusal'],str(refusal))
+    return log,self.live['refusal_detail']
    self.assertEqual(game.returncode,0)
    log=next(logdir.glob('guard-*.tsv')).read_text()
    self.assertIn('status\tcomplete',log)
@@ -149,10 +167,19 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture('armed=1','ALL_EMPTY')
   self.assertEqual(calls['potion_calls'],0);self.assertEqual(calls['nexus_calls'],0)
   self.assertEqual(self.actions(rows),[])
- def test_offset_mismatch_refuses_to_arm(self):
-  log,rows,calls=self.run_fixture('armed=1','BAD_OFFSET')
-  self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
-  self.assertIn('guard_refused',log)
+ def test_offset_mismatch_ends_the_game(self):
+  log,detail=self.run_fixture('armed=1','BAD_OFFSET',refusal=2)
+  self.assertEqual(detail,'method_offsets_differ')
+  self.assertIn('guard_refused\tmethod_offsets_differ',log)
+  self.assertNotIn('guard_ready',log)
+ def test_changed_game_build_ends_the_game_before_it_loads(self):
+  # The launcher can update the game after the app's check; the guard checks the file again.
+  log,detail=self.run_fixture('armed=1',build_changed=True,refusal=1)
+  self.assertEqual(detail,'game_build_changed')
+  self.assertNotIn('timing\t',log)
+ def test_game_that_never_becomes_ready_is_ended(self):
+  log,detail=self.run_fixture('armed=1','NO_ASSEMBLIES',refusal=7,guard_defines=('-DGUARD_READY_NS=1000000000ULL',))
+  self.assertEqual(detail,'game_never_ready')
  def test_invalid_config_stays_dry(self):
   log,rows,calls=self.run_fixture('armed=1,potion=101,nexus=30')
   self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
@@ -284,9 +311,8 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(self.join['calls'],0)
   self.assertIn('guard_join\tAnn\tunavailable',log)
   self.assertEqual(self.live['join_result'],'-2')
- def test_join_refused_on_unexpected_build(self):
-  log,rows,calls=self.run_fixture(None,"JOIN_BAD_OFFSET",during=(1.0,lambda f:live_join(f,1,'Ann')))
+ def test_join_mismatch_ends_the_game(self):
+  log,detail=self.run_fixture(None,"JOIN_BAD_OFFSET",refusal=5)
   self.assertIn('guard_join_unavailable',log)
-  self.assertEqual(self.join['calls'],0)
-  self.assertEqual(self.live['join_result'],'-4')
+  self.assertEqual(detail,'join_methods_differ')
 if __name__=='__main__': unittest.main()
