@@ -42,7 +42,10 @@ installed implementation or current numerical damage rates.
 ## Native findings
 
 `probe/damage_paths.json` stores build-specific method identities, signatures, field facts, caller
-encodings and instruction evidence. Its SHA-256 matches `compatibility/profiles/2026-10-15.json`.
+encodings and instruction evidence. Its SHA-256 matches `compatibility/profiles/2026-11-03.json`.
+The addresses in the table below come from the 2026-10-15 audit. The 2026-11-03 map keeps each
+finding at the same offset inside the same method. The exceptions are the projectile calls, now in
+`BJDEACACFBD`, and one duplicate incoming-damage handler that the new build removed.
 `probe/map_damage.py` checks the fingerprint and every recorded byte range. With `--dump`, it also
 checks unambiguous metadata identities and field type/storage/offset. It never approves intervention.
 

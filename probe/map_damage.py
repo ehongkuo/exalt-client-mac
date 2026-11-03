@@ -26,7 +26,8 @@ def verify(mapping, binary, dump=None):
                 raise ValueError('Method identity missing, changed or ambiguous: ' + row['path'])
     for row in mapping['notification_callers']:
         expected = bytes.fromhex(row['call_bytes'])
-        if expected not in (bytes.fromhex('ff9098080000'), bytes.fromhex('ff9398080000')):
+        # call qword ptr [rax|rbx + disp32]; the slot displacement is build-specific.
+        if len(expected) != 6 or expected[:2] not in compatibility.VIRTUAL_CALLS:
             raise ValueError('Unexpected notification dispatch encoding')
         if binary.read(int(row['return_address'], 16) - len(expected), len(expected)) != expected:
             raise ValueError('Notification caller changed: ' + row['path'])

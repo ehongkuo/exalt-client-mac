@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "game_sha256": "ad0698246ccd226ff4dd1245961c003f3be99d12dda1bb438c9d1be9b4a4b51f",
+  "game_sha256": "b09e1a2dea3d5258150baeb75b27df1edde98518c2d4fa89973be88f8283b7ad",
   "methods": [
     {
       "namespace": "",
@@ -11,9 +11,23 @@
         "int"
       ],
       "returns": "bool",
-      "offset": "0x6534f0",
-      "slot": 5,
+      "offset": "0xd82fa0",
+      "slot": 10,
       "path": "projectile",
+      "entry_prefix": "554889e541574156415541545348"
+    },
+    {
+      "namespace": "",
+      "owner": "HBEAKBIHANL",
+      "name": "BJDEACACFBD",
+      "parameters": [
+        "LKHPPBEGNOM",
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0xd82a70",
+      "slot": null,
+      "path": "projectile_hit",
       "entry_prefix": "554889e541574156415541545348"
     },
     {
@@ -24,7 +38,7 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x196eb80",
+      "offset": "0x12e1820",
       "slot": null,
       "path": "terrain",
       "entry_prefix": "554889e5415741564154534883ec"
@@ -37,7 +51,7 @@
         "OODFCLBKDJJ"
       ],
       "returns": "void",
-      "offset": "0x183f290",
+      "offset": "0x1224810",
       "slot": null,
       "path": "area_candidate",
       "entry_prefix": "554889e541574156415541545348"
@@ -52,7 +66,7 @@
         "bool"
       ],
       "returns": "void",
-      "offset": "0x184ae90",
+      "offset": "0x121de90",
       "slot": null,
       "path": "incoming_hp",
       "entry_prefix": "554889e541574156415541545348"
@@ -65,7 +79,7 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x1af1670",
+      "offset": "0x1ade560",
       "slot": null,
       "path": "hp_assignment",
       "entry_prefix": "554889e589b70c020000488b0748"
@@ -76,8 +90,8 @@
       "name": "UpdateBreathBar",
       "parameters": [],
       "returns": "void",
-      "offset": "0x1df40a0",
-      "slot": 82,
+      "offset": "0x1d4aae0",
+      "slot": 27,
       "path": "breath_ui",
       "entry_prefix": "554889e580bfd000000000743048"
     },
@@ -87,8 +101,8 @@
       "name": "UpdateFrostbiteBar",
       "parameters": [],
       "returns": "void",
-      "offset": "0x1df5800",
-      "slot": 8,
+      "offset": "0x1d4c8a0",
+      "slot": 11,
       "path": "frostbite_ui",
       "entry_prefix": "554889e580bfd000000000743048"
     },
@@ -100,7 +114,7 @@
         "DCBCCBKEIHN"
       ],
       "returns": "void",
-      "offset": "0x199e310",
+      "offset": "0xf63f50",
       "slot": null,
       "path": "damage_report_send",
       "entry_prefix": "554889e54156534989f64889fb488b4728"
@@ -113,10 +127,10 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x196c150",
+      "offset": "0x12f71d0",
       "slot": null,
       "path": "breath_assignment",
-      "entry_prefix": "554889e54156534189f64889fb803de5"
+      "entry_prefix": "554889e54156534189f64889fb803d49"
     },
     {
       "namespace": "",
@@ -126,7 +140,7 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x1979920",
+      "offset": "0x12fcac0",
       "slot": null,
       "path": "frostbite_assignment",
       "entry_prefix": "554889e541574156535089f34989ff80"
@@ -139,7 +153,7 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x1af1380",
+      "offset": "0x1ae9ec0",
       "slot": null,
       "path": "condition_word0_assignment",
       "entry_prefix": "554889e5488b87500200004885c0740b"
@@ -152,7 +166,7 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x1aeda90",
+      "offset": "0x1ae0c00",
       "slot": null,
       "path": "condition_word1_assignment",
       "entry_prefix": "554889e5488b87500200004885c0742f"
@@ -163,10 +177,10 @@
       "name": "EFELAKFKIHJ",
       "parameters": [],
       "returns": "bool",
-      "offset": "0x1aed0f0",
+      "offset": "0x1adccf0",
       "slot": null,
       "path": "condition_mask_reader",
-      "entry_prefix": "554889e54156534889fb803dfced5203"
+      "entry_prefix": "554889e54156534889fb803dd0e35803"
     },
     {
       "namespace": "",
@@ -177,7 +191,7 @@
         "ViewHandler"
       ],
       "returns": "void",
-      "offset": "0x2233620",
+      "offset": "0x11d01a0",
       "slot": null,
       "path": "sprite_key_assignment",
       "entry_prefix": "554889e54156534885f674544889f348"
@@ -191,10 +205,10 @@
         "int"
       ],
       "returns": "void",
-      "offset": "0x1964c30",
+      "offset": "0x12dca40",
       "slot": null,
       "path": "player_condition_assignment",
-      "entry_prefix": "554889e5415653488b87300700004885"
+      "entry_prefix": "554889e5415653488b87380700004885"
     }
   ],
   "fields": [
@@ -237,286 +251,276 @@
   ],
   "notification_callers": [
     {
-      "return_address": "0x653bd0",
+      "return_address": "0xd82d90",
       "path": "projectile",
-      "call_bytes": "ff9098080000"
+      "call_bytes": "ff9318070000"
     },
     {
-      "return_address": "0x196ed65",
+      "return_address": "0x12e1a05",
       "path": "terrain",
-      "call_bytes": "ff9098080000"
+      "call_bytes": "ff9018070000"
     },
     {
-      "return_address": "0x183f7be",
+      "return_address": "0x1224d3e",
       "path": "area_candidate",
-      "call_bytes": "ff9398080000"
+      "call_bytes": "ff9318070000"
     },
     {
-      "return_address": "0x18407cf",
+      "return_address": "0x1215fff",
       "path": "incoming_damage",
-      "call_bytes": "ff9098080000"
-    },
-    {
-      "return_address": "0x18413af",
-      "path": "incoming_damage",
-      "call_bytes": "ff9398080000"
+      "call_bytes": "ff9318070000"
     }
   ],
   "evidence": [
     {
-      "address": "0x1df40c5",
+      "address": "0x1d4ab05",
       "bytes": "f30f2a802c050000",
       "finding": "breath UI loads player +0x52c"
     },
     {
-      "address": "0x1df5825",
+      "address": "0x1d4c8c5",
       "bytes": "f30f2a8030050000",
       "finding": "frostbite UI loads player +0x530"
     },
     {
-      "address": "0x196ecab",
+      "address": "0x12e194b",
       "bytes": "80b9f406000000",
       "finding": "terrain checks ObjectProperties.protectFromGroundDamage +0x6f4"
     },
     {
-      "address": "0x196ece3",
-      "bytes": "e80848eeff",
+      "address": "0x12e1983",
+      "bytes": "e8b808f4ff",
       "finding": "terrain calls damage-range calculation"
     },
     {
-      "address": "0x196ed8b",
-      "bytes": "e8b000edff",
+      "address": "0x12e1a2b",
+      "bytes": "e8d032f3ff",
       "finding": "terrain calls outgoing report helper"
     },
     {
-      "address": "0x184c110",
-      "bytes": "e85b552a00",
+      "address": "0x121f110",
+      "bytes": "e84bf48b00",
       "finding": "incoming stats calls HP assignment"
     },
     {
-      "address": "0x65389d",
-      "bytes": "e8eed5ffff",
-      "finding": "projectile calls audited calculator"
+      "address": "0xd82c1d",
+      "bytes": "e8beccffff",
+      "finding": "projectile hit helper calls audited calculator"
     },
     {
-      "address": "0x183f6ed",
-      "bytes": "e8ae4d9f00",
+      "address": "0x1224c6d",
+      "bytes": "e81eb0faff",
       "finding": "radius-handler calls generic calculation"
     },
     {
-      "address": "0x1af197a",
+      "address": "0x1ae959a",
       "bytes": "89830c020000",
       "finding": "entity initialization writes HP directly"
     },
     {
-      "address": "0x1af978a",
+      "address": "0x1ae33ba",
       "bytes": "89830c020000",
       "finding": "entity initialization writes HP directly"
     },
     {
-      "address": "0x1af6232",
-      "bytes": "41c7870c02000000000000",
+      "address": "0x1addb72",
+      "bytes": "41c784240c02000000000000",
       "finding": "base notification can set HP zero"
     },
     {
-      "address": "0x183ef1b",
-      "bytes": "e9f0f31500",
-      "finding": "terrain report helper tail-calls SendMessage; return address remains 0x196ed90"
+      "address": "0x1214ddb",
+      "bytes": "e970f1d4ff",
+      "finding": "terrain report helper tail-calls SendMessage; return address remains 0x12e1a30"
     },
     {
-      "address": "0x183f87b",
-      "bytes": "e890ea1500",
-      "finding": "area notification precedes report SendMessage; return address 0x183f880"
+      "address": "0x1224dfb",
+      "bytes": "e850f1d3ff",
+      "finding": "area notification precedes report SendMessage; return address 0x1224e00"
     },
     {
-      "address": "0x184b1be",
+      "address": "0x121e1be",
       "bytes": "458b7714410fb65f108d43800fb6c0488d0da8240000486304814801c8ffe0",
       "finding": "server stat value/id load and rotated jump dispatch"
     },
     {
-      "address": "0x184c7da",
-      "bytes": "e841d11200",
+      "address": "0x121f7da",
+      "bytes": "e8e1d20d00",
       "finding": "frostbite assignment call"
     },
     {
-      "address": "0x184cb6f",
-      "bytes": "e8dcf51100",
+      "address": "0x121fb6f",
+      "bytes": "e85c760d00",
       "finding": "breath assignment call"
     },
     {
-      "address": "0x1af1384",
+      "address": "0x1ae9ec4",
       "bytes": "488b8750020000",
       "finding": "condition word setter loads Int32 array +0x250"
     },
     {
-      "address": "0x1af1396",
+      "address": "0x1ae9ed6",
       "bytes": "897020",
       "finding": "condition word zero store at array +0x20"
     },
     {
-      "address": "0x1aedaa9",
+      "address": "0x1ae0c19",
       "bytes": "897024",
       "finding": "condition word one store at array +0x24"
     },
     {
-      "address": "0x1aed116",
+      "address": "0x1adcd16",
       "bytes": "488b8350020000",
       "finding": "condition predicate reads Int32 array +0x250"
     },
     {
-      "address": "0x1aed128",
+      "address": "0x1adcd28",
       "bytes": "8b5820",
       "finding": "condition predicate reads first Int32 word"
     },
     {
-      "address": "0x223362f",
+      "address": "0x11d01af",
       "bytes": "488b4630483b87f800000074444989d6488987f8000000",
       "finding": "sprite-key transfer reads IPKAMAAPAGA +0x30 and stores entity +0xf8"
     },
     {
-      "address": "0x196c179",
+      "address": "0x12f71f9",
       "bytes": "4489b32c050000",
       "finding": "breath setter stores +0x52c"
     },
     {
-      "address": "0x197995f",
+      "address": "0x12fcaff",
       "bytes": "41899f30050000",
       "finding": "frostbite setter stores +0x530"
     },
     {
-      "address": "0x184d880",
+      "address": "0x1220880",
       "bytes": "88eaffff",
       "finding": "stat 1 dispatches HP"
     },
     {
-      "address": "0x184d8f0",
+      "address": "0x12208f0",
       "bytes": "9beeffff",
       "finding": "stat 29 dispatches condition_word0"
     },
     {
-      "address": "0x184d990",
+      "address": "0x1220990",
       "bytes": "dcf3ffff",
       "finding": "stat 69 dispatches condition_word1"
     },
     {
-      "address": "0x184d97c",
+      "address": "0x122097c",
       "bytes": "e1f4ffff",
       "finding": "stat 64 dispatches breath"
     },
     {
-      "address": "0x184d6d4",
+      "address": "0x12206d4",
       "bytes": "4cf1ffff",
       "finding": "stat 150 dispatches frostbite"
     },
     {
-      "address": "0x1964c9d",
-      "bytes": "e9dec61800",
+      "address": "0x12dcaad",
+      "bytes": "e90ed48000",
       "finding": "controlled-player condition word0 tail-call to base setter"
     },
     {
-      "address": "0x1964cd1",
-      "bytes": "e9ba8d1800",
+      "address": "0x12dcae1",
+      "bytes": "e91a418000",
       "finding": "controlled-player condition word1 tail-call to base setter"
     },
     {
-      "address": "0x18407a5",
-      "bytes": "450fb64524498b4d18418b5520",
-      "finding": "incoming message supplies notification lethal flag and damage amount"
-    },
-    {
-      "address": "0x1841385",
+      "address": "0x1215fd5",
       "bytes": "450fb64524498b4d18418b5520",
       "finding": "alternate incoming message supplies notification lethal flag and damage amount"
     },
     {
-      "address": "0x1af1674",
+      "address": "0x1ade564",
       "bytes": "89b70c020000",
       "finding": "HP setter writes incoming value to entity +0x20c before its virtual callback"
     },
     {
-      "address": "0x1841731",
+      "address": "0x1213ff1",
       "bytes": "83b80c020000007edc",
       "finding": "Normal Nexus returns without escape when controlled-player HP is nonpositive"
     },
     {
-      "address": "0x1840e57",
-      "bytes": "c647390131f631d2e80c082b00",
+      "address": "0x12252a7",
+      "bytes": "c647390131f631d2e8ac928b00",
       "finding": "Incoming death handler sets entity dead flag +0x39 before assigning zero HP"
     },
     {
-      "address": "0x1840f1c",
-      "bytes": "e84f197500",
+      "address": "0x122536c",
+      "bytes": "e80fd2b400",
       "finding": "Incoming death handler calls GuiManager.ShowDeathScreenPanel"
     },
     {
-      "address": "0x184187e",
+      "address": "0x121413e",
       "bytes": "807839007405",
       "finding": "Nexus send helper refuses when the controlled-player dead flag +0x39 is set"
     },
     {
-      "address": "0x18418ab",
-      "bytes": "e890c71500",
+      "address": "0x121416b",
+      "bytes": "e870efd4ff",
       "finding": "Nexus send helper calls SocketManager local Nexusing setter"
     },
     {
-      "address": "0x199e044",
+      "address": "0xf630e4",
       "bytes": "c6474001",
       "finding": "SocketManager Nexusing setter writes one at +0x40"
     },
     {
-      "address": "0x1841905",
-      "bytes": "e906ca1500",
+      "address": "0x12141c5",
+      "bytes": "e986fdd4ff",
       "finding": "Nexus send helper tail-calls SocketManager.SendMessage"
     },
     {
-      "address": "0x185405c",
-      "bytes": "4889c74489e64489fa31c9e8c4e7f8fe498bbe600100004885ff74124889de31d25b415c415e415f5de986a21400",
+      "address": "0x122369c",
+      "bytes": "4889c74489e64489fa31c9e8247db600498bbe600100004885ff74124889de31d25b415c415e415f5de98608d4ff",
       "finding": "projectile report initializes bullet/owner then tail-calls SocketManager.SendMessage; no HP or damage argument"
     },
     {
-      "address": "0x7e2834",
+      "address": "0x1d8b3d4",
       "bytes": "89771c895720",
       "finding": "projectile report initializer stores bullet at +0x1c and owner at +0x20"
     },
     {
-      "address": "0x7e24c2",
+      "address": "0x1d8baa2",
       "bytes": "0fb7431c",
       "finding": "projectile report serializer loads bullet ID as UInt16 from +0x1c"
     },
     {
-      "address": "0x7e24fd",
+      "address": "0x1d8badd",
       "bytes": "8b4320",
       "finding": "projectile report serializer loads owner ID as Int32 from +0x20"
     }
   ],
   "limitation": "Build-specific static and live projectile/terrain/area evidence. HP, breath, frostbite and two condition words are applied by incoming stat dispatch; no local cancellable DOT calculation is established. Legacy entity +0xf8 context is a sprite key, not status flags. Condition context now reads the first two Int32 mask words at +0x250 with explicit provenance.",
   "stat_dispatch": {
-    "table": "0x184d67c",
+    "table": "0x122067c",
     "rotation": 128,
     "cases": [
       {
         "stat": 1,
-        "handler": "0x184c104",
+        "handler": "0x121f104",
         "role": "HP"
       },
       {
         "stat": 29,
-        "handler": "0x184c517",
+        "handler": "0x121f517",
         "role": "condition_word0"
       },
       {
         "stat": 69,
-        "handler": "0x184ca58",
+        "handler": "0x121fa58",
         "role": "condition_word1"
       },
       {
         "stat": 64,
-        "handler": "0x184cb5d",
+        "handler": "0x121fb5d",
         "role": "breath"
       },
       {
         "stat": 150,
-        "handler": "0x184c7c8",
+        "handler": "0x121f7c8",
         "role": "frostbite"
       }
     ]

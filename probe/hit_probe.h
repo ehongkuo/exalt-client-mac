@@ -29,12 +29,12 @@ static NativeHook probe_hooks[9];
 typedef void (*SendFunction)(void *,void *,const void *);
 static SendFunction send_original;
 /* Audited only for EXALT_GAME_SHA256 in damage_paths.json. */
-#define TERRAIN_NOTIFY_CALLER 0x196ed65UL
-#define AREA_NOTIFY_CALLER 0x183f7beUL
-#define TERRAIN_SEND_CALLER 0x196ed90UL /* report helper tail-calls SendMessage */
-#define AREA_SEND_CALLER 0x183f880UL
-#define SEND_OFFSET 0x199e310UL
-#define INCOMING_HP_CALLER 0x184c115UL
+#define TERRAIN_NOTIFY_CALLER 0x12e1a05UL
+#define AREA_NOTIFY_CALLER 0x1224d3eUL
+#define TERRAIN_SEND_CALLER 0x12e1a30UL /* report helper tail-calls SendMessage */
+#define AREA_SEND_CALLER 0x1224e00UL
+#define SEND_OFFSET 0xf63f50UL
+#define INCOMING_HP_CALLER 0x121f115UL
 static _Atomic uintptr_t fatal_block_socket;
 static int probe_installed,probe_attempted;
 static char probe_main_key;
@@ -714,16 +714,16 @@ static void probe_install(void) {
 #else
     static const unsigned char send_prologue[]={0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x49,0x89,0xf6,0x48,0x89,0xfb,0x48,0x8b,0x47,0x28};
     /* New boundaries must match in full before ANY hook is installed. */
-    static const unsigned char terrain_report_call[]={0xe8,0xb0,0x00,0xed,0xff};
-    static const unsigned char terrain_send_tail[]={0xe9,0xf0,0xf3,0x15,0x00};
-    static const unsigned char area_send_call[]={0xe8,0x90,0xea,0x15,0x00};
+    static const unsigned char terrain_report_call[]={0xe8,0xd0,0x32,0xf3,0xff};
+    static const unsigned char terrain_send_tail[]={0xe9,0x70,0xf1,0xd4,0xff};
+    static const unsigned char area_send_call[]={0xe8,0x50,0xf1,0xd3,0xff};
     if(memcmp((void*)(probe_game_base+TERRAIN_SEND_CALLER-5),terrain_report_call,5) ||
-       memcmp((void*)(probe_game_base+0x183ef1bUL),terrain_send_tail,5) ||
+       memcmp((void*)(probe_game_base+0x1214ddbUL),terrain_send_tail,5) ||
        memcmp((void*)(probe_game_base+AREA_SEND_CALLER-5),area_send_call,5)){
         note("hit_probe_refused\treport_boundary_bytes\n");return;
     }
     const uintptr_t sites[]={TERRAIN_NOTIFY_CALLER,AREA_NOTIFY_CALLER};
-    const unsigned char dispatches[][6]={{0xff,0x90,0x98,8,0,0},{0xff,0x93,0x98,8,0,0}};
+    const unsigned char dispatches[][6]={{0xff,0x90,0x18,7,0,0},{0xff,0x93,0x18,7,0,0}};
     for(int i=0;i<2;++i)if(memcmp((void*)(probe_game_base+sites[i]-6),dispatches[i],6)){
         note("hit_probe_refused\tboundary_bytes\n");return;
     }

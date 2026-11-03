@@ -163,10 +163,10 @@ class DamageSessionTests(unittest.TestCase):
         self.assertIsNone(context['conditions_raw'])
 
     def test_notification_path_uses_exact_correlation_not_timing(self):
-        rows = [event(1, 3, callsite=0x196ed65, value=50), event(2, 10, hp=950, correlation=1)]
+        rows = [event(1, 3, callsite=0x12e1a05, value=50), event(2, 10, hp=950, correlation=1)]
         drop = session.summarize(rows)['hp_decreases'][0]
         self.assertEqual(drop['path'], 'notification_return')
-        self.assertEqual(drop['notification_caller'], '0x196ed65')
+        self.assertEqual(drop['notification_caller'], '0x12e1a05')
         self.assertEqual(drop['native_path'], 'terrain')
 
 
