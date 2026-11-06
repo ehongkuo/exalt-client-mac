@@ -41,4 +41,13 @@ class SyncAnalysisTests(unittest.TestCase):
         self.assertTrue(result['limit_reached']);self.assertEqual(result['counters']['dropped'],3)
         self.assertFalse(result['trace_ready'])
 
+    def test_own_object_text_is_paired_with_the_next_server_hp(self):
+        log=row(47,id=1,ns=1_000_000,hp=200,max=300,flag2=7,owner=0xff00ff00,value=50,flag0=1,flag1=1)
+        log+='sync_object_text\tevent=1\tkind=7\tcolor=0xff00ff00\ttext=+50\n'
+        log+=row(47,id=2,ns=2_000_000,hp=200,max=300,projectile=5,flag3=1)
+        log+=row(6,id=3,ns=41_000_000,hp=250,update_source=1)
+        found=summarize(log)['own_object_text']
+        self.assertEqual([(x['kind'],x['text'],x['amount'],x['signed_plus'],x['next_server_hp'],x['ms_to_next_server_hp']) for x in found],
+                         [('notification','+50',50,True,250,40.0),('xp',None,None,False,250,39.0)])
+
 if __name__=='__main__':unittest.main()

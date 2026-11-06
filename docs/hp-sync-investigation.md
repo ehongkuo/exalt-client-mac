@@ -66,7 +66,7 @@ damage-handler hooks. The latter validate method identity, signature, address an
 prefixes before redirecting, and always forward the original call once with unchanged arguments.
 Fields are accessed only for validated message classes on the main thread. There are no raw packet
 payloads, credentials, packet modifications, inferred acknowledgements, auto Nexus or nullified hits.
-The extra trace is capped at 12,000 events and uses the existing bounded recorder/queue.
+The extra trace is capped at 90,000 events (about 90 minutes of update traffic) and uses the existing bounded recorder/queue.
 
 | Phase | Meaning |
 |---|---|

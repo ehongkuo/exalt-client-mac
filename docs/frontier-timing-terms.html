@@ -1,0 +1,829 @@
+<title>Frontier Timing Terms</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one wide timing diagram (server lane over client lane), then a term key whose rows highlight their marks. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #1b2230; --muted: #5d6676; --line: #d7dce4;
+  --server: #2f5fd0; --local: #1d8a5b; --calc: #c26a12; --unknown: #8a8f99; --bad: #c43d3d;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161d; --panel: #1a1f28; --fg: #e5e9f0; --muted: #9aa3b2; --line: #2e3542;
+  --server: #7da2ff; --local: #4cc78f; --calc: #f0a24a; --unknown: #8d94a1; --bad: #f07575; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161d; --panel: #1a1f28; --fg: #e5e9f0; --muted: #9aa3b2; --line: #2e3542;
+  --server: #7da2ff; --local: #4cc78f; --calc: #f0a24a; --unknown: #8d94a1; --bad: #f07575; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 48px; }
+main { max-width: 1080px; margin: 0 auto; display: grid; gap: 22px; }
+h1 { font-size: 1.6rem; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 10px; }
+p { margin: 0; max-width: 70ch; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls button { font: 500 14px var(--sans); color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.controls button[aria-pressed="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.controls button:focus-visible, .term:focus-visible { outline: 2px solid var(--server); outline-offset: 2px; }
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+svg { display: block; min-width: 860px; width: 100%; height: auto; font-family: var(--mono); }
+.verdict { font: 500 14px var(--mono); display: grid; gap: 4px; }
+.verdict .ok { color: var(--local); } .verdict .no { color: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px 22px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 7px; align-items: center; }
+.sw { width: 22px; height: 0; border-top: 3px solid; }
+.sw.unknown { border-top-style: dashed; }
+.terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px; }
+.term { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 6px;
+  padding: 10px 12px; cursor: pointer; min-width: 0; }
+.term b { display: block; font-weight: 600; }
+.term .src { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--c); }
+.term p { font-size: 13.5px; }
+.term code { font: 13px var(--mono); color: var(--fg); }
+.c-server { --c: var(--server); } .c-local { --c: var(--local); } .c-calc { --c: var(--calc); } .c-unknown { --c: var(--unknown); }
+/* SVG marks */
+.lane { stroke: var(--line); stroke-width: 2; }
+.lane-label { fill: var(--fg); font: 600 13px var(--sans); }
+.axis { fill: var(--muted); font-size: 11px; }
+.mk { transition: opacity .15s; }
+svg.focus .mk { opacity: .12; } svg.focus .mk.on { opacity: 1; }
+.server { stroke: var(--server); fill: var(--server); } .local { stroke: var(--local); fill: var(--local); }
+.calc { stroke: var(--calc); fill: var(--calc); } .unknown { stroke: var(--unknown); fill: var(--unknown); }
+.bad { stroke: var(--bad); fill: var(--bad); }
+.mk line, .mk path { fill: none; stroke-width: 2; }
+.mk.unknown line, .mk.unknown path { stroke-dasharray: 5 4; }
+.mk text { stroke: var(--panel); stroke-width: 4px; paint-order: stroke; stroke-linejoin: round; font-size: 11.5px; }
+.zone { fill-opacity: .14; stroke: none; }
+@media (prefers-reduced-motion: reduce) { .mk { transition: none; } }
+/* Part 2 */
+.part { border-top: 1px solid var(--line); padding-top: 24px; display: grid; gap: 16px; }
+.steps { margin: 0; padding-left: 22px; max-width: 78ch; display: grid; gap: 8px; }
+.steps li::marker { font-weight: 600; }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.note p { color: var(--fg); max-width: none; }
+.note ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
+.cmp-wrap { overflow-x: auto; }
+table.cmp { border-collapse: collapse; width: 100%; min-width: 560px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; }
+.cmp th, .cmp td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmp th { font-weight: 600; font-size: 13px; color: var(--muted); }
+.cmp td:nth-child(2) { font-family: var(--mono); white-space: nowrap; }
+.r-bad { color: var(--bad); font-weight: 500; } .r-ok { color: var(--local); font-weight: 500; } .r-late { color: var(--calc); font-weight: 500; }
+.ring { fill: none !important; stroke-width: 2.5; }
+.faint { opacity: .4; }
+.now { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 2 3; }
+.now-label { fill: var(--fg); font-size: 11px; }
+.player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.player button, .player select { font: 500 14px var(--sans); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 11px; cursor: pointer; }
+.player button.primary { min-width: 92px; }
+.player input { flex: 1; min-width: 180px; accent-color: var(--fg); }
+.sim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 760px) { .sim { grid-template-columns: 1fr; } }
+.vars { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.vars dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 13.5px; }
+.vars dt { color: var(--muted); } .vars dd { margin: 0; font-family: var(--mono); font-size: 13px; }
+.vars .truth { color: var(--unknown); font-style: italic; } .vars dd.strong { font-weight: 600; }
+.log { max-height: 340px; overflow: auto; font: 12.5px/1.5 var(--mono); display: grid; gap: 3px; }
+.log .minor { color: var(--muted); } .log .truth { color: var(--unknown); font-style: italic; }
+.log .key { color: var(--calc); } .log .cur { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+/* Part 3: accounting stepper. The ledger shows pending hits in report order; updates clear from the left. */
+.formula { font: 500 15px var(--mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: nowrap; }
+.formula .h { color: var(--local); } .formula .d { color: var(--server); } .formula .r { color: var(--unknown); }
+.acc-top { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.toggle { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; }
+.toggle input { accent-color: var(--fg); width: 16px; height: 16px; }
+.acc { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 14px; min-width: 0; }
+.acc-now { font: 500 14px var(--mono); color: var(--fg); min-height: 3em; }
+.acc-now .why { display: block; font: 13.5px/1.5 var(--sans); color: var(--muted); margin-top: 4px; white-space: normal; }
+.meter { display: grid; gap: 6px; }
+.meter-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); }
+.meter-row b { font: 500 13px var(--mono); color: var(--fg); text-align: right; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 14px; background: color-mix(in srgb, var(--line) 60%, transparent); border-radius: 3px; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; transition: width .25s; }
+.bar .srv { background: var(--server); } .bar .prj { background: var(--local); } .bar .prj.neg { background: var(--bad); }
+.ledger { display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch; min-height: 44px; }
+.ledger .empty { font-size: 13px; color: var(--muted); align-self: center; }
+.blk { position: relative; height: 40px; min-width: 34px; border: 1.5px solid var(--calc); border-radius: 4px; background: color-mix(in srgb, var(--calc) 14%, transparent);
+  font: 500 12px var(--mono); color: var(--fg); display: grid; place-items: center; overflow: hidden; }
+.blk .fill { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--local) 45%, transparent) 0 4px, transparent 4px 8px); }
+.blk span { position: relative; line-height: 1.15; text-align: center; padding: 0 3px; }
+.blk.gone { border-style: dashed; border-color: var(--local); opacity: .55; }
+.blk.new { border-color: var(--fg); }
+.acc-table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+table.acc-t { border-collapse: collapse; width: 100%; min-width: 760px; background: var(--panel); font-size: 13px; }
+.acc-t th, .acc-t td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acc-t th { position: sticky; top: 0; background: var(--panel); font-weight: 600; color: var(--muted); font-size: 12px; }
+.acc-t td { font-family: var(--mono); font-size: 12.5px; }
+.acc-t th:nth-child(2), .acc-t td:nth-child(2) { text-align: left; font-family: var(--sans); white-space: normal; min-width: 220px; }
+.acc-t tr { cursor: pointer; } .acc-t tr.future td { color: var(--muted); opacity: .55; }
+.acc-t tr.cur td { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.acc-t .hl { color: var(--local); } .acc-t .bd { color: var(--bad); } .acc-t .tr { color: var(--unknown); font-style: italic; }
+.checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.check { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.check b { display: block; font-weight: 600; margin-bottom: 2px; }
+.check p { font-size: 13.5px; }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <h1>Frontier timing terms</h1>
+    <p>One hit, a few server updates, and every timing term used to decide whether an update already contains the hit. Times are on the client's clock in ms, using the worked example. Select a term below to highlight its marks. Part 2 shows the ordering proof built on these terms, which is now the backstop. Part 3 shows the primary rule, accounting with heal text, stepped through real captured updates.</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Scenario">
+    <button type="button" id="sc-normal" aria-pressed="true">Normal</button>
+    <button type="button" id="sc-stall" aria-pressed="false">Download stall</button>
+  </div>
+
+  <div class="diagram"><svg id="svg" viewBox="0 0 1000 470" role="img" aria-label="Timing diagram"></svg></div>
+
+  <div class="legend">
+    <span><i class="sw" style="color:var(--server)"></i>Read from the server update</span>
+    <span><i class="sw" style="color:var(--local)"></i>Measured on the client</span>
+    <span><i class="sw" style="color:var(--calc)"></i>Calculated by the guard</span>
+    <span><i class="sw unknown" style="color:var(--unknown)"></i>Unknown to the guard (true value shown)</span>
+  </div>
+
+  <div class="verdict" id="verdict"></div>
+
+  <section>
+    <h2>Terms</h2>
+    <div class="terms" id="terms"></div>
+  </section>
+
+  <section class="part">
+    <h2 style="font-size:1.3rem;margin:0">Part 2: the ordering proof (backstop)</h2>
+    <p>Accounting (Part 3) clears nearly every hit first. The ordering proof clears what accounting can't: hits during a suspension, heals with no "+N" text, and overcharged debuff hits.</p>
+    <p>A hit cleared too early is missing from the projection, which can cost a death. A hit cleared too late is counted twice, which can only cause an early escape. So every hit stays pending until the guard can prove an update contains it.</p>
+    <ol class="steps">
+      <li><b>Pair each hit with the next reply.</b> The client replies to every update. The first reply it sends after a hit travels on the same connection, behind the hit, so the server cannot receive the reply before the hit.</li>
+      <li><b>Track the latest round trip.</b> Every update carries the round trip of the latest reply the server received. A repeated value means no new reply arrived: ignore it. A new value arrived after the previous update was built, so it belongs to the reply whose build time + value falls between the two build times. That proves the server had that reply, and every earlier message, by build time + value.</li>
+      <li><b>Set the hit's proof bound</b> from the first such proof for a reply at or after the first reply after the hit: the hit was received by then at the latest.</li>
+      <li><b>Clear the hit on the first update built at least c after the bound.</b> That update is proven to contain it. Until then the hit stays pending, however old it looks.</li>
+      <li><b>Project and decide as today.</b> Projected HP = latest server HP − every hit not yet cleared. Escape when a hit takes the projection to 0 or below.</li>
+    </ol>
+    <div class="note">
+      <p>The proof uses only values read from updates (build times, round trip) plus the order of two client sends. Clock offset, upload and download estimates drop out. It holds if:</p>
+      <ul>
+        <li>the round-trip field is the latest single measurement, updated as each reply arrives, not an average (about 20% of captured updates repeat the previous value exactly, which supports this; holding replies back in the probe build would confirm it);</li>
+        <li>hit reports and replies share one ordered connection;</li>
+        <li>c is an upper bound on how long before its build an update stops taking messages.</li>
+      </ul>
+    </div>
+
+    <div class="controls" role="group" aria-label="Algorithm scenario">
+      <button type="button" id="ps-normal" aria-pressed="true">Normal</button>
+      <button type="button" id="ps-dstall" aria-pressed="false">Download stall</button>
+      <button type="button" id="ps-ustall" aria-pressed="false">Upload stall</button>
+    </div>
+    <div class="player">
+      <button type="button" id="p-reset" aria-label="Back to start">⏮</button>
+      <button type="button" id="p-prev" aria-label="Previous event">◀</button>
+      <button type="button" id="p-play" class="primary">▶ Play</button>
+      <button type="button" id="p-next" aria-label="Next event">▶</button>
+      <input type="range" id="p-time" min="760" max="2520" step="1" value="760" aria-label="Time">
+      <select id="p-speed" aria-label="Speed"><option value="0.1">0.1×</option><option value="0.25" selected>0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option></select>
+    </div>
+    <div class="diagram"><svg id="svg2" viewBox="0 0 1000 466" role="img" aria-label="Ordering proof simulation"></svg></div>
+    <div class="sim">
+      <div class="vars"><h2>Client variables</h2><dl id="vars"></dl></div>
+      <div class="vars"><h2>Events</h2><div class="log" id="log"></div></div>
+    </div>
+
+    <div>
+      <h2>When each rule clears the hit</h2>
+      <div class="cmp-wrap"><table class="cmp"><thead><tr><th>Rule</th><th>Clears at</th><th>Result</th></tr></thead><tbody id="cmp"></tbody></table></div>
+      <p id="cmp-note" style="margin-top:10px"></p>
+    </div>
+
+    <div>
+      <h2>Algorithm terms</h2>
+      <div class="terms" id="terms2"></div>
+    </div>
+  </section>
+
+  <section class="part">
+    <h2 style="font-size:1.3rem;margin:0">Part 3: accounting with heal text (primary rule)</h2>
+    <p>Server HP is net: a heal in the same update hides part of a hit. Burst heals (pets, allies, beacons) show green "+N" text over the player in the same frame as the update that applies them, and the text is the HP actually gained. Adding it back gives the damage the update applied. The server applies hits in report order, so that damage clears the oldest pending hits.</p>
+    <div class="formula" aria-label="Accounting formula">applied = <span class="h">heal text</span> − <span class="d">HP change</span> − drain allowance <span class="r">(+ regen, left out)</span></div>
+    <ol class="steps">
+      <li><b>Collect heal text</b> shown over the player since the last update.</li>
+      <li><b>Work out the applied damage.</b> Regen is left out, so this is a lower bound. A heal without text also makes it smaller, never larger.</li>
+      <li><b>Clear the oldest pending hits</b> by that amount. A hit cleared in part keeps the rest.</li>
+      <li><b>Regen residue.</b> If the hit this update partly cleared has 3 HP or less left, clear it. That is regen (about 1 HP per update) hiding the last bit.</li>
+      <li><b>Unexplained loss.</b> If more was applied than everything pending, something unreported hit the player. Stop accounting for the rest of the map and leave hits to the ordering proof.</li>
+    </ol>
+
+    <div class="acc-top">
+      <div class="controls" role="group" aria-label="Accounting scenario" id="acc-scen"></div>
+      <label class="toggle" for="acc-heal"><input type="checkbox" id="acc-heal" checked> Use heal text</label>
+    </div>
+    <p id="acc-desc"></p>
+    <div class="player">
+      <button type="button" id="a-reset" aria-label="Back to start">⏮</button>
+      <button type="button" id="a-prev" aria-label="Previous event">◀</button>
+      <button type="button" id="a-next" class="primary">Next ▶</button>
+      <button type="button" id="a-end" aria-label="Jump to end">⏭</button>
+    </div>
+    <div class="acc">
+      <div class="acc-now" id="acc-now" aria-live="polite"></div>
+      <div class="meter" id="acc-meter"></div>
+      <div>
+        <h2 style="font-size:.95rem;margin-bottom:6px">Pending hits, oldest first</h2>
+        <div class="ledger" id="acc-ledger"></div>
+      </div>
+    </div>
+    <div class="acc-table-wrap"><table class="acc-t"><thead><tr>
+      <th>Time (s)</th><th>Event</th><th>Server HP</th><th>Heal text</th><th>Applied</th><th>Cleared</th><th>Pending</th><th>Projected</th>
+    </tr></thead><tbody id="acc-rows"></tbody></table></div>
+
+    <div>
+      <h2>What the heal capture showed</h2>
+      <div class="checks">
+        <div class="check"><b>Same frame</b><p>All 46 heal texts arrived in the same frame as the HP update that applied them, never earlier or later.</p></div>
+        <div class="check"><b>Actual HP gained</b><p>Capped at max HP (+27, +11 near full), absent at full HP. Two heals in one update show as two texts.</p></div>
+        <div class="check"><b>Leftover is regen</b><p>HP change − heal text was +1 in 28 of 29 uncapped updates (one +2), and 0 in all 11 that reached max.</p></div>
+        <div class="check"><b>Hits come out exact</b><p>In all 5 updates where a heal and a hit landed together, heal text − HP change was the hit − 1.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const TERMS = [
+  ['sent','local','Hit sent','Local time the client sent the hit report. The guard timestamps it.','950'],
+  ['arrival','local','Update arrival','Local time an update arrived on the client.','#49 860, #50 1060, #51 1260'],
+  ['stamp','server','Server timestamp (build time)','Server-clock time the server built the update, carried in the update. Only meaningful after mapping to the client clock.','server clock'],
+  ['rtt','server','Round trip (server field)','The server times its update until the client\'s reply to it arrives, and reports the result in a later update. It measures the reply, not the hit.','150 for update #49'],
+  ['upload','unknown','Upload (true)','Time any message takes from client to server. Differs packet to packet; the guard never sees it.','90'],
+  ['download','unknown','Download (true)','Time an update takes from server to client. The guard never sees the absolute value.','60 normally'],
+  ['offset','unknown','Fastest-download offset','The guard maps server time by assuming the fastest download it has seen took 0 ms. It really took some unknown time, so every mapped time is late by that amount.','40'],
+  ['mapped','calc','Mapped build time','Server timestamp moved onto the client clock: timestamp + (smallest arrival − timestamp seen). Late by the offset.','#49 840, #50 1040, #51 1240'],
+  ['reldl','calc','Relative download','Arrival − mapped build time: how much slower this download was than the fastest one.','#49: 860 − 840 = 20'],
+  ['upest','calc','Upload estimate','Round trip − relative download, for the same update (#49 and its reply). Too high by the offset.','150 − 20 = 130'],
+  ['estarr','calc','Estimated hit arrival','Hit sent + upload estimate: when the guard thinks the server received the hit. Too late by the same offset, so comparisons with mapped build times still hold.','950 + 130 = 1080'],
+  ['cutoff','unknown','Server cutoff c','The server seems to stop taking messages for an update some time before it sends it. A message in that window waits for the next update. Must be learned from captures.','assumed 80'],
+  ['localage','bad','Local timer (current rule)','Update arrival − hit sent, compared with 800 ms. Download delay is inside this number, so a late update makes a hit look settled.','normal: 110 / 310']
+];
+const LANE = {server: 120, client: 300};
+const SCEN = {
+  normal: {t0: 760, t1: 1330, dl: {49: 60, 50: 60, 51: 60}},
+  stall: {t0: 760, t1: 2120, dl: {49: 60, 50: 1000, 51: 800}}
+};
+const svg = document.getElementById('svg'), svg2 = document.getElementById('svg2');
+const NS = 'http://www.w3.org/2000/svg';
+let scen = 'normal', focus = null, cur = svg;
+const ah = c => `url(#${cur.id}-ah-${c})`;
+function defs() {
+  el('defs', {}).innerHTML = ['server','local','calc','unknown','bad'].map(c =>
+    `<marker id="${cur.id}-ah-${c}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="${c}" style="stroke:none"/></marker>`).join('');
+}
+
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  (parent || cur).appendChild(e); return e;
+}
+function group(term, cls) { return el('g', {class: 'mk ' + cls, 'data-term': term}); }
+
+function draw() {
+  const s = SCEN[scen], x = t => 70 + (t - s.t0) / (s.t1 - s.t0) * 900;
+  cur = svg; svg.replaceChildren(); defs();
+  // Lanes and axis
+  for (const [name, y] of [['Server', LANE.server], ['Client', LANE.client]]) {
+    el('line', {class: 'lane', x1: 70, x2: 975, y1: y, y2: y});
+    el('text', {class: 'lane-label', x: 8, y: y + 4}, null, name);
+  }
+  const step = scen === 'normal' ? 100 : 200;
+  for (let t = Math.ceil(s.t0 / step) * step; t <= s.t1; t += step)
+    el('text', {class: 'axis', x: x(t), y: 462, 'text-anchor': 'middle'}, null, t);
+
+  const builds = {49: 800, 50: 1000, 51: 1200};
+  const arrive = n => builds[n] + s.dl[n];
+  const OFF = 40, mapped = n => builds[n] + OFF;
+
+  // Server cutoff zone before #51 (and #50)
+  for (const n of [50, 51]) {
+    const g = group('cutoff', 'unknown');
+    el('rect', {class: 'zone unknown', x: x(builds[n] - 80), y: LANE.server - 16, width: x(builds[n]) - x(builds[n] - 80), height: 32}, g);
+    if (n === 51) el('text', {x: x(builds[n] - 40), y: LANE.server + 32, 'text-anchor': 'middle'}, g, 'cutoff c');
+  }
+  // Build stamps
+  for (const n of [49, 50, 51]) {
+    const g = group('stamp', 'server');
+    el('line', {x1: x(builds[n]), x2: x(builds[n]), y1: LANE.server - 14, y2: LANE.server + 14}, g);
+    el('text', {x: x(builds[n]), y: LANE.server - 22, 'text-anchor': 'middle'}, g, `#${n} built ${builds[n]}`);
+  }
+  // Round trip for #49: bracket on the server lane
+  {
+    const replyAt = arrive(49) + 90;
+    const g = group('rtt', 'server'), y = LANE.server - 52;
+    el('path', {d: `M${x(800)},${y + 8}V${y}H${x(replyAt)}V${y + 8}`}, g);
+    el('text', {x: (x(800) + x(replyAt)) / 2, y: y - 7, 'text-anchor': 'middle'}, g, `round trip ${replyAt - 800}`);
+    const u = group('upload', 'unknown');
+    el('line', {x1: x(arrive(49)), y1: LANE.client - 4, x2: x(replyAt), y2: LANE.server + 4, 'marker-end': ah('unknown')}, u);
+    el('text', {x: x((arrive(49) + replyAt) / 2) + 8, y: (LANE.client + LANE.server) / 2 + 40}, u, 'reply up 90');
+  }
+  // Downloads and arrivals
+  for (const n of [49, 50, 51]) {
+    const g = group('download', 'unknown');
+    el('line', {x1: x(builds[n]), y1: LANE.server + 4, x2: x(arrive(n)), y2: LANE.client - 4, 'marker-end': ah('unknown')}, g);
+    const mx = (x(builds[n]) + x(arrive(n))) / 2;
+    el('text', {x: mx + 6, y: (LANE.server + LANE.client) / 2 - 18 + (n - 50) * 14}, g, `down ${s.dl[n]}`);
+    const a = group('arrival', 'local');
+    el('circle', {cx: x(arrive(n)), cy: LANE.client, r: 5}, a);
+    el('text', {x: x(arrive(n)), y: LANE.client + 22, 'text-anchor': 'middle'}, a, `#${n} ${arrive(n)}`);
+  }
+  // Hit: sent, true upload
+  {
+    const g = group('sent', 'local');
+    el('rect', {x: x(950) - 5, y: LANE.client - 5, width: 10, height: 10}, g);
+    el('text', {x: x(950), y: LANE.client + 22, 'text-anchor': 'middle'}, g, 'hit 950');
+    const u = group('upload', 'unknown');
+    el('line', {x1: x(950), y1: LANE.client - 6, x2: x(1040), y2: LANE.server + 6, 'marker-end': ah('unknown')}, u);
+    el('text', {x: x(995) - 8, y: (LANE.client + LANE.server) / 2 + 12, 'text-anchor': 'end'}, u, 'hit up 90');
+    el('circle', {cx: x(1040), cy: LANE.server, r: 4}, u);
+    el('text', {x: x(1040) + 6, y: LANE.server + 30}, u, 'server has hit 1040');
+  }
+  // Mapped build times (ghost markers below client lane) and offset bracket
+  for (const n of [49, 50, 51]) {
+    const g = group('mapped', 'calc');
+    el('circle', {cx: x(mapped(n)), cy: LANE.client + 44, r: 5, 'fill-opacity': .25}, g);
+    el('text', {x: x(mapped(n)), y: LANE.client + 64, 'text-anchor': 'middle'}, g, `#${n}′ ${mapped(n)}`);
+  }
+  {
+    const g = group('offset', 'unknown'), y = LANE.client + 82;
+    el('path', {d: `M${x(1000)},${y - 6}V${y}H${x(1040)}V${y - 6}`}, g);
+    el('text', {x: x(1020), y: y + 15, 'text-anchor': 'middle'}, g, 'offset 40');
+  }
+  {
+    const g = group('reldl', 'calc'), y = LANE.client + 82;
+    el('path', {d: `M${x(840)},${y - 6}V${y}H${x(860)}V${y - 6}`}, g);
+    el('text', {x: x(850), y: y + 15, 'text-anchor': 'middle'}, g, 'rel. down 20');
+  }
+  // Upload estimate and estimated arrival
+  {
+    const g = group('upest', 'calc'), y = LANE.client - 30;
+    el('path', {d: `M${x(950)},${y + 6}V${y}H${x(1080)}V${y + 6}`}, g);
+    el('text', {x: x(1015), y: y - 6, 'text-anchor': 'middle'}, g, 'upload est. 130');
+    const e = group('estarr', 'calc');
+    el('path', {d: `M${x(1080) - 6},${LANE.client - 6}l6,6l-6,6l-6,-6z`, style: 'fill:var(--calc)'}, e);
+    el('text', {x: x(1080) + 8, y: LANE.client - 10}, e, 'est. 1080');
+  }
+  // Local timer
+  {
+    const g = group('localage', 'bad'), y = LANE.client + 112;
+    el('path', {d: `M${x(950)},${y - 6}V${y}H${x(arrive(50))}V${y - 6}`}, g);
+    const age = arrive(50) - 950;
+    el('text', {x: (x(950) + x(arrive(50))) / 2, y: y + 15, 'text-anchor': 'middle'}, g,
+      `local age at #50 arrival ${age}${age > 800 ? ' > 800: clears hit ✗' : ' < 800'}`);
+  }
+  applyFocus();
+  const v = document.getElementById('verdict'), lines = [
+    ['ok', `In #50? est. 1080 ≤ #50′ 1040 → no. Correct: the server built #50 at 1000, before the hit arrived at 1040.`],
+    ['ok', `In #51? est. 1080 ≤ #51′ 1240 → yes. Correct: the hit arrived at 1040, before #51's build at 1200.`]
+  ];
+  if (scen === 'stall') lines.push(['no', `Local timer: #50 arrives 1050 ms after the hit, past 800 ms, so the current rule would clear a hit #50 does not contain.`]);
+  v.replaceChildren(...lines.map(([c, t]) => { const d = document.createElement('div'); d.className = c; d.textContent = t; return d; }));
+}
+
+// Highlights a term's marks in whichever diagrams draw it.
+function highlight(key) {
+  for (const s of [svg, svg2]) {
+    s.classList.toggle('focus', !!key && !!s.querySelector(`[data-term="${key}"]`));
+    s.querySelectorAll('.mk').forEach(g => g.classList.toggle('on', g.dataset.term === key));
+  }
+}
+function applyFocus() {
+  highlight(focus);
+  document.querySelectorAll('.term').forEach(t => t.setAttribute('aria-pressed', t.dataset.term === focus));
+}
+
+function addTerms(list, termsEl) {
+for (const [key, src, name, desc, val] of list) {
+  const d = document.createElement('div');
+  d.className = 'term c-' + (src === 'bad' ? 'unknown' : src); d.tabIndex = 0; d.dataset.term = key; d.setAttribute('role', 'button');
+  if (src === 'bad') d.style.setProperty('--c', 'var(--bad)');
+  const label = {server: 'Read from server', local: 'Measured on client', calc: 'Calculated', unknown: 'Unknown', bad: 'Current rule'}[src];
+  d.innerHTML = `<span class="src">${label}</span><b>${name}</b><p>${desc}</p><p><code>${val}</code></p>`;
+  const toggle = () => { focus = focus === key ? null : key; applyFocus(); };
+  d.addEventListener('click', toggle);
+  d.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  d.addEventListener('mouseenter', () => { if (!focus) highlight(key); });
+  d.addEventListener('mouseleave', () => { if (!focus) applyFocus(); });
+  termsEl.appendChild(d);
+}
+}
+addTerms(TERMS, document.getElementById('terms'));
+for (const k of ['normal', 'stall']) document.getElementById('sc-' + k).addEventListener('click', () => {
+  scen = k; document.querySelectorAll('[id^="sc-"]').forEach(b => b.setAttribute('aria-pressed', b.id === 'sc-' + k)); draw();
+});
+draw();
+
+// Part 2: a time-stepped simulation of the ordering proof. Times are the true timeline (= server
+// clock); the client algorithm reads only server values plus the order of its own sends.
+const C = 80, HIT = 950, DMG = 60, HP0 = 300, T0 = 760, T1 = 2520;
+const UPD = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57];
+const build = n => 800 + 200 * (n - 49);
+const DL = {48: 62, 49: 60, 50: 66, 51: 58, 52: 71, 53: 63, 54: 57, 55: 68, 56: 61, 57: 64};
+const UP = {48: 88, 49: 92, 50: 95, 51: 85, 52: 97, 53: 90, 54: 86, 55: 93, 56: 89, 57: 91};
+const PSCEN = {
+  normal: {dl: n => DL[n], block: null},
+  dstall: {dl: n => n >= 50 && n <= 54 ? 2000 + 5 * (n - 50) - build(n) : DL[n], block: null},
+  ustall: {dl: n => DL[n], block: [940, 1760]}  // uploads sent in this window leave at its end
+};
+const PTERMS = [
+  ['p-field','server','Round-trip value','Every update carries the latest round trip the server measured: from building an update to receiving the client\'s reply to it. If no new reply arrived since the last update, the same value repeats.','rt 161 in #51'],
+  ['p-attr','calc','Which reply it measures','A new value means that reply arrived since the previous update was built, so it is the reply whose build + value falls between the two build times. One reply fits in 96% of captured values; if none fits the guard skips it, if two fit it takes the older one and the later time.','#51: 1000 + 161 = 1161 → reply to #50'],
+  ['p-order','local','Send order','The hit is sent before the next reply, on the same connection, so the server cannot have that reply, or any later one, without the hit.','hit 950, reply 1066'],
+  ['p-reply','local','First reply after the hit','The client replies to every update. Any value proving that this reply, or a later one, arrived also proves the hit arrived.','reply to #50'],
+  ['p-bound','calc','Proof bound','The first time a proven reply is at or after the first reply after the hit: the hit was received by then. Server clock only.','1161'],
+  ['p-cut','unknown','Cutoff c','Margin after the bound before an update can be counted on to contain the hit. Learned as an upper bound; larger is safer.','assumed 80'],
+  ['p-proof','calc','Proven update','First update built at least c after the bound. The hit is cleared when it arrives.','#52 normally'],
+  ['p-actual','unknown','Update that really contains the hit','First update built at least c after the hit truly arrived. The guard never knows it; shown for checking.','#51 normally'],
+  ['p-double','calc','Double counting','Between the arrivals of the update that really contains the hit and the proven one, the hit is in server HP and still subtracted. This is the buffer.','~210 ms normally'],
+  ['p-up','unknown','Uploads (true)','Travel times of the hit and replies. Never measured. In the upload stall everything sent between 940 and 1760 leaves at 1760.','85–97'],
+  ['p-down','unknown','Downloads (true)','Travel times of updates. A late update delays the replies, which delays the proof but never makes it wrong.','57–71; up to 1000 in the download stall']
+];
+
+function simulate(s) {
+  const arr = n => build(n) + s.dl(n);
+  // The connection delivers client messages in send order.
+  const sends = [{who: 'hit', sent: HIT, up: 90}, ...UPD.map(n => ({who: n, sent: arr(n), up: UP[n]}))]
+    .sort((a, b) => a.sent - b.sent);
+  const recv = {}; let last = -1e9;
+  for (const m of sends) {
+    const leave = s.block && m.sent >= s.block[0] && m.sent < s.block[1] ? s.block[1] : m.sent;
+    last = Math.max(leave + m.up, last + 1); recv[m.who] = last;
+  }
+  // Server: each update carries the round trip of the latest reply received before it was built.
+  const field = {}, truthJ = {};
+  for (const n of UPD) {
+    let best = null;
+    for (const j of UPD) if (j < n && recv[j] <= build(n) && (best === null || recv[j] > recv[best])) best = j;
+    field[n] = best === null ? 0 : recv[best] - build(best); truthJ[n] = best;
+  }
+  const actual = UPD.find(n => recv.hit <= build(n) - C), k = UPD.find(n => arr(n) > HIT);
+  // Client algorithm, in arrival order.
+  const order = [...UPD].sort((a, b) => arr(a) - arr(b) || a - b);
+  const steps = []; let prev = null, bound = null, boundFrom = null, proof = null, proven = null;
+  for (const n of order) {
+    const v = field[n], st = {n, t: arr(n), v};
+    if (prev === null) st.first = true;
+    else if (v === 0 || v === field[prev]) st.repeat = true;
+    else {
+      const cands = UPD.filter(j => j < n && build(prev) < build(j) + v && build(j) + v <= build(n));
+      if (!cands.length) st.none = true;
+      else {
+        st.claim = proven = {j: Math.min(...cands), x: Math.max(...cands.map(c => build(c) + v)), count: cands.length};
+        if (bound === null && proven.j >= k) { bound = proven.x; boundFrom = {n, v, j: proven.j}; st.setsBound = true; }
+      }
+    }
+    if (bound !== null && proof === null && build(n) >= bound + C) { proof = n; st.clears = true; }
+    Object.assign(st, {bound, proven, cleared: proof !== null, hp: n >= actual ? HP0 - DMG : HP0});
+    steps.push(st); prev = n;
+  }
+  const before = order.filter(n => arr(n) < HIT).pop();
+  const est = HIT + field[before] - s.dl(truthJ[before]);
+  return {arr, recv, field, truthJ, actual, k, steps, bound, boundFrom, proof,
+    timer: order.find(n => arr(n) - HIT >= 800), estimate: UPD.find(n => build(n) >= est + C)};
+}
+
+let pscen = 'normal', T = T0, playing = false, R = simulate(PSCEN.normal), EVENTS = [];
+
+function events() {
+  const ev = [{t: HIT, cls: '', text: 'Client sends the hit report (60 damage).'}];
+  for (const n of UPD) if (R.arr(n) >= T0) ev.push({t: R.arr(n) + .01, cls: n === R.k ? '' : 'minor', text: `Client replies to #${n}${n === R.k ? ': the first reply after the hit' : ''}.`});
+  for (const st of R.steps) {
+    if (st.t < T0) continue;
+    let text = `#${st.n} arrives: HP ${st.hp}, round trip ${st.v}`;
+    if (st.repeat) text += ' (repeat: no new reply reached the server).';
+    else if (st.none) text += ' (new, but no single reply fits: skipped).';
+    else if (st.claim) text += ` (new → reply to #${st.claim.j} received by ${st.claim.x}).`;
+    if (st.setsBound) text += ` Reply #${st.claim.j} is at or after the hit → hit received by ${st.bound}.`;
+    if (st.clears) text += ` Built ${build(st.n)} ≥ ${st.bound} + c → hit cleared.`;
+    ev.push({t: st.t, cls: st.clears || st.setsBound ? 'key' : '', text});
+  }
+  ev.push({t: R.recv.hit, cls: 'truth', text: `(Unseen) Server receives the hit at ${R.recv.hit}.`});
+  ev.push({t: build(R.actual), cls: 'truth', text: `(Unseen) Server builds #${R.actual}, the first update containing the hit.`});
+  ev.push({t: R.recv[R.k], cls: 'truth', text: `(Unseen) Server receives the reply to #${R.k} at ${R.recv[R.k]}.`});
+  return ev.sort((a, b) => a.t - b.t);
+}
+
+function draw2() {
+  const t = T, x = v => 70 + (v - T0) / (T1 - T0) * 900, L = {server: 130, client: 330};
+  cur = svg2; svg2.replaceChildren(); defs();
+  const seg = (g, t0, y0, t1, y1, cls) => {
+    if (t < t0) return;
+    const f = Math.min(1, (t - t0) / (t1 - t0)), a = {x1: x(t0), y1: y0, x2: x(t0 + f * (t1 - t0)), y2: y0 + f * (y1 - y0)};
+    if (f === 1) a['marker-end'] = ah('unknown');
+    if (cls) a.class = cls;
+    el('line', a, g);
+  };
+  for (const [name, y] of [['Server', L.server], ['Client', L.client]]) {
+    el('line', {class: 'lane', x1: 70, x2: 975, y1: y, y2: y});
+    el('text', {class: 'lane-label', x: 8, y: y + 4}, null, name);
+  }
+  for (let v = 800; v <= 2400; v += 200) el('text', {class: 'axis', x: x(v), y: 458, 'text-anchor': 'middle'}, null, v);
+
+  for (const n of UPD) {
+    if (build(n) >= T0 && t >= build(n)) {
+      const g = group('stamp', 'server');
+      el('line', {x1: x(build(n)), x2: x(build(n)), y1: L.server - 14, y2: L.server + 14}, g);
+      el('text', {x: x(build(n)), y: L.server - 22, 'text-anchor': 'middle'}, g, `#${n}`);
+      const f = group('p-field', 'server');
+      el('text', {x: x(build(n)), y: L.server + 28, 'text-anchor': 'middle'}, f, `rt ${R.field[n]}`);
+    }
+    if (build(n) >= T0) seg(group('p-down', 'unknown'), build(n), L.server + 4, R.arr(n), L.client - 4);
+  }
+  // Arrivals; updates that land together share one label.
+  let lastT = -1e9, label = null, from = null;
+  for (const n of UPD) {
+    if (R.arr(n) < T0 || t < R.arr(n)) continue;
+    const a = group('arrival', 'local');
+    el('circle', {cx: x(R.arr(n)), cy: L.client, r: 4}, a);
+    if (R.arr(n) - lastT < 40) label.textContent = `#${from}–${n}`;
+    else { label = el('text', {x: x(R.arr(n)), y: L.client + 22, 'text-anchor': 'middle'}, a, `#${n}`); from = n; }
+    lastT = R.arr(n);
+  }
+  // Replies and their uploads
+  for (const n of UPD) {
+    if (R.arr(n) < T0 || t < R.arr(n)) continue;
+    const key = n === R.k, g = group(key ? 'p-reply' : 'p-up', key ? 'local' : 'unknown');
+    el('path', {d: `M${x(R.arr(n))},${L.client - 7}l6,10h-12z`, class: key ? '' : 'faint'}, g);
+    if (key) el('text', {x: x(R.arr(n)), y: L.client - 14, 'text-anchor': 'middle'}, g, `reply to #${n}`);
+    seg(group('p-up', 'unknown'), R.arr(n), L.client - 8, R.recv[n], L.server + 6, key ? '' : 'faint');
+  }
+  if (t >= HIT) {
+    const g = group('sent', 'local');
+    el('rect', {x: x(HIT) - 5, y: L.client - 5, width: 10, height: 10}, g);
+    el('text', {x: x(HIT), y: L.client + 22, 'text-anchor': 'middle'}, g, 'hit');
+    const u = group('p-up', 'unknown');
+    seg(u, HIT, L.client - 6, R.recv.hit, L.server + 6);
+    if (t >= R.recv.hit) {
+      el('circle', {cx: x(R.recv.hit), cy: L.server, r: 4}, u);
+      el('text', {x: x(R.recv.hit) - 6, y: L.server + 46, 'text-anchor': 'end'}, u, `server has hit ${R.recv.hit}`);
+    }
+  }
+  if (t >= R.arr(R.k)) {
+    const o = group('p-order', 'local'), y = L.client + 48;
+    el('path', {d: `M${x(HIT)},${y - 6}V${y}H${x(R.arr(R.k))}V${y - 6}`}, o);
+    el('text', {x: (x(HIT) + x(R.arr(R.k))) / 2, y: y + 15, 'text-anchor': 'middle'}, o, 'hit sent before reply');
+  }
+  // Bound, once the client has derived it
+  const now = R.steps.filter(st => st.t <= t).pop();
+  if (now && now.bound !== null) {
+    const b = R.boundFrom, g = group('p-attr', 'calc'), y = L.server - 74;
+    el('path', {d: `M${x(build(b.j))},${y + 8}V${y}H${x(R.bound)}V${y + 8}`}, g);
+    el('text', {x: (x(build(b.j)) + x(R.bound)) / 2, y: y - 7, 'text-anchor': 'middle'}, g, `#${b.n} says rt ${b.v} → reply to #${b.j} in by ${R.bound}`);
+    const z = group('p-cut', 'unknown');
+    el('rect', {class: 'zone unknown', x: x(R.bound), y: L.server - 16, width: x(R.bound + C) - x(R.bound), height: 32}, z);
+    const g2 = group('p-bound', 'calc');
+    el('line', {x1: x(R.bound), x2: x(R.bound), y1: L.server - 60, y2: L.server + 16}, g2);
+    el('text', {x: x(R.bound) + 5, y: L.server - 46}, g2, `bound ${R.bound}, +c = ${R.bound + C}`);
+  }
+  if (t >= build(R.actual)) {
+    const a = group('p-actual', 'unknown');
+    el('circle', {class: 'ring', cx: x(build(R.actual)), cy: L.server, r: 9}, a);
+    el('text', {x: x(build(R.actual)), y: L.server + 62, 'text-anchor': 'middle'}, a, `really in #${R.actual}`);
+  }
+  if (R.proof && t >= R.arr(R.proof)) {
+    const p = group('p-proof', 'calc');
+    el('circle', {class: 'ring', cx: x(build(R.proof)), cy: L.server, r: 14}, p);
+    el('text', {x: x(build(R.proof)), y: L.server + 78, 'text-anchor': 'middle'}, p, `proven #${R.proof}`);
+    el('path', {d: `M${x(R.arr(R.proof))},${L.client - 8}l8,8l-8,8l-8,-8z`, style: 'fill:var(--calc)'}, p);
+    el('text', {x: x(R.arr(R.proof)), y: L.client - 14, 'text-anchor': 'middle'}, p, 'cleared');
+  }
+  if (t >= R.arr(R.actual)) {
+    const end = R.proof && t >= R.arr(R.proof) ? R.arr(R.proof) : t, g = group('p-double', 'calc'), y = L.client + 84;
+    el('path', {d: `M${x(R.arr(R.actual))},${y - 6}V${y}H${x(end)}V${y - 6}`}, g);
+    el('text', {x: (x(R.arr(R.actual)) + x(end)) / 2, y: y + 15, 'text-anchor': 'middle'}, g, `counted twice ${Math.round(end - R.arr(R.actual))} ms`);
+  }
+  el('line', {x1: x(t), x2: x(t), y1: 18, y2: 440, class: 'now'});
+  el('text', {x: x(t), y: 12, 'text-anchor': 'middle', class: 'now-label'}, null, `now ${Math.round(t)}`);
+  applyFocus();
+  vars(now, t);
+  const log = document.getElementById('log'), shown = EVENTS.filter(e => e.t <= t);
+  log.replaceChildren(...shown.map((e, i) => {
+    const d = document.createElement('div'); d.className = e.cls + (i === shown.length - 1 ? ' cur' : '');
+    d.textContent = `${Math.round(e.t)}  ${e.text}`; return d;
+  }));
+  log.scrollTop = log.scrollHeight;
+  document.getElementById('p-time').value = t;
+}
+
+function vars(now, t) {
+  const hitSent = t >= HIT, replySent = t >= R.arr(R.k), cleared = now && now.cleared;
+  const pending = hitSent && !cleared ? DMG : 0, hp = now ? now.hp : HP0;
+  let rt = '—', meaning = '—';
+  if (now) {
+    rt = `${now.v} in #${now.n}` + (now.repeat ? ' · repeat' : now.first ? '' : ' · new');
+    meaning = now.repeat ? 'no new reply reached the server' : now.none ? 'no single reply fits: skipped'
+      : now.claim ? `reply to #${now.claim.j}, received by ${now.claim.x}` : 'first value seen';
+  }
+  const status = !hitSent ? 'not sent' : cleared ? `cleared on #${R.proof}` : now && now.bound !== null ? `pending: needs an update built ≥ ${now.bound + C}` : 'pending: no proof yet';
+  const inHp = now && now.n >= R.actual;
+  const rows = [
+    ['Local time', Math.round(t), ''],
+    ['Last update received', now ? `#${now.n} (built ${build(now.n)})` : '—', 'p-field'],
+    ['Server HP', hp, ''],
+    ['Latest round trip', rt, 'p-field'],
+    ['It measures', meaning, 'p-attr'],
+    ['Replies proven received', now && now.proven ? `through #${now.proven.j}, by ${now.proven.x}` : '—', 'p-attr'],
+    ['First reply after the hit', !hitSent ? '—' : replySent ? `reply to #${R.k} (sent ${R.arr(R.k)})` : 'not sent yet', 'p-reply'],
+    ['Hit proof bound', now && now.bound !== null ? `received by ${now.bound}` : '—', 'p-bound'],
+    ['Hit status', status, 'p-proof'],
+    ['Pending damage', pending, ''],
+    ['Projected HP', hp - pending, ''],
+    ['Unseen: hit in server HP', inHp ? `yes, since #${R.actual}` : 'no', 'p-actual'],
+    ['Unseen: double counting', inHp && pending ? 'yes' : 'no', 'p-double']
+  ];
+  document.getElementById('vars').replaceChildren(...rows.flatMap(([k, v, term]) => {
+    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = k; dd.textContent = v;
+    if (k.startsWith('Unseen')) { dt.className = dd.className = 'truth'; }
+    if (k === 'Projected HP') dd.className = 'strong';
+    return [dt, dd];
+  }));
+}
+
+function table() {
+  const rules = [['Local 800 ms timer', R.timer], ["Upload estimate (last round trip before the hit)", R.estimate], ['Ordering proof', R.proof]];
+  document.getElementById('cmp').replaceChildren(...rules.map(([name, m]) => {
+    const tr = document.createElement('tr'), a = R.arr(R.actual);
+    const [cls, text] = m < R.actual ? ['r-bad', `Too early: hit missing from the projection for ${a - R.arr(m)} ms, until #${R.actual} arrives`]
+      : m === R.actual ? ['r-ok', 'Exact'] : ['r-late', `Safe, late: counted twice for ${R.arr(m) - a} ms`];
+    tr.innerHTML = `<td>${name}</td><td>#${m} (arrives ${R.arr(m)})</td><td class="${cls}"></td>`;
+    tr.lastChild.textContent = text; return tr;
+  }));
+  const late = R.arr(R.proof) - R.arr(R.actual);
+  document.getElementById('cmp-note').textContent = {
+    normal: `#${R.actual} really contains the hit. The proof clears it one update later: ${late} ms of double counting. The timer waits much longer.`,
+    dstall: `Updates #50–54 land together at about 2000, and every reply waits for them. The reply to #50 is never reported on its own (#56 reports the newer reply to #55), so the proof clears the hit ${late} ms after the update that contains it. That costs buffer, never safety. The timer clears it on #50, which does not contain it.`,
+    ustall: `The hit and every reply sent during the stall leave together at 1760. No new round trip is reported until #55, which proves reply #54 arrived, and with it the hit: ${late} ms of double counting. The estimate relies on an older round trip and clears the hit far too early; the timer clears it one update early.`
+  }[pscen];
+}
+
+function setScen(k) {
+  pscen = k; R = simulate(PSCEN[k]); EVENTS = events();
+  document.querySelectorAll('[id^="ps-"]').forEach(b => b.setAttribute('aria-pressed', b.id === 'ps-' + k));
+  table(); draw2();
+}
+let lastFrame = null;
+function frame(ts) {
+  if (!playing) return;
+  if (lastFrame !== null) T = Math.min(T1, T + (ts - lastFrame) * +document.getElementById('p-speed').value);
+  lastFrame = ts; draw2();
+  if (T >= T1) setPlaying(false); else requestAnimationFrame(frame);
+}
+function setPlaying(on) {
+  playing = on; lastFrame = null;
+  document.getElementById('p-play').textContent = on ? '❚❚ Pause' : '▶ Play';
+  if (on) { if (T >= T1) T = T0; requestAnimationFrame(frame); }
+}
+const jump = dir => {
+  setPlaying(false);
+  const times = [T0, ...EVENTS.map(e => e.t), T1];
+  T = dir > 0 ? (times.find(v => v > T + .5) ?? T1) : ([...times].reverse().find(v => v < T - .5) ?? T0);
+  draw2();
+};
+document.getElementById('p-play').addEventListener('click', () => setPlaying(!playing));
+document.getElementById('p-next').addEventListener('click', () => jump(1));
+document.getElementById('p-prev').addEventListener('click', () => jump(-1));
+document.getElementById('p-reset').addEventListener('click', () => { setPlaying(false); T = T0; draw2(); });
+document.getElementById('p-time').addEventListener('input', e => { setPlaying(false); T = +e.target.value; draw2(); });
+addTerms(PTERMS, document.getElementById('terms2'));
+for (const k of Object.keys(PSCEN)) document.getElementById('ps-' + k).addEventListener('click', () => setScen(k));
+setScen('normal');
+
+// Part 3: accounting stepper. Mirrors probe/fatal_policy_v9.h: applied = heal + before - after - drain,
+// cleared oldest first, residue <= REGEN only on a hit this update partly cleared, suspend on unexplained.
+const REGEN = 3;
+const aH = (t, dmg) => ({t, k: 'hit', dmg}), aU = (t, hp) => ({t, k: 'upd', hp}), aX = (t, amt) => ({t, k: 'heal', amt});
+const ASCEN = {
+  mixed: {label: 'Heals and hits together', max: 885, hp: 799,
+    desc: 'Heal capture, 31.9–33.5 s. The beacon heals +80 on most updates while three hits land. Each update that mixes a heal and a hit drops only 22 HP. Adding the heal text back gives 102, which is the 103 hit minus 1 HP of regen.',
+    ev: [aH(31.917, 103), aX(32.017, 80), aU(32.017, 880), aU(32.234, 881), aH(32.301, 113), aH(32.351, 103), aX(32.434, 80), aU(32.434, 859),
+      aH(32.717, 103), aU(33.167, 747), aX(33.167, 80), aU(33.168, 725), aU(33.169, 726), aX(33.417, 80), aU(33.417, 704), aU(33.467, 705)]},
+  burst: {label: 'Final burst', max: 885, hp: 588,
+    desc: 'Heal capture, 70.9–71.9 s. Six hits in 0.6 s against a pet heal. Server HP still reads 481 when the lethal hit is detected, but 417 HP of earlier hits are not in it yet. The probe only observes, so no escape was sent and the character died.',
+    ev: [aH(70.984, 103), aU(71.067, 590), aH(71.117, 98), aH(71.234, 103), aH(71.235, 103), aX(71.267, 90), aU(71.267, 681), aH(71.317, 98), aH(71.466, 113),
+      aU(71.467, 481), aH(71.567, 98), aU(71.667, 276), aU(71.885, 66), aU(71.894, 0)]},
+  unexplained: {label: 'Unexplained loss', max: 885, hp: 741,
+    desc: 'Heal capture, 40.6–44.0 s. At 41.18 s HP drops 112 with no hit report, damage text or condition change. Accounting stops for the map. The two later 113 hits are then never cleared by accounting, so they wait for the ordering proof.',
+    ev: [aX(40.584, 80), aU(40.601, 822), aX(40.767, 63), aU(40.768, 885), aU(41.184, 773), aX(41.417, 80), aU(41.417, 854), aU(41.601, 855), aX(41.801, 30), aU(41.801, 885),
+      aH(42.467, 113), aU(42.834, 773), aX(43.151, 80), aU(43.151, 854), aU(43.384, 856), aH(43.534, 113), aX(43.767, 28), aU(43.767, 885), aU(43.967, 773)]},
+  bleed: {label: 'Bleeding', max: 885, hp: 500, drain: 4,
+    desc: 'Illustration using rates from the 5 November capture: bleeding drains about 3 HP per update with no report. While it is active, a 4 HP drain allowance is taken off the projection and off each update\'s applied damage, so the drain is never mistaken for a hit.',
+    ev: [aU(0.2, 497), aH(0.25, 50), aU(0.4, 494), aU(0.6, 441), aU(0.8, 438), aU(1.0, 435)]}
+};
+let ascen = 'mixed', astep = 0, ROWS = [];
+function runAccounting(s, useHeal) {
+  let hp = s.hp, heal = 0, suspended = false, escaped = false, id = 0;
+  const drain = s.drain || 0, pend = [], rows = [];
+  const total = () => pend.reduce((a, p) => a + p.left, 0);
+  rows.push({t: null, text: 'Start', hp, heal: '', applied: '', cleared: '', why: 'No hits pending.', pend: [], gone: [], drain});
+  for (const e of s.ev) {
+    const r = {t: e.t, heal: '', applied: '', cleared: '', gone: []};
+    if (e.k === 'hit') {
+      pend.push({id: ++id, dmg: e.dmg, left: e.dmg, isNew: true});
+      const proj = hp - total() - drain;
+      r.text = `Hit detected: ${e.dmg} damage`;
+      r.why = `Added to pending. Projected HP = ${hp} − ${total()}${drain ? ` − ${drain} drain` : ''} = ${proj}.`;
+      if (proj <= 0 && !escaped) { escaped = true; r.escape = true; r.text += ' → escape'; r.why += ' At 0 or below: Nexus is requested before this report is sent.'; }
+    } else if (e.k === 'heal') {
+      r.text = `"+${e.amt}" heal text`;
+      if (useHeal) { heal += e.amt; r.heal = `+${e.amt}`; r.why = `Held until the next HP update: ${heal} of heal text so far.`; }
+      else { r.heal = 'ignored'; r.why = 'Heal text is switched off, so this heal stays hidden inside the next HP change.'; }
+    } else {
+      const before = hp; hp = e.hp; r.text = `Server HP ${before} → ${hp}`;
+      if (hp <= 0) { r.text += ' (died)'; r.why = 'The lethal hit lands. With the guard armed, the escape sent at 71.567 s would have gone out first.'; r.death = true; pend.length = 0; }
+      else {
+        const applied = heal + before - hp - drain;
+        r.applied = applied; r.why = `applied = ${heal} heal − (${hp - before >= 0 ? '+' : ''}${hp - before}) change${drain ? ` − ${drain} drain` : ''} = ${applied}.`;
+        if (!suspended && applied > total() + REGEN) { suspended = true; r.suspend = true; r.why += ` More than the ${total()} pending: no report explains it. Accounting stops for this map.`; }
+        if (suspended) { if (!r.suspend && applied > 0) r.why += ' Accounting is stopped, so nothing is cleared.'; }
+        else if (applied > 0) {
+          let debit = applied, partial = null; const cleared = [];
+          while (debit > 0 && pend.length) {
+            const p = pend[0];
+            if (debit >= p.left) { debit -= p.left; cleared.push(p.dmg); r.gone.push({...p, left: 0}); pend.shift(); }
+            else { p.left -= debit; debit = 0; partial = p; }
+          }
+          if (partial && partial.left <= REGEN && pend[0] === partial) { cleared.push(`${partial.dmg} (${partial.left} regen)`); r.gone.push({...partial, left: 0}); pend.shift(); }
+          r.cleared = cleared.join(', ');
+          r.why += cleared.length ? ` Clears the oldest: ${r.cleared}.` : '';
+          if (pend[0] && pend[0].left < pend[0].dmg) r.why += ` ${pend[0].left} of the ${pend[0].dmg} hit is still pending.`;
+        } else r.why += ' Nothing applied: no hit has landed yet.';
+      }
+      heal = 0;
+    }
+    r.hp = hp; r.pend = pend.map(p => ({...p})); r.drain = drain; r.suspended = suspended;
+    pend.forEach(p => { p.isNew = false; });
+    rows.push(r);
+  }
+  return rows;
+}
+function renderAcc() {
+  const s = ASCEN[ascen], r = ROWS[astep], max = s.max;
+  const pending = r.pend.reduce((a, p) => a + p.left, 0), proj = r.hp - pending - (r.drain || 0);
+  document.getElementById('acc-now').innerHTML = '';
+  const head = document.createElement('div'); head.textContent = `${r.t == null ? '' : r.t.toFixed(3) + ' s  '}${r.text}`;
+  const why = document.createElement('span'); why.className = 'why'; why.textContent = r.why;
+  document.getElementById('acc-now').append(head, why);
+  const meter = document.getElementById('acc-meter');
+  meter.innerHTML = '';
+  for (const [name, v, cls] of [['Server HP', r.hp, 'srv'], ['Projected HP', proj, 'prj' + (proj <= 0 ? ' neg' : '')]]) {
+    const row = document.createElement('div'); row.className = 'meter-row';
+    row.innerHTML = `<span>${name}</span><div class="bar"><i class="${cls}" style="width:${Math.max(0, Math.min(100, v / max * 100))}%"></i></div><b>${v}</b>`;
+    meter.appendChild(row);
+  }
+  const led = document.getElementById('acc-ledger'); led.replaceChildren();
+  const blocks = [...r.gone, ...r.pend];
+  if (!blocks.length) { const e = document.createElement('span'); e.className = 'empty'; e.textContent = 'None pending.'; led.appendChild(e); }
+  for (const p of blocks) {
+    const b = document.createElement('div');
+    b.className = 'blk' + (p.left === 0 ? ' gone' : '') + (p.isNew ? ' new' : '');
+    b.style.width = Math.max(34, p.dmg * .6) + 'px';
+    const f = document.createElement('i'); f.className = 'fill'; f.style.width = ((p.dmg - p.left) / p.dmg * 100) + '%';
+    const t = document.createElement('span'); t.textContent = p.left === 0 ? `${p.dmg} ✓` : p.left < p.dmg ? `${p.left}/${p.dmg}` : `${p.dmg}`;
+    b.append(f, t); led.appendChild(b);
+  }
+  const tb = document.getElementById('acc-rows'); tb.replaceChildren();
+  ROWS.forEach((row, i) => {
+    const tr = document.createElement('tr'); tr.className = i > astep ? 'future' : i === astep ? 'cur' : '';
+    const pend = row.pend.reduce((a, p) => a + p.left, 0), pr = row.hp - pend - (row.drain || 0);
+    const cells = [row.t == null ? '' : row.t.toFixed(3), row.text, row.hp, row.heal, row.applied, row.cleared + (row.suspend ? 'stopped' : ''), pend, pr];
+    cells.forEach((c, j) => {
+      const td = document.createElement('td'); td.textContent = c;
+      if (j === 3 && c && c !== 'ignored') td.className = 'hl';
+      if (j === 3 && c === 'ignored') td.className = 'tr';
+      if ((j === 7 && pr <= 0) || (j === 1 && (row.escape || row.suspend || row.death))) td.className = 'bd';
+      tr.appendChild(td);
+    });
+    tr.addEventListener('click', () => { astep = i; renderAcc(); });
+    tb.appendChild(tr);
+  });
+  const cur = tb.children[astep], wrap = tb.closest('.acc-table-wrap');
+  if (cur) { const top = cur.offsetTop - wrap.clientHeight / 2; wrap.scrollTop = Math.max(0, top); }
+  document.getElementById('a-next').disabled = astep >= ROWS.length - 1;
+}
+function setAcc(k, keepStep) {
+  ascen = k; ROWS = runAccounting(ASCEN[k], document.getElementById('acc-heal').checked);
+  if (!keepStep) astep = 0; else astep = Math.min(astep, ROWS.length - 1);
+  document.querySelectorAll('#acc-scen button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
+  document.getElementById('acc-desc').textContent = ASCEN[k].desc;
+  renderAcc();
+}
+for (const k of Object.keys(ASCEN)) {
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.k = k; b.id = 'as-' + k; b.textContent = ASCEN[k].label;
+  b.addEventListener('click', () => setAcc(k)); document.getElementById('acc-scen').appendChild(b);
+}
+document.getElementById('acc-heal').addEventListener('change', () => setAcc(ascen, true));
+document.getElementById('a-next').addEventListener('click', () => { astep = Math.min(ROWS.length - 1, astep + 1); renderAcc(); });
+document.getElementById('a-prev').addEventListener('click', () => { astep = Math.max(0, astep - 1); renderAcc(); });
+document.getElementById('a-reset').addEventListener('click', () => { astep = 0; renderAcc(); });
+document.getElementById('a-end').addEventListener('click', () => { astep = ROWS.length - 1; renderAcc(); });
+setAcc('mixed');
+</script>

@@ -17,12 +17,20 @@ METHOD_CONSTANTS = {
     'death': 'DEATH_SCREEN_OFFSET', 'update': 'UPDATE_OFFSET', 'stats': 'STATS_OFFSET',
     'collision': None, 'zero_hp_context': None,
 }
+# Caller contexts that only some builds have (2026-11-03 moved projectile hits out of collision).
+OPTIONAL_METHODS = {'hit_handler'}
+METHOD_CONSTANTS['hit_handler'] = None
 HOOKS = {'nexus', 'report', 'notify', 'hp', 'damage', 'death', 'update', 'stats'}
 CALL_LAYOUT = {
-    'DAMAGE_CALLER': ('collision', 'damage', 'direct'),
-    'NOTIFY_CALLER': ('collision', 'notify', 'virtual'),
-    'ZERO_HP_CALLER': ('zero_hp_context', 'hp', 'direct'),
+    'DAMAGE_CALLER': (('collision', 'hit_handler'), 'damage', 'direct'),
+    'NOTIFY_CALLER': (('collision', 'hit_handler'), 'notify', 'virtual'),
+    'NOTIFY_CALLER_ALT': (('hit_handler',), 'notify', 'virtual'),
+    'ZERO_HP_CALLER': (('zero_hp_context',), 'hp', 'direct'),
 }
+OPTIONAL_CALLS = {'NOTIFY_CALLER_ALT'}
+# Since 2026-11-03 the game ships several copies of these methods with one signature and calls one.
+# Each is resolved by following direct calls from the previous link, not by its obfuscated name.
+LIVE_CHAIN = ('collision', 'hit_handler', 'damage')
 
 
 def address(value):
@@ -40,11 +48,11 @@ def validate_profile(profile):
         raise ValueError('Missing review state')
     if not re.fullmatch(r'[a-f0-9]{64}', profile.get('game_sha256', '')):
         raise ValueError('Invalid GameAssembly SHA-256')
-    if {m['id'] for m in profile['methods']} != set(METHOD_CONSTANTS):
+    if not set(METHOD_CONSTANTS) - OPTIONAL_METHODS <= {m['id'] for m in profile['methods']} <= set(METHOD_CONSTANTS):
         raise ValueError('Profile must contain every supported method and caller context')
     if {m.get('hook') for m in profile['methods'] if m.get('hook')} != HOOKS:
         raise ValueError('Profile must contain all audited hooks')
-    if {c['constant'] for c in profile['callsites']} != set(CALL_LAYOUT):
+    if not set(CALL_LAYOUT) - OPTIONAL_CALLS <= {c['constant'] for c in profile['callsites']} <= set(CALL_LAYOUT):
         raise ValueError('Profile must contain all audited callers')
     constants, ids, hooks = set(), set(), set()
     for method in profile['methods']:
@@ -79,7 +87,8 @@ def validate_profile(profile):
         if call['container'] not in ids or call['target'] not in ids:
             raise ValueError('Unknown callsite method')
         constant = call['constant']
-        if (call['container'], call['target'], call['kind']) != CALL_LAYOUT.get(constant):
+        layout = CALL_LAYOUT.get(constant)
+        if not layout or call['container'] not in layout[0] or (call['target'], call['kind']) != layout[1:]:
             raise ValueError('Callsite does not match its integration role')
         if not re.fullmatch(r'[A-Z][A-Z0-9_]+', constant) or constant in constants:
             raise ValueError('Invalid or duplicate callsite constant')
@@ -127,6 +136,8 @@ def render_header(profile):
             lines.append(f"#define {method['constant']}_NAMESPACE {json.dumps(method['namespace'])}")
     for call in profile['callsites']:
         lines.append(f"#define {call['constant']} {call['return_address']}UL")
+    if not any(c['constant'] == 'NOTIFY_CALLER_ALT' for c in profile['callsites']):
+        lines.append('#define NOTIFY_CALLER_ALT NOTIFY_CALLER')
     lines.append('#ifdef EXALT_PROFILE_HOOK_BYTES')
     for method in profile['methods']:
         if not method.get('hook'):
@@ -252,6 +263,40 @@ def compare_field(expected, fields):
     return dict(result, status=status, new_offset=hex(field['offset']), observed_type=field['type'], observed_static=field.get('is_static', False))
 
 
+def copy_key(method):
+    return (method['namespace'], method['owner'], tuple(method['parameters']), method['returns'])
+
+
+def direct_targets(instructions):
+    targets = set()
+    for instruction in instructions:
+        raw = bytes.fromhex(instruction['bytes'])
+        if len(raw) == 5 and raw[0] in (0xe8, 0xe9):  # Call, or a tail-call jump.
+            targets.add(instruction['address'] + 5 + struct.unpack('<i', raw[1:])[0])
+    return targets
+
+
+def resolve_live_chain(profile, dump, matches, body):
+    known = {m['id']: m for m in profile['methods']}
+    chain = [identity for identity in LIVE_CHAIN if identity in known]
+    rows, caller = [], matches.get(chain[0])
+    for identity in chain[1:]:
+        expected = known[identity]
+        copies = [m for m in dump['methods'] if copy_key(m) == copy_key(expected)]
+        row = dict(id=identity, old_address=expected['name'], copies=len(copies), status='missing', candidates=[])
+        called = [m for m in copies if m['offset'] in direct_targets(body(caller['offset']))] if caller else []
+        row['candidates'] = [f"{m['name']} {m['offset']:#x}" for m in called]
+        matches.pop(identity, None)
+        if len(called) == 1:
+            row.update(status='unchanged' if called[0]['name'] == expected['name'] else 'switched',
+                       new_address=f"{called[0]['name']} {called[0]['offset']:#x} (1 of {len(copies)})")
+            matches[identity] = called[0]
+        elif called: row['status'] = 'ambiguous'
+        caller = matches.get(identity)
+        rows.append(row)
+    return rows
+
+
 def call_candidates(instructions, target=None, slot=None):
     candidates = []
     for instruction in instructions:
@@ -259,7 +304,7 @@ def call_candidates(instructions, target=None, slot=None):
         if target is not None and len(raw) == 5 and raw[0] == 0xe8:
             returned = instruction['address'] + 5
             if returned + struct.unpack('<i', raw[1:])[0] == target: candidates.append(returned)
-        elif slot is not None and len(raw) == 6 and raw[:2] == b'\xff\x90' and struct.unpack('<I', raw[2:])[0] == slot:
+        elif slot is not None and len(raw) == 6 and raw[0] == 0xff and raw[1] in (0x90, 0x91, 0x92, 0x93, 0x95, 0x96, 0x97) and struct.unpack('<I', raw[2:])[0] == slot:
             candidates.append(instruction['address'] + 6)
     return candidates
 
@@ -284,6 +329,20 @@ def make_report(profile, binary, dump, disassembler):
         if len(found) == 1: matches[identity] = found[0]
         elif len(found) > 1: ambiguous.add(identity)
     offsets = sorted(set(m['offset'] for m in dump['methods']))
+
+    def body(start):
+        end = next((n for n in offsets if n > start), start)
+        return disassembler(start, end) if 0 < end - start <= 1_000_000 else []
+
+    live = resolve_live_chain(profile, dump, matches, body)
+    for row in live:
+        ambiguous.discard(row['id'])
+        if row['id'] in matches:  # Report the copy the game calls, whatever its name.
+            index = next(i for i, m in enumerate(methods) if m['id'] == row['id'])
+            found = matches[row['id']]
+            methods[index] = compare_method(dict(known[row['id']], name=found['name']), [found], binary)
+        else:
+            ambiguous.add(row['id'])
     calls = []
     for call in profile['callsites']:
         row = dict(id=call['id'], old_address=call['return_address'], status='missing', candidates=[])
@@ -292,22 +351,34 @@ def make_report(profile, binary, dump, disassembler):
             continue
         container, target = matches.get(call['container']), matches.get(call['target'])
         if container and target:
-            start = container['offset']
-            end = next((n for n in offsets if n > start), start)
-            if 0 < end - start <= 1_000_000:
-                instructions = disassembler(start, end)
+            instructions = body(container['offset'])
+            if instructions:
                 if call['kind'] == 'virtual':
                     slot = target.get('slot')
                     candidates = [] if slot is None else call_candidates(instructions, slot=address(call['vtable_base']) + slot * 16)
                 else: candidates = call_candidates(instructions, target=target['offset'])
                 row['candidates'] = [hex(n) for n in candidates]
-                if len(candidates) == 1:
-                    row.update(status='unchanged' if candidates[0] == address(call['return_address']) else 'moved', new_address=hex(candidates[0]))
+                # A duplicated call tail yields several sites; each profile entry names one of them.
+                if address(call['return_address']) in candidates:
+                    row.update(status='unchanged', new_address=call['return_address'])
+                elif len(candidates) == 1:
+                    row.update(status='moved', new_address=hex(candidates[0]))
                 elif len(candidates) > 1: row['status'] = 'ambiguous'
         calls.append(row)
+    # A duplicated call tail gives several equivalent sites; assign them in address order.
+    groups = {}
+    for call, row in zip(profile['callsites'], calls):
+        groups.setdefault((call['container'], call['target'], call['kind']), []).append((call, row))
+    for group in groups.values():
+        rows = [row for _, row in group]
+        if len(group) > 1 and all(r['status'] == 'ambiguous' and r['candidates'] == rows[0]['candidates'] for r in rows) \
+                and len(rows[0]['candidates']) == len(group):
+            ordered = sorted(group, key=lambda item: address(item[0]['return_address']))
+            for (_, row), new in zip(ordered, sorted(rows[0]['candidates'], key=address)):
+                row.update(status='moved', new_address=new, reason='Assigned in address order within a duplicated call tail')
     return dict(schema_version=1, baseline_profile=profile['id'], game_sha256=binary.sha256,
                 known_build=binary.sha256 == profile['game_sha256'], manual_review_required=True,
-                approved_for_runtime=False, methods=methods, fields=fields, callsites=calls)
+                approved_for_runtime=False, methods=methods, fields=fields, callsites=calls, live_path=live)
 
 
 def render_report(report):
@@ -316,9 +387,13 @@ def render_report(report):
              '**Read-only findings. This report does not establish behavioral compatibility or approve a build for runtime use.**', '',
              'Unchanged means the listed identity and entry/offset checks matched. It does not mean the whole method is unchanged.',
              'New-build candidates require a native-code audit and live readiness checks. No profile or installed app was modified.', '']
-    for title, key in [('Methods', 'methods'), ('Fields', 'fields'), ('Call sites', 'callsites')]:
-        lines += ['## ' + title, '', '| Item | Finding | Previous | Observed |', '|---|---|---|---|']
-        for row in report[key]:
+    for title, key in [('Methods', 'methods'), ('Live path', 'live_path'), ('Fields', 'fields'), ('Call sites', 'callsites')]:
+        lines += ['## ' + title, '']
+        if key == 'live_path':
+            lines += ['Each method is the copy its caller in `LIVE_CHAIN` calls directly. `switched` means the game now '
+                      'calls a different copy than the profile names.', '']
+        lines += ['| Item | Finding | Previous | Observed |', '|---|---|---|---|']
+        for row in report.get(key, []):
             old = row.get('old_address', row.get('old_offset', ''))
             new = row.get('new_address', row.get('new_offset', ', '.join(row.get('candidates', []))))
             # Metadata strings are data; do not render arbitrary Markdown from a dump.
@@ -345,8 +420,10 @@ def verify_binary(profile, binary):
             if raw[0] != 0xe8 or returned + struct.unpack('<i', raw[1:])[0] != methods[call['target']]:
                 raise ValueError('Direct call mismatch: ' + call['id'])
         else:
-            expected = b'\xff\x90' + struct.pack('<I', address(call['slot_offset']))
-            if binary.read(returned - 6, 6) != expected: raise ValueError('Virtual call mismatch: ' + call['id'])
+            raw = binary.read(returned - 6, 6)  # call [reg+disp32]; clones dispatch through different registers.
+            if raw[0] != 0xff or raw[1] not in (0x90, 0x91, 0x92, 0x93, 0x95, 0x96, 0x97) \
+                    or struct.unpack('<I', raw[2:])[0] != address(call['slot_offset']):
+                raise ValueError('Virtual call mismatch: ' + call['id'])
 
 
 def generate(profile, check=False):

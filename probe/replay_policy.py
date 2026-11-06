@@ -16,7 +16,8 @@ from analyze import read_events
 
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = Path(__file__).with_name('policy_replay.c')
-TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER = 0x196ed65, 0x183f7be
+# Terrain and area notification returns, per game build (2026-10-15, 2026-11-03).
+BOUNDARY_NOTIFY_CALLERS = {0x196ed65, 0x183f7be, 0x12e1a05, 0x1224d3e, 0x1e1e9f5, 0x92be4e}
 REASONS = {0: 'none', 1: 'lethal', 2: 'stale', 3: 'capacity'}
 
 
@@ -42,7 +43,7 @@ def inputs(events):
         phase, ns = e['phase'], e['ns']
         if phase == 12 and e['flag0'] and e['flag1']:
             lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
-        elif phase == 3 and e['callsite'] in (TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER):
+        elif phase == 3 and e['callsite'] in BOUNDARY_NOTIFY_CALLERS:
             lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
         elif phase == 6 and e['update_source'] in (1, 2):
             lines.append((scope, f"H {ns} {e['hp']}"))

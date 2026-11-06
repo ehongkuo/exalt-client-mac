@@ -9,6 +9,9 @@ from pathlib import Path
 import statistics
 from analyze import read_events
 
+# Incoming stat handler's HP-setter return, per game build (2026-10-15, 2026-11-03).
+INCOMING_HP_CALLERS = {0x184c115, 0x121f115, 0x91b925}
+
 
 def fields(line):
     return dict(cell.split('=', 1) for cell in line.split('\t')[1:] if '=' in cell)
@@ -116,7 +119,7 @@ def inspect_log(text, expected_sha=None):
         if e['phase'] != 6:
             continue
         before = by_id.get(e['correlation'])
-        if not before or e['update_source'] != 1 or before['callsite'] != 0x184c115:
+        if not before or e['update_source'] != 1 or before['callsite'] not in INCOMING_HP_CALLERS:
             if before and e['hp'] < before['hp']:
                 abandon('non_tick_hp_loss', e['ns'])
             continue
@@ -153,7 +156,7 @@ def inspect_log(text, expected_sha=None):
         shots = [item for item in starts.values() if item['generation'] == scope]
         decreases = [e for e in events if e['phase'] == 6 and e['generation'] == scope and
             e['update_source'] == 1 and e['correlation'] in by_id and
-            by_id[e['correlation']]['callsite'] == 0x184c115 and e['hp'] < by_id[e['correlation']]['hp']]
+            by_id[e['correlation']]['callsite'] in INCOMING_HP_CALLERS and e['hp'] < by_id[e['correlation']]['hp']]
         if len(shots) != len(decreases) or any(
                 d['ns'] < shot['start_ns'] or not 0 < by_id[d['correlation']]['hp'] - d['hp'] <= shot['damage']
                 for shot, d in zip(shots, decreases)):

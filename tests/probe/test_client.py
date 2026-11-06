@@ -215,9 +215,9 @@ class ClientInterventionTests(unittest.TestCase):
   decision=next(e for e in self.events if e['phase']==20)
   self.assertEqual(decision['projectile'],210)
   self.assertEqual(decision['update_context'],(1<<64)-30)
-  self.assertEqual([e['caller'] for e in self.secondary_reports],['0x183f880'])
+  self.assertEqual([e['caller'] for e in self.secondary_reports],['0x92bf10'])
  def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
-  for boundary in ('0x196ed90UL','0x183f880UL'):
+  for boundary in ('0x1e1ea20UL','0x92bf10UL'):
    with self.subTest(boundary=boundary):
     self.run_client('armed=1,potion=0,death=1',boundary=boundary)
     self.assertIn('boundary_sent=3 other_sent=12',self.output)
@@ -227,12 +227,12 @@ class ClientInterventionTests(unittest.TestCase):
  def test_boundary_dry_run_and_disabled_mode_preserve_damage(self):
   for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
    with self.subTest(settings=settings):
-    self.run_client(settings,boundary='0x196ed90UL')
+    self.run_client(settings,boundary='0x1e1ea20UL')
     self.assertIn('boundary_sent=6 other_sent=12',self.output)
     self.assertIn('nexus_calls=0',self.output)
     self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
  def test_boundary_request_failure_preserves_notifications_and_reports(self):
-  for boundary in ('0x196ed90UL','0x183f880UL'):
+  for boundary in ('0x1e1ea20UL','0x92bf10UL'):
    for failure in ('denied','exception'):
     with self.subTest(boundary=boundary,failure=failure):
      self.run_client('armed=1,potion=0,death=1',boundary=boundary,**{failure:True})
