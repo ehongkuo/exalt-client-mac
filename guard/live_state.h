@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define LIVE_MAGIC 0x44475845u  /* "EXGD" */
-#define LIVE_VERSION 6u
+#define LIVE_VERSION 7u
 #define LIVE_SLOTS 8
 #define LIVE_EVENTS 16
 #define LIVE_FILE_SIZE 4096
@@ -28,6 +28,10 @@ enum { CHAT_SEARCHING = 0, CHAT_READING = 1, CHAT_UNAVAILABLE = -1 };
 /* Result of the latest Join request: sent to the game, the game threw, no party or player to
  * join with (the request expired), or this game build is not the inspected one. */
 enum { JOIN_NONE = 0, JOIN_SENT = 1, JOIN_ERROR = -1, JOIN_UNAVAILABLE = -2, JOIN_UNSUPPORTED = -4 };
+/* Why the guard ended the game at startup: a check failed, so playing on would mean playing
+ * without the protection the user started it for. */
+enum { REFUSAL_NONE = 0, REFUSAL_BUILD = 1, REFUSAL_GUARD = 2, REFUSAL_MAP = 3, REFUSAL_CHAT = 4,
+       REFUSAL_JOIN = 5, REFUSAL_DEATH = 6, REFUSAL_TIMEOUT = 7 };
 
 typedef struct {
     double epoch;                 /* wall-clock seconds */
@@ -70,6 +74,8 @@ typedef struct {
     char join_name[32];
     int32_t death, death_status, death_blocking; /* setting, hooks: 0 waiting / 1 ready / -1 refused, escape latch */
     int64_t death_pending, death_predicted;
+    int32_t refusal;                         /* REFUSAL_* above; nonzero once the guard ended the game */
+    char refusal_detail[60];                 /* the failed check, for the log and the app */
 } LiveData;
 
 /* Settings sent by the app. request increases with every change; 0 means none yet. */

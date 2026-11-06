@@ -62,7 +62,9 @@ The installed app contains its integration library and supported-game fingerprin
 
 Always start the game through Exalt Client Mac to load its integration. An already-running game keeps the library it loaded at launch; restart it through the app after installing a new version.
 
-The launcher checks the installed game's fingerprint before starting. A game update requires checking and updating the integration for that build.
+The launcher checks the installed game's fingerprint before starting. DECA's launcher can update the game after that, so the guard checks the fingerprint again when the game loads. A game update requires checking and updating the integration for that build.
+
+The guard does not let a game run unprotected. If the fingerprint, a method, a field, the chat or join code, or (with Nexus on death on) the death hooks fail their checks, or the game never becomes ready within 2 minutes, the guard closes the game. The app then shows **Game closed: guard checks failed** with the reason, plays a sound and posts a notification, whatever the party alert settings say. A game running without the guard for 20 seconds, for example one started straight from DECA's launcher, gets the same warning.
 
 ## Configure health protection
 
@@ -160,7 +162,7 @@ Live tests have demonstrated predicted-death escapes both in the standalone diag
 
 This is experimental protection. It covers audited projectile, ground and radius/AOE paths, and does not guarantee survival from every damage source or network condition. Bounded timing estimates can escape early after overlapping healing, or clear damage too soon if the server takes longer than the 800 ms quiet allowance to apply a hit while ticks continue. Previously sent reports cannot be recalled. A confirmed local Nexus flag is not a server acknowledgement.
 
-The integration uses the reviewed profile selected by `compatibility/active-profile.txt`. That profile generates `guard/build_profile.h` and `guard/game-build.sha256`; see [build compatibility](compatibility/README.md) for the read-only update-analysis command. Method signatures, field types, offsets, and native entry bytes are validated before the death hooks are installed in Nexus. Readiness failures are shown in the app.
+The integration uses the reviewed profile selected by `compatibility/active-profile.txt`. That profile generates `guard/build_profile.h` and `guard/game-build.sha256`; see [build compatibility](compatibility/README.md) for the read-only update-analysis command. Method signatures, field types, offsets, and native entry bytes are validated when the game starts; a failure closes the game (exit code 78) and is shown in the app. Diagnostic builds record the failure without closing the game.
 
 ## Development
 

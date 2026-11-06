@@ -23,6 +23,7 @@
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>
+#include <CommonCrypto/CommonDigest.h>
 
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 #define EXALT_PROFILE_HOOK_BYTES
@@ -130,6 +131,10 @@ static int ready;
 #define SESSION_NS 0ULL
 #endif
 #define HEARTBEAT_NS NSEC_PER_SEC
+/* The game's code loads within seconds of launch; this long without it means something is wrong. */
+#ifndef GUARD_READY_NS
+#define GUARD_READY_NS (120 * NSEC_PER_SEC)
+#endif
 /* Check every 1 ms: HP lands on whatever frame the server update arrives, so a short period
  * cuts the wait between the game applying HP and the guard seeing it. About 3 us per check. */
 #ifndef PERIOD_NS
@@ -149,6 +154,7 @@ __attribute__((format(printf, 1, 2))) static void note(const char *format, ...) 
     va_end(args);
     atomic_store_explicit(&note_head, head + 1, memory_order_release);
 }
+static void refuse(int code, const char *detail);
 
 static uint64_t monotonic_ns(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
@@ -241,17 +247,17 @@ static void prepare_guard(const void *game) {
     equipment_class = il2cpp_class_from_name(game, POTION_OFFSET_NAMESPACE, POTION_OFFSET_OWNER);
     connection_class = il2cpp_class_from_name(game, NEXUS_OFFSET_NAMESPACE, NEXUS_OFFSET_OWNER);
     quickslot_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers.Equipment", "QuickSlot");
-    if (!equipment_class || !connection_class || !quickslot_class) { note("guard_refused\tclasses_missing\n"); return; }
+    if (!equipment_class || !connection_class || !quickslot_class) { refuse(REFUSAL_GUARD, "classes_missing"); return; }
     potion_method = find_method_named(equipment_class, POTION_OFFSET_NAME, 1, "System.Int32");
     nexus_method = find_method_named(connection_class, NEXUS_OFFSET_NAME, 0, NULL);
     if (!at_offset(potion_method, POTION_OFFSET) || !at_offset(nexus_method, NEXUS_OFFSET)) {
-        note("guard_refused\tmethod_offsets_differ\n"); return;
+        refuse(REFUSAL_GUARD, "method_offsets_differ"); return;
     }
     /* Static readonly, set by the game's static constructor; read it only when drinking. */
     quickslot_base_field = il2cpp_class_get_field_from_name(equipment_class, "FirstQuickslotIndex");
     if (!quickslot_base_field || !(il2cpp_field_get_flags(quickslot_base_field) & 16) ||
         !type_is(quickslot_base_field, "System.Int32")) {
-        note("guard_refused\tquickslot_field_missing\n"); return;
+        refuse(REFUSAL_GUARD, "quickslot_field_missing"); return;
     }
     quickslots_field = typed_field(equipment_class, "quickSlots", "DecaGames.RotMG.Managers.Equipment.QuickSlot[]");
     stack_field = typed_field(quickslot_class, "JFBFHHAJOAK", "System.Int32");  /* stack count; 0 = empty */
@@ -265,6 +271,7 @@ static void prepare_guard(const void *game) {
         map_display_field = typed_field(map_info_class, "FHLCMICEGNM", "System.String");
     }
     map_ok = map_info_field && map_name_field && map_display_field;
+    if (!map_ok) refuse(REFUSAL_MAP, "map_fields_missing");
     chat_class = il2cpp_class_from_name(game, "DecaGames.RotMG.UI.Managers", "ChatManager");
     chat_slot_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Chat.UI", "ChatSlotController");
     chat_message_class = il2cpp_class_from_name(game, "", "CPHENFGHHNA");
@@ -279,15 +286,16 @@ static void prepare_guard(const void *game) {
         chat_slots_field = NULL;
         live_data.chat_status = CHAT_UNAVAILABLE;
         note("guard_chat_unavailable\n");
+        refuse(REFUSAL_CHAT, "chat_fields_missing");
     }
     void *party_class = il2cpp_class_from_name(game, JOIN_OFFSET_NAMESPACE, JOIN_OFFSET_OWNER);
     if (party_class) join_method = find_method_named(party_class, JOIN_OFFSET_NAME, 1, "System.String");
     join_cooldown_method = find_method_named(player_class, JOIN_COOLDOWN_OFFSET_NAME, 1, "System.Int32");
     party_manager_field = typed_field(player_class, "EAKILNOKDDC", "IOPKEEBMGJK");
     join_ok = party_manager_field && at_offset(join_method, JOIN_OFFSET) && at_offset(join_cooldown_method, JOIN_COOLDOWN_OFFSET);
-    if (!join_ok) note("guard_join_unavailable\n");
+    if (!join_ok) { note("guard_join_unavailable\n"); refuse(REFUSAL_JOIN, "join_methods_differ"); }
     if (guard_ok) note("guard_ready\n");
-    else note("guard_refused\tplayer_fields_missing\n");
+    else refuse(REFUSAL_GUARD, "player_fields_missing");
 }
 
 static int prepare(void) {
@@ -306,13 +314,15 @@ static int prepare(void) {
         if (!strcmp(name, "UnityEngine.CoreModule.dll")) unity = image;
     }
     if (!game || !unity) return 0;
+    /* Both images are loaded, so their metadata is complete: anything missing from here on is
+     * a different game build, not a slow start. */
     gui_class = il2cpp_class_from_name(game, DEATH_SCREEN_OFFSET_NAMESPACE, DEATH_SCREEN_OFFSET_OWNER);
     bar_class = il2cpp_class_from_name(game, "DecaGames.RotMG.UI.Helpers", "ProgressBar");
     player_class = il2cpp_class_from_name(game, HIT_NOTIFY_OFFSET_NAMESPACE, HIT_NOTIFY_OFFSET_OWNER);
     void *object = il2cpp_class_from_name(unity, "UnityEngine", "Object");
-    if (!gui_class || !bar_class || !player_class || !object) return 0;
+    if (!gui_class || !bar_class || !player_class || !object) { refuse(REFUSAL_GUARD, "hud_classes_missing"); return 0; }
     find_method = find_method_named(object, "FindObjectOfType", 1, "System.Type");
-    if (!find_method) return 0;
+    if (!find_method) { refuse(REFUSAL_GUARD, "find_method_missing"); return 0; }
     bar_field = typed_field(gui_class, "hpProgressBar", "DecaGames.RotMG.UI.Helpers.ProgressBar");
     player_field = typed_field(gui_class, "JLFBFCOFDOF", "FKALGHJIADI");
     hp_field = typed_field(bar_class, "OJAHBHNIGDI", "System.Single");
@@ -329,7 +339,9 @@ static int prepare(void) {
         player_hp_field = typed_field(character, "ABCPKBGJPEP", "System.Int32");
         own_name_field = typed_field(character, "DPGEBOCBKEF", "System.String");  /* same name as the chat sender field */
     }
-    if (!(bar_field && player_field && hp_field && native_field && position_field)) return 0;
+    if (!(bar_field && player_field && hp_field && native_field && position_field)) {
+        refuse(REFUSAL_GUARD, "hud_fields_missing"); return 0;
+    }
     prepare_guard(game);
     return 1;
 }
@@ -764,6 +776,37 @@ static void finish(void) {
     dispatch_source_cancel(timer);
     atomic_store_explicit(&finished, 1, memory_order_release);
 }
+/* Starting the game through the app means expecting every guard feature to work. When a
+ * startup check fails, the client build records why and ends the game before it can be played;
+ * diagnostic builds only record it. */
+#ifndef GUARD_REFUSAL_EXIT
+#define GUARD_REFUSAL_EXIT 78
+#endif
+static dispatch_queue_t writer_queue;
+#ifdef EXALT_CLIENT_FATAL
+static void refusal_flush(void *unused) {
+    (void)unused;
+    if (!logfile) return;
+    drain(NULL);
+    fputs("status\trefused\n", logfile);
+    fflush(logfile);
+}
+#endif
+static void refuse(int code, const char *detail) {
+    if (live_data.refusal) return;
+    live_data.refusal = code;
+    snprintf(live_data.refusal_detail, sizeof live_data.refusal_detail, "%s", detail);
+    note("guard_refused\t%s\tcode=%d\n", detail, code);
+    if (live) {
+        live_data.sample_ns = monotonic_ns();   /* a fresh sample, so the app reads it */
+        live_publish(live, &live_data);
+    }
+#ifdef EXALT_CLIENT_FATAL
+    if (writer_queue) dispatch_sync_f(writer_queue, NULL, refusal_flush);
+    else refusal_flush(NULL);
+    _exit(GUARD_REFUSAL_EXIT);
+#endif
+}
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 #include "../probe/hit_probe.h"
 #endif
@@ -780,6 +823,7 @@ static void tick(void *unused) {
     void *gui = NULL, *player = NULL, *bar = NULL, *own = NULL;
     if (!ready && begin >= next_lookup) {
         ready = prepare(); next_lookup = begin + 500 * NSEC_PER_MSEC;
+        if (!ready && begin - start_ns >= GUARD_READY_NS) refuse(REFUSAL_TIMEOUT, "game_never_ready");
     }
     if (!ready) goto done;
     check_control();
@@ -861,35 +905,70 @@ done:
     last_logged = r; last_logged_ns = begin;
     if (!ring_push(&ring, r)) ++drops;
 }
+/* The launcher can update the game after the app checked it, so check the file this process
+ * is about to load. The app's own check stays: it refuses before the launcher even opens. */
+#ifndef GUARD_BUILD_FILE
+#define GUARD_BUILD_FILE "../Frameworks/GameAssembly.dylib"   /* relative to the executable's folder */
+#endif
+#ifndef GUARD_BUILD_SHA256
+#define GUARD_BUILD_SHA256 EXALT_GAME_SHA256
+#endif
+static int build_matches(const char *executable) {
+    char file[PATH_MAX];
+    const char *slash = strrchr(executable, '/');
+    int n = GUARD_BUILD_FILE[0] == '/' || !slash ? snprintf(file, sizeof file, "%s", GUARD_BUILD_FILE)
+          : snprintf(file, sizeof file, "%.*s/%s", (int)(slash - executable), executable, GUARD_BUILD_FILE);
+    if (n < 0 || (size_t)n >= sizeof file) return 0;
+    int fd = open(file, O_RDONLY);
+    if (fd < 0) return 0;
+    CC_SHA256_CTX hash; CC_SHA256_Init(&hash);
+    static unsigned char chunk[1 << 20];
+    ssize_t got;
+    while ((got = read(fd, chunk, sizeof chunk)) > 0) CC_SHA256_Update(&hash, chunk, (CC_LONG)got);
+    close(fd);
+    if (got < 0) return 0;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256_Final(digest, &hash);
+    char hex[2 * CC_SHA256_DIGEST_LENGTH + 1];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+    return !strcmp(hex, GUARD_BUILD_SHA256);
+}
+/* Without its log or live file the guard cannot run or report, so the client build ends the game. */
+static void abandon(void) {
+#ifdef EXALT_CLIENT_FATAL
+    _exit(GUARD_REFUSAL_EXIT);
+#endif
+}
 __attribute__((constructor)) static void start(void) {
     char path[PATH_MAX]; uint32_t size = sizeof path;
     if (_NSGetExecutablePath(path, &size)) return;
     const char *leaf = strrchr(path, '/'); leaf = leaf ? leaf + 1 : path;
     if (strcmp(leaf, "RotMGExalt")) return;
+    char executable[PATH_MAX];
+    snprintf(executable, sizeof executable, "%s", path);
     char folder[PATH_MAX];
 #ifdef PROBE_LOG_DIR
-    if (snprintf(folder, sizeof folder, "%s", PROBE_LOG_DIR) >= (int)sizeof folder) return;
+    if (snprintf(folder, sizeof folder, "%s", PROBE_LOG_DIR) >= (int)sizeof folder) { abandon(); return; }
 #else
     /* Exalt Client Mac names its data folder (Application Support). Without it, logs go to
      * logs/ beside this dylib. */
     const char *data = getenv("EXALT_GUARD_DIR");
     if (data && *data) {
-        if (snprintf(folder, sizeof folder, "%s/logs", data) >= (int)sizeof folder) return;
+        if (snprintf(folder, sizeof folder, "%s/logs", data) >= (int)sizeof folder) { abandon(); return; }
     } else {
         Dl_info self;
-        if (!dladdr((const void *)&start, &self) || !self.dli_fname) return;
+        if (!dladdr((const void *)&start, &self) || !self.dli_fname) { abandon(); return; }
         const char *slash = strrchr(self.dli_fname, '/');
-        if (!slash) return;
+        if (!slash) { abandon(); return; }
         int base = (int)(slash - self.dli_fname);
-        if (snprintf(folder, sizeof folder, "%.*s/logs", base, self.dli_fname) >= (int)sizeof folder) return;
+        if (snprintf(folder, sizeof folder, "%.*s/logs", base, self.dli_fname) >= (int)sizeof folder) { abandon(); return; }
     }
-    if (mkdir(folder, 0700) && errno != EEXIST) return;
+    if (mkdir(folder, 0700) && errno != EEXIST) { abandon(); return; }
 #endif
     int n = snprintf(path, sizeof path, "%s/guard-%d.tsv", folder, getpid());
-    if (n < 0 || (size_t)n >= sizeof path) return;
+    if (n < 0 || (size_t)n >= sizeof path) { abandon(); return; }
     int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-    if (fd < 0) return;
-    logfile = fdopen(fd, "w"); if (!logfile) { close(fd); return; }
+    if (fd < 0) { abandon(); return; }
+    logfile = fdopen(fd, "w"); if (!logfile) { close(fd); abandon(); return; }
     int parsed = guard_parse(&config, getenv("EXALT_GUARD"));
 #ifdef EXALT_HIT_PROBE
     config.armed = 0;
@@ -900,6 +979,8 @@ __attribute__((constructor)) static void start(void) {
             config.armed, config.potion, config.ceiling, config.nexus, config.death);
     fflush(logfile);
     open_live(folder);
+    if (!live) { fputs("status\tlive_file_unavailable\n", logfile); fflush(logfile); abandon(); }
+    if (!build_matches(executable)) refuse(REFUSAL_BUILD, "game_build_changed");
     struct timespec epoch; clock_gettime(CLOCK_REALTIME, &epoch);
     start_epoch = epoch.tv_sec + epoch.tv_nsec / 1e9; start_ns = monotonic_ns();
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
@@ -907,8 +988,8 @@ __attribute__((constructor)) static void start(void) {
 #endif
     live_data.session_start_epoch = start_epoch;
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-    writer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
-                dispatch_queue_create("local.exalt.guard.writer", DISPATCH_QUEUE_SERIAL));
+    writer_queue = dispatch_queue_create("local.exalt.guard.writer", DISPATCH_QUEUE_SERIAL);
+    writer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, writer_queue);
     dispatch_source_set_event_handler_f(timer, tick);
     dispatch_source_set_event_handler_f(writer, drain);
     dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, PERIOD_NS), PERIOD_NS, 50000);

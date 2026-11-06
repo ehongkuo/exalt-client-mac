@@ -66,7 +66,11 @@ void *il2cpp_gchandle_get_target(void *h) { return *(void**)h; }
 void il2cpp_gchandle_free(void *h) { free(h); }
 void *il2cpp_domain_get(void) { return (void*)1; }
 const void **il2cpp_domain_get_assemblies(const void *d,size_t *n) {
- (void)d; static const void *a[]={(void*)1,(void*)2};*n=2;return a;
+ (void)d; static const void *a[]={(void*)1,(void*)2};*n=2;
+#ifdef NO_ASSEMBLIES
+ *n=0;   /* the game's code never loads */
+#endif
+ return a;
 }
 const void *il2cpp_assembly_get_image(const void *a) { return a; }
 const char *il2cpp_image_get_name(const void *i) { return i==(void*)1?"Assembly-CSharp.dll":"UnityEngine.CoreModule.dll"; }

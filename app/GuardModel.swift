@@ -125,6 +125,7 @@ struct GuardSnapshot: Equatable {
     var deathStatus: Int32
     var deathPending: Int64, deathPredicted: Int64
     var joinRequest: UInt32, joinResult: Int32
+    var refusal: GuardRefusal?
 
     init(_ d: LiveData) {
         pid = d.pid; status = d.status; armed = d.armed != 0
@@ -155,6 +156,8 @@ struct GuardSnapshot: Equatable {
         deathReady = d.death_status == 1; deathBlocking = d.death_blocking != 0
         deathPending = d.death_pending; deathPredicted = d.death_predicted
         joinRequest = d.join_request; joinResult = d.join_result
+        refusal = d.refusal == 0 ? nil : GuardRefusal(
+            code: d.refusal, detail: withUnsafeBytes(of: d.refusal_detail) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) })
         chatStatus = d.chat_status
         partyCalls = d.party_calls
         let text = { (raw: UnsafeRawBufferPointer) in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
@@ -235,6 +238,68 @@ enum JoinPopupRules {
         if now - shownAt >= timeout || !live { return true }
         if let s = snapshot, !WaitingMaps.contains(s) { return true }
         return status == .sent && now - statusSince >= afterJoin
+    }
+}
+
+/// Why the guard ended the game: a startup check failed, so the game never ran unprotected.
+struct GuardRefusal: Equatable {
+    var code: Int32
+    var detail: String
+
+    var reason: String {
+        switch code {
+        case 1: return "The game was updated and this client does not support the new build yet."
+        case 2: return "The guard could not find the game's HP or potion code."
+        case 3: return "The guard could not read the current map."
+        case 4: return "The guard could not read chat, so party calls would be missed."
+        case 5: return "The guard could not find the game's party join code."
+        case 6: return "Nexus on death could not be set up for this build."
+        case 7: return "The game never reached a state the guard could check."
+        default: return "A guard check failed."
+        }
+    }
+    var message: String { "Game closed: guard checks failed. \(reason)" }
+}
+
+/// Alerts once per refused game: the guard publishes its refusal and then ends the game. A
+/// refusal older than `recent` seconds (left in the live file from before the app started) shows
+/// on screen but does not alert.
+struct RefusalTracker {
+    var recent: Double = 60
+    private var alerted: Int32 = 0
+
+    /// `now`: wall-clock seconds, like the guard's sample epoch.
+    mutating func update(_ snapshot: GuardSnapshot?, now: Double) -> GuardRefusal? {
+        guard let s = snapshot, let refusal = s.refusal, s.pid != alerted else { return nil }
+        alerted = s.pid
+        guard now - s.sampleEpoch <= recent else { return nil }
+        return refusal
+    }
+}
+
+/// A game the guard is not in: started without it (for example straight from DECA's launcher),
+/// or the guard failed to load. Reported once per game, after `grace` seconds, which covers the
+/// guard's own startup.
+struct UnguardedGameWatch {
+    var grace: Double = 20
+    private var firstSeen: [Int32: Double] = [:]
+    private var reported: Set<Int32> = []
+
+    /// `games`: pids of running game processes. `now`: seconds on any steadily increasing clock.
+    /// Returns the pids currently unguarded and whether one of them is newly so.
+    mutating func update(games: [Int32], snapshot: GuardSnapshot?, now: Double) -> (unguarded: [Int32], new: Bool) {
+        let guarded = snapshot.map { $0.refusal == nil ? $0.pid : 0 } ?? 0
+        firstSeen = firstSeen.filter { games.contains($0.key) }
+        reported = reported.filter { games.contains($0) }
+        var unguarded: [Int32] = [], new = false
+        for pid in games.sorted() where pid != guarded {
+            let seen = firstSeen[pid] ?? now
+            firstSeen[pid] = seen
+            guard now - seen >= grace else { continue }
+            unguarded.append(pid)
+            if reported.insert(pid).inserted { new = true }
+        }
+        return (unguarded, new)
     }
 }
 

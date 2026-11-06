@@ -20,7 +20,7 @@ The commands below validate the selected profile and produce comparison reports 
 
 The signed app bundles `compatibility-profile.json` with its guard library and fingerprint. The app does
 not load arbitrary profiles at runtime. The existing exact-build launch check, signature checks, typed
-field reads and native entry-byte checks remain active. Gameplay behavior is unchanged.
+field reads and native entry-byte checks remain active. When any of them fails at startup, the guard closes the game instead of running without protection.
 
 ## Check the current build
 

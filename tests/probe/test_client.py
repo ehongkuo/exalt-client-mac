@@ -1,4 +1,5 @@
 """Exercise the app's guard build, including Arm/Dry Run, toggle settings and legacy Nexus migration."""
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -10,17 +11,25 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'probe'))
 import analyze
 
+FIXTURE_BUILD=b'fixture game build\n'
+def build_defines(folder):
+ """A stand-in GameAssembly and its hash, so the guard's launch build check passes."""
+ (Path(folder)/'GameAssembly.dylib').write_bytes(FIXTURE_BUILD)
+ digest=hashlib.sha256(FIXTURE_BUILD).hexdigest()
+ return [f'-DGUARD_BUILD_FILE="{folder}/GameAssembly.dylib"',f'-DGUARD_BUILD_SHA256="{digest}"']
+
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False,link=(),refusal=None):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
     '-DEXALT_CLIENT_FATAL','-DHIT_PROBE_TEST','-DHIT_PROBE_BAD_ARGUMENT_TEST','-DSESSION_NS=3500000000ULL',
-    f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
+    *build_defines(p),f'-DPROBE_LOG_DIR="{p}"',str(ROOT/'guard/guard.c'),'-o',str(p/'guard.dylib')],check=True)
    args=['clang','-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-Wl,-export_dynamic',
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if false_positive:args.append('-DFATAL_FALSE_POSITIVE')
+   args+=list(link)
    if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
    if environment in (10,11) and ('armed=0' in settings or 'death=0' in settings):args.append('-DLOCAL_HP_PASS')
    if hp_cross:args.append('-DFATAL_HP_CROSS')
@@ -47,6 +56,15 @@ class ClientInterventionTests(unittest.TestCase):
     subprocess.run([str(tool),str(p/'guard-live.bin'),'1','0','0','0','0','0'],check=True)
    stdout,stderr=process.communicate(timeout=10)
    result=subprocess.CompletedProcess(process.args,process.returncode,stdout,stderr)
+   if refusal is not None:
+    self.assertEqual(result.returncode,78,result.stdout+result.stderr)
+    self.log=next(p.glob('guard-*.tsv')).read_text()
+    dump=p/'dump'
+    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
+    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
+    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+    self.assertEqual(self.live['refusal'],str(refusal))
+    return
    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    self.output=result.stdout
    self.log=next(p.glob('guard-*.tsv')).read_text()
@@ -59,6 +77,13 @@ class ClientInterventionTests(unittest.TestCase):
    subprocess.run(['clang','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_dump.c'),'-o',str(dump)],check=True)
    text=subprocess.check_output([str(dump),str(p/'guard-live.bin')],text=True)
    self.live=dict(line.split('=',1) for line in text.splitlines() if '=' in line)
+ def test_failed_death_hook_check_ends_the_game_before_any_hook(self):
+  # A hook entry the guard cannot verify: the game is ended at startup, not left unprotected.
+  self.run_client('armed=1,potion=0,death=1',link=('-Wl,-unexported_symbol,_send_fixture',),refusal=6)
+  self.assertIn('hit_probe_refused\tentry_bytes\tindex=8',self.log)
+  self.assertEqual(self.live['refusal_detail'],'nexus_on_death entry_bytes index=8')
+  self.assertNotIn('hit_probe_ready',self.log)
+  self.assertIn('status\trefused',self.log)
  def test_meter_limits_alone_do_not_escape(self):
   for environment in (1,2,3,4,5):
    with self.subTest(environment=environment):
