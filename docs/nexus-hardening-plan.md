@@ -45,7 +45,7 @@ The scenarios below were run against the real `probe/fatal_policy.h`.
 | A | The server applies a hit later than the 800 ms quiet allowance while ticks stay healthy. The quiet rebase forgets the hit. Observed once: 834 ms. | Missed escape | Removed by Phase 1: hits clear only by the ordering proof, never by time |
 | B | Untracked HP loss (DoT, scripted or server-only damage) is treated as a tracked hit and retires it. | Missed escape | Removed by Phase 1: HP changes never clear hits. The loss itself is still unanticipated until an update shows it (G) |
 | C | Server damage exceeds the local calculation, mainly when a protective buff ends or a debuff arrives before the client learns of it. Observed once: +47 HP on a hit that applied a debuff. | Missed escape | Phase 3: charge debuff-carrying hits their worst case |
-| G | HP lost with no report (bleeding, frostbite, one unexplained 112 HP loss) cannot be anticipated before the next update. The baseline absorbs it once an update lands. | Missed escape, bounded by one interval's loss | Phase 3: drain allowance while a damage-over-time condition is set; the unexplained loss is investigated |
+| G | HP lost with no report (bleeding, frostbite, one unexplained 112 HP loss) cannot be anticipated before the next update. The baseline absorbs it once an update lands. | Missed escape, bounded by one interval's loss | Phase 3: drain allowance while a damage-over-time condition is set; the unexplained loss is accepted as a one-off (7 November) |
 | D | Healing in the same update as a hit hides part of the hit. | Early escape only | Removed by Phase 1: heals do not affect clearing |
 | E | A positive hit after a stall of at least 1.5 s escapes regardless of HP. | Early escape only, intended | Unchanged |
 | F | Leftover pending damage persists while HP is unchanged, because updates that leave out HP cannot trigger a quiet rebase. | Early escape only | Removed by Phase 1: the ordering proof clears on any update |
@@ -340,8 +340,8 @@ HP falls to a margin rather than to zero, is deferred until that work is done.
 
 Revisit it if, after Phases 1–3, replay shows early clears, or monitoring shows unexplained
 decreases or damage mismatches, at a rate that makes a missed escape an unacceptable risk. The
-112 HP loss in the heal capture is the first unexplained decrease. If Phase 3 cannot find and charge
-its source, a reserve is the simplest cover for it.
+112 HP loss in the heal capture is the first unexplained decrease. It couldn't be reproduced and is
+accepted as a one-off (7 November). If such losses recur, a reserve is the simplest cover.
 
 A complete implementation exists on branch `feat/nexus-safety-reserve` (closed PR #13): a saved
 `reserve=N` setting (0–25% of max HP), live protocol version 7, reason 4, and

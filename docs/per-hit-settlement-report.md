@@ -53,7 +53,8 @@ when a hit has landed.
   server damage message, no damage text and no condition change. It matches one of the 113-damage
   shots. Its source is unknown: an unhooked hit path, or server-side damage. No hits were pending.
   The ordering proof never reads HP, so a loss like this can't clear pending hits, but nothing
-  anticipates it either. This is the main remaining risk.
+  anticipates it either. **Accepted (7 November):** it couldn't be reproduced, so it's treated as a
+  one-off miss rather than investigated further.
 
 ### 6. Burst damage needs pending hits
 
@@ -204,16 +205,23 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
    - **Missed escapes:** none.
    - **Not covered:** heals while hit, long sessions and high latency. The worst valid frame gap
      was 0.52 s.
-6. **Investigate the 112 HP loss.**
-   - **Capture:** another capture at full HP near the same enemies, to see whether unreported hits
-     recur.
-   - **Hit paths:** check the six cloned hit handlers for one that isn't hooked.
-   - **Why it matters:** if its source can't be found and charged, it needs a reserve.
+
+   **Armed session (7 November):** `guard-11113` escaped.
+   - **Setup:** Armed on, potions off, the same character.
+   - **The request:** one, at server HP 72. One 48 hit was still in flight and a new 48 hit took
+     the projection to −24.
+   - **The escape:** the request was called (`result=1`). The new hit and one more were withheld
+     (`reports_suppressed=2`). Nexus followed, with no HP at or below 0 and no death screen.
+   - **Heals:** a +69 heal landed mid-burst while hits were pending, and no early request fired.
+     There were 33 proof clears.
+6. **The 112 HP loss: accepted, not investigated** (7 November). It couldn't be reproduced. If
+   unreported losses recur in later logs, the options are checking the six cloned hit handlers for
+   one that isn't hooked, or a reserve.
 7. **Phase 3 conditions.** Add drain allowances and debuff charges as each condition bit is decoded.
 
 ## Open questions
 
-- **The 112 HP loss** (section 5): what applied damage with no report?
+- **The 112 HP loss** (section 5): source unknown, accepted as a one-off.
 - **The round-trip field:** confirmed as the latest single measurement only by its behavior so far.
 - **Server processing order:** assumed to follow arrival order on the connection.
 - **High latency:** all 53 checked hits had round trips of at most 866 ms.
