@@ -186,7 +186,7 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
      `FKGDHGJDNAO.DLIOLEFCGDD` UInt32 at `0x20`. Game-update reports now flag them if they move.
 4. **Confirm the round-trip field.** A probe build that holds replies back for a set time: the field
    should grow by the hold time. Check the proof on a laggy capture too.
-5. **Dry Run v10.** Run normal play and the [beach stress tests](beach-stress-tests.md), and review
+5. **Dry Run v10** ([session steps](v10-dry-run.md)). Run normal play and the [beach stress tests](beach-stress-tests.md), and review
    every logged clear with its bound and latency.
 6. **Investigate the 112 HP loss.**
    - **Capture:** another capture at full HP near the same enemies, to see whether unreported hits
