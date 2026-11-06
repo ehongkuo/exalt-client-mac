@@ -49,14 +49,14 @@ __attribute__((visibility("default"))) void guard_benchmark(const char *name,int
     (void)damage_observed((void*)3,50.5f,(void*)0x5678);
     report_observed((void*)70,4000000000u,7,(void*)0x5678);
     notify_observed((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
-    if(kind==6)update_observed((void*)70,(void*)3,(void*)0x5678);
+    if(kind==6)update_observed((void*)70,(void*)33,(void*)0x5678);
     break;
-   case 2:update_observed((void*)70,(void*)3,(void*)0x5678);break;
+   case 2:update_observed((void*)70,(void*)33,(void*)0x5678);break;
    case 3:
 #ifdef BENCH_HAS_SEND
-    send_observed((void*)500,(void*)3,(void*)0x9876);
+    send_observed((void*)500,(void*)66,(void*)0x9876);
 #else
-    send_fixture((void*)500,(void*)3,(void*)0x9876);
+    send_fixture((void*)500,(void*)66,(void*)0x9876);
 #endif
     break;
    case 4:notify_observed((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,2,0,(void*)0x4567);break;

@@ -406,6 +406,22 @@
     },
     {
       "namespace": "",
+      "owner": "BJEENKGELLO",
+      "name": "PHBFAKPBEAB",
+      "type": "uint",
+      "offset": "0x1c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FKGDHGJDNAO",
+      "name": "DLIOLEFCGDD",
+      "type": "uint",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "",
       "owner": "FKALGHJIADI",
       "name": "EAKILNOKDDC",
       "type": "IOPKEEBMGJK",

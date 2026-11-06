@@ -4,8 +4,9 @@
  *               D ns hp dmg   audited damage at its intervention boundary
  *               H ns hp       incoming HP assignment return
  *               T ns          tick entry
- *               R ns hp seq time   tick return
- * Output: one line per D/H/R with decision, pending, projected and rebase. */
+ *               R ns hp seq time rtt   tick return (rtt: round-trip field, 0 if not traced)
+ *               Y ns time     reply sent to the tick built at time (v10 only)
+ * Output: one line per D/H/R with decision, pending, projected and rebase (v10: hits cleared). */
 #ifndef FATAL_POLICY_PATH
 #define FATAL_POLICY_PATH "fatal_policy.h"
 #endif
@@ -17,7 +18,13 @@ int main(void) {
  uint64_t entry_ns=0,entry_sequence=0,entry_snapshots=0;int in_tick=0;
  while(scanf("%1s %llu",kind,&ns)==2){
   if(kind[0]=='G'){fatal_reset(&p,1,1,1);p.last_update_ns=ns;in_tick=0;continue;}
+#ifdef FATAL_PROOF_MARGIN_MS
+  if(kind[0]=='Y'){unsigned stamp=0;if(scanf("%u",&stamp)!=1)return 2;fatal_reply(&p,stamp);continue;}
+  if(kind[0]=='T'){entry_ns=ns;entry_snapshots=p.snapshots;in_tick=1;continue;}
+#else
+  if(kind[0]=='Y'){unsigned stamp=0;if(scanf("%u",&stamp)!=1)return 2;continue;}
   if(kind[0]=='T'){entry_ns=ns;entry_sequence=p.damage_sequence;entry_snapshots=p.snapshots;in_tick=1;continue;}
+#endif
   int hp=0;
   if(kind[0]=='D'){int damage=0;if(scanf("%d %d",&hp,&damage)!=2)return 2;
    int decision=fatal_damage(&p,hp,damage,ns);
@@ -27,13 +34,20 @@ int main(void) {
   } else if(kind[0]=='H'){if(scanf("%d",&hp)!=1)return 2;
    fatal_server_hp(&p,hp,ns);
    printf("H %llu %d %lld %lld\n",ns,hp,(long long)p.pending,(long long)p.projected);
-  } else if(kind[0]=='R'){unsigned seq=0,stamp=0;if(scanf("%d %u %u",&hp,&seq,&stamp)!=3)return 2;
+  } else if(kind[0]=='R'){unsigned seq=0,stamp=0,rtt=0;if(scanf("%d %u %u %u",&hp,&seq,&stamp,&rtt)!=4)return 2;
    if(!in_tick){printf("R %llu %d 0 0 %lld\n",ns,hp,(long long)p.projected);continue;}
    in_tick=0;
    int assigned=entry_snapshots!=p.snapshots;
    if(!assigned)fatal_server_hp(&p,hp,ns);
+#ifdef FATAL_PROOF_MARGIN_MS
+   (void)entry_sequence;
+   int cleared=fatal_server_tick(&p,entry_ns,seq,stamp,rtt);
+   printf("R %llu %d 0 %d %lld\n",ns,hp,cleared,(long long)p.projected);
+#else
+   (void)rtt;
    int rebased=fatal_server_tick(&p,hp,entry_ns,seq,stamp,entry_sequence,assigned);
    printf("R %llu %d %d %lld %lld\n",ns,hp,rebased,(long long)p.last_rebase_pending,(long long)p.projected);
+#endif
   } else return 2;
  }
  return 0;

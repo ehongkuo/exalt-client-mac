@@ -129,6 +129,14 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
      server-reduced 93 hit, a stall with no new round trip, and the final burst from the heal
      session.
    - [`fatal_policy_v9.h`](../probe/fatal_policy_v9.h) (accounting) is superseded and not needed.
+
+   **Status (6 November):** done as [`fatal_policy_v10.h`](../probe/fatal_policy_v10.h). It isn't
+   active: the probe still includes v8.
+   - **API:** v8's `fatal_reset`, `fatal_server_hp`, `fatal_damage` and `fatal_requested`, plus
+     `fatal_reply(p, build)` for each reply sent. `fatal_server_tick(p, ns, tick, build, rtt)`
+     takes the round-trip field and returns the number of hits cleared.
+   - **Tests:** [`fatal_policy_v10_tests.c`](../tests/probe/fatal_policy_v10_tests.c) cover the
+     fixtures above, plus wrapped build times, the capacity overflow and the stale escape.
 2. **Replay v10.** Feed phase 40–41 round trips and reply sends from captures into
    [`policy_replay.c`](../probe/policy_replay.c) and
    [`replay_policy.py`](../probe/replay_policy.py), then compare v8 and v10 on every capture:
@@ -136,9 +144,46 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
    - **Report requests without a death.** A few more than v8 are acceptable: v10 never clears on
      time alone, so it holds hits slightly longer.
    - **Early clears** must stay 0 (`analyze_proof.py`).
+
+   **Status (6 November):** done. The driver takes the round-trip field on each tick return and a
+   `Y` line per reply; `FATAL_PROOF_MARGIN_MS` can be set at compile time. Seven passive scopes
+   have round trips traced:
+
+   | Capture | Hits | v8 | v10 (c = 200 ms) |
+   |---|---:|---|---|
+   | `guard-89778` (heal, death) | 43 | Escape 328 ms before death, projected −35 | Same hit and time, projected −235 |
+   | `guard-83663` (two scopes) | 52 | Quiet | Quiet, all 52 cleared |
+   | `guard-87759` | 27 | Quiet | Quiet, all 27 cleared |
+   | `guard-40486` | 4 | Quiet | Quiet |
+   | `guard-31242` (225 max HP) | 11 | Quiet, lowest projection 22 | Requests without a death at −2 and −20 |
+
+   - **No missed escapes.** v10 matches v8 on the only death.
+   - **One new early escape** (`guard-31242`, 16 October build, round trips about 200 ms). Hits of
+     44–54 against 225 max HP. Each request came within about 300 ms of an update that had already
+     applied the previous hit, before the proof could clear it. True HP at those moments was 52 and
+     76. The character later fell to 25 HP. c = 0 removes the −2 request but not the −20 one: a
+     hit sent just before a reply is proven only once that reply's round trip is reported, which is
+     inherently up to two updates after the hit lands.
+   - **Captures without the sync trace** (`guard-88966`, frostbite) can't be replayed: with no round
+     trips, v10 never clears, and it requests early. Production needs the round-trip read (step 3).
+     Losing that read in production would have the same effect: hits pile up until the lethal
+     escape fires early. Step 3 must detect a failed read and log it.
 3. **Production reads.** Production already reads the update's tick ID and build time and hooks
    `SendMessage`. Add the round-trip field and tell replies apart from other sends; add the field
    offset to the compatibility profile.
+
+   **Status (6 November):** done. [`hit_probe.h`](../probe/hit_probe.h) now includes v10 in both
+   the production guard and the probe builds:
+   - **Round trip:** the tick hook reads `BJEENKGELLO.PHBFAKPBEAB` before forwarding (the message
+     is pooled afterwards). Other messages pass 0, which keeps the last value.
+   - **Replies:** the `SendMessage` hook records `FKGDHGJDNAO.DLIOLEFCGDD` (the tick's build
+     time) for replies on the tracked connection's socket, on the main thread.
+   - **Failed read:** if either field is missing at install, Nexus on death refuses to start
+     (`fatal_proof_fields`).
+   - **Logs:** `guard_proof_clear` replaces `guard_quiet_rebase`.
+   - **Profile:** both fields are in the native-audited `2026-11-06` profile (added on review,
+     6 November), checked against that build's dump: `BJEENKGELLO.PHBFAKPBEAB` UInt32 at `0x1c`,
+     `FKGDHGJDNAO.DLIOLEFCGDD` UInt32 at `0x20`. Game-update reports now flag them if they move.
 4. **Confirm the round-trip field.** A probe build that holds replies back for a set time: the field
    should grow by the hold time. Check the proof on a laggy capture too.
 5. **Dry Run v10.** Run normal play and the [beach stress tests](beach-stress-tests.md), and review

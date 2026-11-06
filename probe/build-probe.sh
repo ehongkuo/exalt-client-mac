@@ -15,6 +15,8 @@ clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_tests.c" -o "$re
 "$repo_dir/build/probe-tests/fatal-policy-tests"
 clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_v9_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-v9-tests"
 "$repo_dir/build/probe-tests/fatal-policy-v9-tests"
+clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_v10_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-v10-tests"
+"$repo_dir/build/probe-tests/fatal-policy-v10-tests"
 # Build to a new inode so a previously loaded diagnostic keeps its mapped library.
 temp=$(mktemp "$out/ExaltHitProbe.XXXXXX")
 trap 'rm -f "$temp"' EXIT

@@ -58,6 +58,8 @@ clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_tests.c" -o "$tests/f
 "$tests/fatal-policy-tests"
 clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v9_tests.c" -o "$tests/fatal-policy-v9-tests"
 "$tests/fatal-policy-v9-tests"
+clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v10_tests.c" -o "$tests/fatal-policy-v10-tests"
+"$tests/fatal-policy-v10-tests"
 python3 "$src/tests/probe/test_probe.py"
 python3 "$src/tests/probe/test_client.py"
 python3 "$src/tests/probe/test_incident.py"

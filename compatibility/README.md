@@ -10,7 +10,7 @@ The commands below validate the selected profile and produce comparison reports 
 | File | Purpose |
 |---|---|
 | `active-profile.txt` | Selects the profile used for builds. |
-| `profiles/2026-11-06.json` | Current native-audited build `2ce88d8b…`: 14 methods (adds the projectile hit handler), four caller sites (adds a second projectile notification). |
+| `profiles/2026-11-06.json` | Current native-audited build `2ce88d8b…`: 14 methods (adds the projectile hit handler), 29 referenced fields (adds the tick round trip and the reply's build time for the ordering proof), four caller sites (adds a second projectile notification). |
 | `profiles/2026-10-15.json` | Previous native-audited build: 13 methods, 27 referenced fields and three caller sites. |
 | `profiles/2026-11-03.json` | Historical reference for build `b09e1a2d…`, replaced by a game update before review. |
 | `profiles/2026-10-12.json` | Historical comparison reference, assembled from the earlier audited source and metadata. Runtime generation is disabled for it. |

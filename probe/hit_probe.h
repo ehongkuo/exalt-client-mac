@@ -67,13 +67,15 @@ typedef struct {
     uint64_t update_context;
     int tick_sequence;uint32_t server_time;int update_source;
 } ProbeEvent;
-#include "fatal_policy.h"
+#include "fatal_policy_v10.h"
 static FatalPolicy fatal_policy;
 static int fatal_enabled,fatal_invoking,fatal_death_logged;
 #ifdef EXALT_HIT_PROBE
 static int fatal_verify_hp;
 #endif
 static void *fatal_socket_class,*fatal_socket_field,*fatal_nexusing_field;
+/* Ordering proof: the tick's round-trip field and the client's reply to each tick. */
+static void *fatal_tick_class,*fatal_rtt_field,*fatal_reply_class,*fatal_reply_time_field;
 static void *fatal_player_handle,*fatal_connection_handle,*fatal_socket_handle;
 static _Atomic uintptr_t fatal_block_player,fatal_block_connection;
 static _Atomic uint64_t fatal_off_main_reports,fatal_off_main_notifications;
@@ -336,9 +338,9 @@ static void fatal_record(void *player,int hp,int result) {
     Record r={.epoch=start_epoch+(double)(now-start_ns)/1e9,.action=GUARD_NEXUS_DEATH,
               .result=result,.slot=-1,.player_hp=hp,.player_max=max};
     record_event(&r);
-    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\treason=%d\twindow_ns=%llu\thits=%u\n",
+    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\treason=%d\thits=%u\tproved_replies=%llu\treplies=%llu\n",
          hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result,fatal_policy.reason,
-         (unsigned long long)fatal_window_ns(&fatal_policy),fatal_policy.count);
+         fatal_policy.count,(unsigned long long)fatal_policy.proved,(unsigned long long)fatal_policy.replies);
 }
 #endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
@@ -431,6 +433,15 @@ static void send_observed(void *self,void *message,const void *info) {
             ProbeEvent e=probe_snapshot(30,probe_player(),NULL);e.callsite=caller;probe_emit(e);
         }
         return;
+    }
+    /* The client's reply to a tick, on the tracked connection's socket: it travels behind every
+     * hit report sent before it. Main thread only; replies are sent from the tick handler. */
+    if(fatal_enabled && fatal_reply_class && message && fatal_policy.connection && probe_on_main()){
+        void *player=probe_player(),*connection=player?read_reference(player,connection_field):NULL;
+        if(connection && (uintptr_t)connection==fatal_policy.connection && self==read_reference(connection,fatal_socket_field) &&
+           il2cpp_object_get_class(message)==fatal_reply_class){
+            uint32_t build=0;il2cpp_field_get_value(message,fatal_reply_time_field,&build);fatal_reply(&fatal_policy,build);
+        }
     }
 #ifdef EXALT_SYNC_TRACE
     sync_send(self,message);
@@ -584,7 +595,11 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
     ProbeEvent e={0};uint64_t saved_context=probe_update_context;int saved_source=probe_update_source;
     int tracking=observe && fatal_sync(player);
     uint64_t snapshots=fatal_policy.snapshots;
-    uint64_t tick_entry_ns=monotonic_ns(),sequence_at_entry=fatal_policy.damage_sequence;
+    uint64_t tick_entry_ns=monotonic_ns();
+    /* Read before forwarding: tick processing returns the message to its pool. */
+    uint32_t rtt=0;
+    if(tracking && fatal_tick_class && opaque_message && il2cpp_object_get_class(opaque_message)==fatal_tick_class)
+        il2cpp_field_get_value(opaque_message,fatal_rtt_field,&rtt);
     if(observe){e=probe_snapshot(16,player,__builtin_return_address(0));e.update_context=e.id;e.update_source=1;
         probe_update_context=e.id;probe_update_source=1;probe_emit(e);}
 #ifdef EXALT_SYNC_TRACE
@@ -594,7 +609,6 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
 #ifdef EXALT_SYNC_TRACE
     if(sync_entry.id)sync_tick_return(self,sync_entry);
 #endif
-    int hp_assigned=snapshots!=fatal_policy.snapshots;
     /* A tick can omit an unchanged HP stat. Reconcile its current HP once at
      * completion, and count the tick heartbeat independently of HP changes. */
     if(tracking && fatal_sync(player) && snapshots==fatal_policy.snapshots){
@@ -608,12 +622,11 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
         il2cpp_field_get_value(player,player_hp_field,&hp);
         il2cpp_field_get_value(self,probe_tick_field,&sequence);
         il2cpp_field_get_value(self,probe_time_field,&server_time);
-        if(fatal_server_tick(&fatal_policy,hp,tick_entry_ns,(uint32_t)sequence,server_time,
-                             sequence_at_entry,hp_assigned)){
-            note("guard_quiet_rebase\thp=%d\tretired=%lld\tquiet_ns=%llu\tallowance_ns=%llu\ttick=%d\tserver_value=%u\tassumed_settled=1\n",
-                 hp,(long long)fatal_policy.last_rebase_pending,
-                 (unsigned long long)(tick_entry_ns-fatal_policy.last_damage_ns),
-                 (unsigned long long)fatal_window_ns(&fatal_policy),sequence,server_time);
+        int cleared=fatal_server_tick(&fatal_policy,tick_entry_ns,(uint32_t)sequence,server_time,rtt);
+        if(cleared){
+            note("guard_proof_clear\thp=%d\tcleared=%d\tpending=%lld\tprojected=%lld\ttick=%d\tserver_value=%u\trtt=%u\tproved_replies=%llu\n",
+                 hp,cleared,(long long)fatal_policy.pending,(long long)fatal_policy.projected,sequence,server_time,rtt,
+                 (unsigned long long)fatal_policy.proved);
 #ifdef EXALT_CLIENT_FATAL
             live_data.death_pending=fatal_policy.pending;live_data.death_predicted=fatal_policy.projected;
 #endif
@@ -664,6 +677,8 @@ static void probe_install(void) {
     for(int i=0;i<9;++i)entries[i]=dlsym(RTLD_DEFAULT,names[i]);
     probe_tick_field=(void*)990;probe_time_field=(void*)991;
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
+    /* Fixture objects: tick messages 33 (class 3), replies 55 (class 5). */
+    fatal_tick_class=(void*)3;fatal_rtt_field=(void*)994;fatal_reply_class=(void*)5;fatal_reply_time_field=(void*)995;
 #if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
     damage_breath_field=(void*)1002;damage_frostbite_field=(void*)1003;
     damage_conditions_field=(void*)1001;
@@ -678,6 +693,14 @@ static void probe_install(void) {
             if(!strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))fatal_socket_class=il2cpp_class_from_name(image,"DecaGames.RotMG.Managers.Net","SocketManager");}
         if(fatal_socket_class)fatal_nexusing_field=typed_field(fatal_socket_class,"FCOJPHFICAG","System.Boolean");
         if(fatal_enabled && (!fatal_socket_field || !fatal_nexusing_field)){note("hit_probe_refused\tfatal_nexus_fields\n");return;}
+        for(size_t i=0;i<count;++i){const void *image=il2cpp_assembly_get_image(assemblies[i]);
+            if(strcmp(safe(il2cpp_image_get_name(image)),"Assembly-CSharp.dll"))continue;
+            fatal_tick_class=il2cpp_class_from_name(image,"","BJEENKGELLO");fatal_reply_class=il2cpp_class_from_name(image,"","FKGDHGJDNAO");}
+        fatal_rtt_field=fatal_tick_class?typed_field(fatal_tick_class,"PHBFAKPBEAB","System.UInt32"):NULL;
+        fatal_reply_time_field=fatal_reply_class?typed_field(fatal_reply_class,"DLIOLEFCGDD","System.UInt32"):NULL;
+        /* Without both reads no hit could ever clear, so every hit would pile up into an early escape. */
+        if(!fatal_rtt_field || !fatal_reply_time_field){fatal_tick_class=fatal_reply_class=NULL;
+            if(fatal_enabled){note("hit_probe_refused\tfatal_proof_fields\n");return;}}
     }
 #ifdef EXALT_HIT_PROBE
     void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
@@ -737,7 +760,7 @@ static void probe_install(void) {
     for(int i=0;i<9;++i){int result=native_hook_install(&probe_hooks[i],entries[i],replacements[i],bytes[i],lengths[i],originals[i]);
         if(result!=HOOK_OK){for(int j=i-1;j>=0;--j)if(native_hook_remove(&probe_hooks[j])!=HOOK_OK)__builtin_trap();note("hit_probe_refused\tredirect_error=%d\n",result);return;}}
     #undef send_prologue
-    probe_installed=1;note("fatal_policy\tversion=8\treconciliation=quiet_period_rebase\twindow_min_ns=800000000\twindow_max_ns=800000000\thealthy_gap_max_ns=1000000000\thp_bearing_tick_required=1\tcapacity=128\tacknowledgement=heuristic\tmeter_escape=0\tlocal_lethal_hp_guard=1\n");note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
+    probe_installed=1;note("fatal_policy\tversion=10\treconciliation=ordering_proof\tproof_margin_ms=%d\tcapacity=%d\treplies=%d\tacknowledgement=round_trip\tmeter_escape=0\tlocal_lethal_hp_guard=1\n",FATAL_PROOF_MARGIN_MS,FATAL_HIT_CAPACITY,FATAL_REPLY_CAPACITY);note("hit_probe_ready\tv8\tfatal_intervention=%d\n",fatal_enabled);
 #ifdef EXALT_SYNC_TRACE
     sync_install();
 #endif
