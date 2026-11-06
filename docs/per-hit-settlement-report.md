@@ -188,6 +188,22 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
    should grow by the hold time. Check the proof on a laggy capture too.
 5. **Dry Run v10** ([session steps](v10-dry-run.md)). Run normal play and the [beach stress tests](beach-stress-tests.md), and review
    every logged clear with its bound and latency.
+
+   **Status (7 November):** first session `guard-10176` passed. It ran with Armed off on a
+   disposable character with 1,205 max HP and ended in one death.
+   - **Startup:** `fatal_policy version=10` was logged, with no `fatal_proof_fields` refusal.
+   - **Clearing:** 63 proof clears. Pending stayed at 0–106 HP during the first fight and returned
+     to 0 between fights. Proven replies trailed sent replies by about 4 (round trips 277–457 ms
+     plus c).
+   - **Requests:** all 3 came in the fatal burst, with none at safe HP.
+     - The first fired at server HP 235 with 8 hits pending (248), projected −13, 0.2–0.65 s
+       before death.
+     - The 7 hits before the lethal one total 217, so withholding that hit would likely have left
+       18 HP.
+     - Then a spray of 31-damage hits: 899 pending at death.
+   - **Missed escapes:** none.
+   - **Not covered:** heals while hit, long sessions and high latency. The worst valid frame gap
+     was 0.52 s.
 6. **Investigate the 112 HP loss.**
    - **Capture:** another capture at full HP near the same enemies, to see whether unreported hits
      recur.
