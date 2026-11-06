@@ -84,6 +84,43 @@ public class Thing // TypeDefIndex: 1
         self.assertEqual(compat.compare_field(old, [])['status'], 'missing')
         self.assertEqual(compat.compare_field(old, [field, field])['status'], 'ambiguous')
 
+    def test_live_copy_is_found_by_following_direct_calls(self):
+        def method(identity, name, parameters, returns, offset):
+            return dict(id=identity, namespace='', owner='Hit', name=name, parameters=parameters, returns=returns, offset=offset)
+        collision = method('collision', 'Collide', ['int'], 'bool', 0x1000)
+        handlers = [method('hit_handler', n, ['Player', 'int'], 'void', a) for n, a in (('Live', 0x2000), ('Decoy', 0x3000))]
+        calculators = [method('damage', n, ['float'], 'int', a) for n, a in (('Calc', 0x4000), ('CalcCopy', 0x5000))]
+        dump = {'methods': [collision, *handlers, *calculators]}
+
+        def call(source, target):
+            return dict(address=source, bytes='e8' + struct.pack('<i', target - source - 5).hex(), text='')
+
+        def resolve(profile_methods, bodies):
+            matches = {m['id']: m for m in dump['methods'] if m['name'] in ('Collide',)}
+            rows = compat.resolve_live_chain({'methods': profile_methods}, dump, matches, lambda start: bodies.get(start, []))
+            return {r['id']: r['status'] for r in rows}, matches
+        profile = [dict(collision), dict(handlers[0]), dict(calculators[0])]
+        live = {0x1000: [call(0x1010, 0x2000)], 0x2000: [call(0x2010, 0x4000)]}
+        statuses, matches = resolve(profile, live)
+        self.assertEqual(statuses, {'hit_handler': 'unchanged', 'damage': 'unchanged'})
+        self.assertEqual(matches['damage']['offset'], 0x4000)
+        # The game switched to the other copies: the profile's names are stale, the calls are not.
+        statuses, matches = resolve(profile, {0x1000: [call(0x1010, 0x3000)], 0x3000: [call(0x3010, 0x5000)]})
+        self.assertEqual(statuses, {'hit_handler': 'switched', 'damage': 'switched'})
+        self.assertEqual((matches['hit_handler']['name'], matches['damage']['name']), ('Decoy', 'CalcCopy'))
+        # Calling two copies resolves nothing, and nothing downstream of it.
+        statuses, matches = resolve(profile, {**live, 0x1000: [call(0x1010, 0x2000), call(0x1020, 0x3000)]})
+        self.assertEqual(statuses, {'hit_handler': 'ambiguous', 'damage': 'missing'})
+        self.assertNotIn('damage', matches)
+        # Builds before 2026-11-03 call the calculator from collision itself.
+        statuses, _ = resolve([dict(collision), dict(calculators[0])], {0x1000: [call(0x1010, 0x4000)]})
+        self.assertEqual(statuses, {'damage': 'unchanged'})
+
+    def test_duplicated_call_tail_is_assigned_in_address_order(self):
+        profile = compat.load_profile(ROOT / 'compatibility/profiles/2026-11-06.json')
+        sites = {c['constant']: c for c in profile['callsites']}
+        self.assertLess(compat.address(sites['NOTIFY_CALLER_ALT']['return_address']), compat.address(sites['NOTIFY_CALLER']['return_address']))
+
     def test_ambiguous_calls_are_never_selected(self):
         instructions = [dict(address=0x1000, bytes='e80b000000', text='callq 0x1010'),
                         dict(address=0x1020, bytes='e8ebffffff', text='callq 0x1010')]

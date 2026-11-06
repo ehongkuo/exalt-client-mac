@@ -42,10 +42,9 @@ installed implementation or current numerical damage rates.
 ## Native findings
 
 `probe/damage_paths.json` stores build-specific method identities, signatures, field facts, caller
-encodings and instruction evidence. Its SHA-256 matches `compatibility/profiles/2026-11-03.json`.
-The addresses in the table below come from the 2026-10-15 audit. The 2026-11-03 map keeps each
-finding at the same offset inside the same method. The exceptions are the projectile calls, now in
-`BJDEACACFBD`, and one duplicate incoming-damage handler that the new build removed.
+encodings and instruction evidence. It now targets build `2ce88d8b…` (6 November 2026,
+`compatibility/profiles/2026-11-06.json`, under review). Addresses in this section are from build
+`ad069824…` unless listed under [Builds since 3 November 2026](#builds-since-3-november-2026).
 `probe/map_damage.py` checks the fingerprint and every recorded byte range. With `--dump`, it also
 checks unambiguous metadata identities and field type/storage/offset. It never approves intervention.
 
@@ -109,6 +108,38 @@ non-projectile report on the main thread. Failed requests and disabled protectio
 The breath setter call at `0x184cb6f` and frostbite setter call at `0x184c7da` belong to the incoming
 stat handler. This proves how meter values arrive, not whether their HP loss is locally predictable.
 We have not established a universal pre-damage boundary for status/environmental effects.
+
+## Builds since 3 November 2026
+
+Obfuscated names are mostly stable; every method moves with each build. Static facts, verified by
+`probe/map_damage.py` for the current build:
+
+| Item | `ad069824` (15 Oct) | `b09e1a2d` (3 Nov) | `2ce88d8b` (6 Nov) |
+|---|---|---|---|
+| Collision (`HBEAKBIHANL.GJFKGLJEGKO`) | `0x6534f0`, contains the hit code | `0xd82fa0` | `0x17da260` |
+| Projectile hit handler (`HBEAKBIHANL.BJDEACACFBD`) | part of collision | `0xd82a70` | `0x17d1110` |
+| Projectile calculator (`NGHDFBJLNFI`) | `0x650e90`, call returns `0x6538a2` | `0xd7f8e0`, `0xd82c22` | `0x17cce10`, `0x17d12c2` |
+| Projectile notification returns | `0x653bd0` | `0xd82e34`, `0xd82d90` | `0x17d14d4`, `0x17d1430` |
+| Notification vtable slot | `+0x898` | `+0x718` | `+0x628` |
+| Terrain notification / report send | `0x196ed65` / `0x196ed90` | `0x12e1a05` / `0x12e1a30` | `0x1e1e9f5` / `0x1e1ea20` |
+| Area notification / report send | `0x183f7be` / `0x183f880` | `0x1224d3e` / `0x1224e00` | `0x92be4e` / `0x92bf10` |
+| Incoming stat handler / HP-setter return | `0x184ae90` / `0x184c115` | `0x121de90` / `0x121f115` | `0x91a6a0` / `0x91b925` |
+| HP setter (`LKHPPBEGNOM.NIDPCHCNDLJ`) callback slot | `0x1af1670`, `+0x9a8` | `0x1ade560`, `+0x958` | `0x1129cd0`, `+0x848` |
+| Incoming damage handlers | `DJCPAGLIIBO`, `KMNAOFNEMKK` | `DJCPAGLIIBO` `0x1215e80` | `DJCPAGLIIBO` `0x926410` |
+| `SocketManager.SendMessage` | — | `0xf63f50` | `0x10bdf70` |
+
+Since 3 November the game ships copies of the hit path: same signature, reordered code, each copy
+wired to a different mix of the others. Build `2ce88d8b` has 6 hit handlers (with the signature
+`(LKHPPBEGNOM, Int32)`) and 9 calculators (`(Single)` → `Int32`). Only one of each is called: collision
+calls `BJDEACACFBD`, which calls `NGHDFBJLNFI`. The others are referenced only from method tables.
+`compatibility/manage.py` resolves the live copies by following direct calls from collision
+(`LIVE_CHAIN`) and reports `switched` if the game starts calling a different copy than the profile
+names. If a copy ever ran without being resolved, its hits would bypass the guard; probe captures would
+show them as notifications from an unknown caller and as unexplained decreases in
+`probe/analyze_untracked.py`.
+
+Build `2ce88d8b` also renamed one method: `LKHPPBEGNOM.JIBCOPCLAEO` (entity initialization, which writes
+HP directly) is now `CEHOCGBMDCC`. It was identified by elimination; its sibling `PGHAGLDAKMH` kept its name.
 
 The [status and reconciliation audit](damage-status-audit.md) records incoming stat IDs, corrected
 condition provenance, unresolved DOT boundaries and the conservative pending-damage policy.

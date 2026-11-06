@@ -24,10 +24,10 @@ def verify(mapping, binary, dump=None):
             matches = [m for m in dump['methods'] if compatibility.method_key(m) == compatibility.method_key(row)]
             if len(matches) != 1 or matches[0]['offset'] != int(row['offset'], 16):
                 raise ValueError('Method identity missing, changed or ambiguous: ' + row['path'])
+    slot = struct.pack('<I', int(mapping.get('notification_slot_offset', '0x898'), 16))
     for row in mapping['notification_callers']:
         expected = bytes.fromhex(row['call_bytes'])
-        # call qword ptr [rax|rbx + disp32]; the slot displacement is build-specific.
-        if len(expected) != 6 or expected[:2] not in compatibility.VIRTUAL_CALLS:
+        if expected not in (b'\xff\x90' + slot, b'\xff\x93' + slot):
             raise ValueError('Unexpected notification dispatch encoding')
         if binary.read(int(row['return_address'], 16) - len(expected), len(expected)) != expected:
             raise ValueError('Notification caller changed: ' + row['path'])

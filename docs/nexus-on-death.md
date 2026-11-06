@@ -4,39 +4,35 @@ Enable **Nexus on death** in the client Settings and click **Apply**. The toggle
 
 The app shows “Nexus on death” events and counts successful local requests in its Nexus session total. Its logs are in `~/Library/Application Support/Exalt Client Mac/logs`.
 
-Policy version 8 retains projectile, ground and area damage in the same fixed 128-entry ledger.
-Observed HP decreases still retire estimates oldest-first by their net amount; this is an inference,
-not identification of individual hits. HP increases supply a higher baseline without discarding
-pending hits or adding a separate estimated healing credit. The strict whole-event/history model
-in [the design proposal](nexus-reconciliation-design.md) is not implemented or assumed proven.
+Policy version 10 keeps projectile, ground and area damage in the same fixed 128-entry ledger, in
+report order. A hit leaves the ledger only through the ordering proof
+([hardening plan](nexus-hardening-plan.md), Phase 1). HP changes and elapsed time never clear a hit.
+Server HP is only the baseline, so it already includes every heal and every untracked loss.
 
-Individual hits no longer expire by age. A quiet rebase clears the remaining ledger only after:
+The ordering proof works as follows:
 
-- No positive predicted damage inputs for the settlement allowance.
-- A continuous interval of progressing tick IDs and server-origin timing values for that allowance.
-- A completed tick actually assigns the controlled player's HP, including a same-value assignment.
-- No new damage input occurs inside that tick handler and no escape is already latched.
+- Each hit is paired with the client's next reply to a tick. Hit reports and replies share one
+  ordered connection, so the reply travels behind the hit.
+- Each tick carries the round trip of the latest reply the server received (the tick message's
+  `PHBFAKPBEAB`). A new value dates one earlier reply: the one whose tick build time plus the value
+  falls between the previous and current build times. The server had that reply, and every hit
+  sent before it, by then. A repeated value proves nothing.
+- A hit clears on the first tick built at least 200 ms after that bound. With no new round trips (a
+  stall or lag), hits stay pending.
 
-The allowance is a fixed **800 ms**, selected by the user after the timing captures. It is not
-a measured p99 or an upper bound on server processing/network delay; settlement later than 800 ms
-is an explicitly accepted risk. Tick cadence/jitter no longer lengthens this allowance. Receive
-gaps over 1 second, bunched ticks under 20 ms, or skipped IDs restart the healthy interval. Duplicate/reversed tick IDs or timing values cannot qualify and
-invalidate the interval. Counters support UInt32 wrap. A tick omitting unchanged HP updates liveness
-but cannot itself rebase. A standalone stat setter and elapsed local time also cannot rebase.
-
-The rebase condition assumes earlier reports have settled during healthy, quiet communication. It
-is not a server acknowledgement. A long-delayed stream that still appears healthy can violate that
-assumption. During continuous damage with healing, estimates can remain conservative and trigger an
-early escape; quiet rebasing needs a new HP-bearing tick to recover. This change does not establish
-coverage for untracked HP losses or equality between local and server damage calculations.
+Clearing late can only cause an early escape. Expect one when a new hit lands within about two
+ticks of the previous one being applied: the earlier hit is still pending, so it is counted twice.
+This matters most on low-HP characters (one replay: 225 max HP, hits of 44–54). If the guard can't
+find the round-trip or reply fields at install, Nexus on death refuses to start
+(`hit_probe_refused\tfatal_proof_fields`), because no hit could ever clear.
 
 A positive hit still requests Nexus when projected HP is nonpositive, updates are stale, or the
-ledger fills. Staleness uses the prior cadence-based rule (at least 1.5 seconds, at most 6 seconds),
-independently of the new settlement allowance. Only validated progressing completed ticks refresh
-that heartbeat. Zero damage does not restart the quiet timer or trigger the stale/capacity failsafes.
-Logs distinguish projected-lethal (reason 1), stale updates (2), and capacity (3). There is no fixed
-percentage-HP escape threshold. Each actual rebase writes one `guard_quiet_rebase` record containing
-retired damage, quiet duration, allowance, tick ID and `assumed_settled=1`; the analyzer includes it.
+ledger fills. Staleness uses the cadence-based rule (at least 1.5 seconds, at most 6 seconds). Only
+progressing ticks refresh that heartbeat. Zero damage doesn't trigger the stale or capacity
+failsafes. Logs distinguish projected-lethal (reason 1), stale updates (2), and capacity (3). There
+is no fixed percentage-HP escape threshold. Each tick that clears hits writes one
+`guard_proof_clear` record with the hits cleared, pending damage, projection, tick ID, round trip
+and the number of replies proven; the analyzer includes it.
 
 Suppression starts only after local Nexusing is confirmed; an already-started escape survives settings
 changes and HP updates. Dry run never invokes Nexus or suppresses damage. See the

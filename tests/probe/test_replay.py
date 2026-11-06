@@ -26,11 +26,14 @@ class Capture:
     def hit(self, ms, damage):
         self.add(12, ms, value=damage, flag0=1, flag1=1)
 
-    def tick(self, ms, hp=None):
+    def tick(self, ms, hp=None, rtt=0):
         self.add(16, ms, update_source=1)
         if hp is not None:
             self.hp = hp;self.add(6, ms+.1, update_source=1)
-        self.sequence += 1;self.add(17, ms+.2)
+        self.sequence += 1
+        if rtt:  # Sync trace: tick receive with its round-trip field, then the reply.
+            self.add(40, ms+.15, bullet=rtt);self.add(41, ms+.18)
+        self.add(17, ms+.2)
 
     def text(self, intervention=0):
         lines = [f'hit_probe_ready\tv8\tfatal_intervention={intervention}', 'timing\t1\t1\t1']
@@ -69,6 +72,15 @@ class ReplayTests(unittest.TestCase):
         r = self.scope(c)
         self.assertEqual(r['outcome'], 'missed_death')
         self.assertEqual(r['min_projected'], 40)
+
+    def test_v10_keeps_hit_through_untracked_loss(self):
+        # Same as above: v10 clears only by proof, so the 100 HP loss can't retire the hit.
+        c = Capture(200)
+        c.tick(0, 200, 250);c.hit(10, 100);c.tick(200, 100, 260);c.hit(300, 60);c.tick(400, 0, 270)
+        with tempfile.TemporaryDirectory() as out:
+            r = replay.replay(replay.build_driver(ROOT / 'probe/fatal_policy_v10.h', out), read_events(c.text()))[0]
+        self.assertEqual(r['outcome'], 'escape_before_death')
+        self.assertEqual(r['requests'][0]['projected'], -60)
 
     def test_quiet_rebase_and_stale_request_without_death(self):
         c = Capture(500)

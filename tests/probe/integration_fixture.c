@@ -39,13 +39,21 @@ extern void update_fixture(void *,void *,const void *);
 extern void stats_fixture(void *,void *,void *,uint8_t,const void *);
 static int update_sequence=41;static uint32_t update_time=1000;static int next_stats_hp=1005;
 static unsigned update_forwarded,stats_forwarded;
+/* Tick messages (object 33) carry a round-trip field; environment 24 varies it so each tick
+ * proves an older reply, elsewhere it repeats and proves nothing. */
+static uint32_t fixture_rtt=250;
+extern void send_fixture(void *,void *,const void *);
 void update_fixture_body(void *self,void *message,const void *info) {
- assert(self==(void*)70 && message==(void*)3 && info==(void*)0x5678);
+ assert(self==(void*)70 && message==(void*)33 && info==(void*)0x5678);
  ++update_forwarded;
 #if !defined(FATAL_ENVIRONMENT) || FATAL_ENVIRONMENT!=25
  stats_fixture(self,(void*)40,(void*)3,1,info);
 #endif
  ++update_sequence;update_time+=200;
+ send_fixture((void*)500,(void*)55,info); /* The client's reply (object 55) to this tick. */
+#if defined(FATAL_ENVIRONMENT) && FATAL_ENVIRONMENT==24
+ fixture_rtt=fixture_rtt==250?260:250;
+#endif
 }
 void stats_fixture_body(void *self,void *actor,void *stats,uint8_t flag,const void *info) {
  assert(self==(void*)70 && (actor==(void*)40 || actor==(void*)3) && stats==(void*)3 && flag==1 && info==(void*)0x5678);
@@ -121,6 +129,8 @@ void il2cpp_field_get_value(void *o,void *f,void *v) {
  if(f==(void*)993){assert(o==(void*)500);*(uint8_t*)v=socket_nexusing;return;}
  if(f==(void*)990){assert(o==(void*)70);*(int*)v=update_sequence;return;}
  if(f==(void*)991){assert(o==(void*)70);*(uint32_t*)v=update_time;return;}
+ if(f==(void*)994){assert(o==(void*)33);*(uint32_t*)v=fixture_rtt;return;}
+ if(f==(void*)995){assert(o==(void*)55);*(uint32_t*)v=update_time;return;}
  if(f==(void*)11 && o==(void*)40 && (hp_has_assignment || assigned_hp>=0)){*(int*)v=assigned_hp;return;}
  fixture_field_get_value(o,f,v);
 }
@@ -152,10 +162,10 @@ void notify_fixture_body(void *self,uint8_t killed,int value,void *conditions,ui
 #else
 #define DAMAGE_ARGUMENT ((void*)0x3456)
 #endif
-extern void send_fixture(void *,void *,const void *);
-static unsigned boundary_sent,other_sent;
+static unsigned boundary_sent,other_sent,replies_sent;
 void send_fixture_body(void *self,void *message,const void *info) {
- assert(message==(void*)3);
+ if(message==(void*)55){assert(self==(void*)500);++replies_sent;return;}
+ assert(message==(void*)66);
  if(self==(void*)500 && (info==(void*)0x5678 || info==(void*)0x6001 || info==(void*)0x6002))++boundary_sent;
  else ++other_sent;
 }
@@ -286,13 +296,13 @@ static void burst(void *unused) {
 #elif FATAL_ENVIRONMENT==24
  for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  next_stats_hp=300;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- for(int i=0;i<12;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
+ for(int i=0;i<12;++i){usleep(200000);update_fixture((void*)70,(void*)33,(void*)0x5678);}
  for(int i=0;i<3;++i)assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(!nexus_invocations && assigned_hp==300);
  puts("healing_and_fresh_updates_retire_old_burst=1");
 #elif FATAL_ENVIRONMENT==25
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
- for(int i=0;i<10;++i){usleep(200000);update_fixture((void*)70,(void*)3,(void*)0x5678);}
+ for(int i=0;i<10;++i){usleep(200000);update_fixture((void*)70,(void*)33,(void*)0x5678);}
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(!nexus_invocations && assigned_hp==200);
  puts("omitted_hp_ticks_keep_heartbeat_without_retiring_damage=1");
@@ -344,14 +354,15 @@ static void burst(void *unused) {
  notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
  next_stats_hp=200;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  notify_fixture((void*)40,0,60,(void*)0x2345,1,(void*)0x3456,2,0,(void*)0x4567);
- send_fixture((void*)500,(void*)3,(void*)0x6001);
- next_stats_hp=180;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ send_fixture((void*)500,(void*)66,(void*)0x6001);
+ /* 181, not 180: v10 never credits the drop, so 180 against 180 pending would already be lethal. */
+ next_stats_hp=181;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  notify_fixture((void*)40,0,70,(void*)0x2345,1,(void*)0x3456,3,0,(void*)0x4567);
- send_fixture((void*)500,(void*)3,(void*)0x6002);
+ send_fixture((void*)500,(void*)66,(void*)0x6002);
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==0);
- send_fixture((void*)500,(void*)3,(void*)0x6002);
+ send_fixture((void*)500,(void*)66,(void*)0x6002);
  incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
  next_stats_hp=250;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
  assert(notify_forwarded==3 && report_forwarded==1 && boundary_sent==2 && assigned_hp==250);
@@ -360,9 +371,9 @@ static void burst(void *unused) {
 #ifdef FATAL_BOUNDARY_BURST
  for(int i=0;i<6;++i){
   notify_fixture((void*)40,0,50,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
-  send_fixture((void*)500,(void*)3,(void*)0x5678);
-  send_fixture((void*)500,(void*)3,(void*)0x9876); /* unrelated callsite */
-  send_fixture((void*)501,(void*)3,(void*)0x5678); /* unrelated socket */
+  send_fixture((void*)500,(void*)66,(void*)0x5678);
+  send_fixture((void*)500,(void*)66,(void*)0x9876); /* unrelated callsite */
+  send_fixture((void*)501,(void*)66,(void*)0x5678); /* unrelated socket */
  }
  assert(other_sent==12);
 #if defined(NEXUS_REQUEST_DENIED) || defined(NEXUS_REQUEST_EXCEPTION) || defined(BOUNDARY_PASS)
@@ -416,7 +427,7 @@ static void burst(void *unused) {
  for(int i=0;i<3;++i) {
   assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
   incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);
-  if(i==1)update_fixture((void*)70,(void*)3,(void*)0x5678);
+  if(i==1)update_fixture((void*)70,(void*)33,(void*)0x5678);
   notify_fixture((void*)40,0,400,(void*)0x2345,1,(void*)0x3456,1,0,(void*)0x4567);
  }
  next_stats_hp=805;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);

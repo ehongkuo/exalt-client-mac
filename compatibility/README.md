@@ -10,8 +10,9 @@ The commands below validate the selected profile and produce comparison reports 
 | File | Purpose |
 |---|---|
 | `active-profile.txt` | Selects the profile used for builds. |
-| `profiles/2026-11-03.json` | Current native-audited build: 13 methods, 27 referenced fields and three caller sites. The projectile damage and notification calls moved out of the collision override into the helper `BJDEACACFBD`, which the `collision` role now names. The ChatManager slot list moved to `0xc8`. |
-| `profiles/2026-10-15.json` | Previous native-audited build, kept for comparison. |
+| `profiles/2026-11-06.json` | Current native-audited build `2ce88d8b…`: 14 methods (adds the projectile hit handler), 29 referenced fields (adds the tick round trip and the reply's build time for the ordering proof), four caller sites (adds a second projectile notification). |
+| `profiles/2026-10-15.json` | Previous native-audited build: 13 methods, 27 referenced fields and three caller sites. |
+| `profiles/2026-11-03.json` | Historical reference for build `b09e1a2d…`, replaced by a game update before review. |
 | `profiles/2026-10-12.json` | Historical comparison reference, assembled from the earlier audited source and metadata. Runtime generation is disabled for it. |
 | `manage.py` | Profile validation, native header generation, binary verification and comparison reports. |
 | `../guard/build_profile.h` | Generated C constants, method names/owners and audited hook bytes. Checked in for ordinary native compilation. |
@@ -91,6 +92,14 @@ approval. Reports are Markdown (`report.md`) and JSON (`report.json`).
 | `changed` | The entry bytes, signature, field type or static/instance storage differs. |
 | `missing` | The lookup could not establish a matching item or caller. |
 | `ambiguous` | Multiple matching methods, fields or calls remain. No candidate is selected. |
+
+The **Live path** section handles cloned methods. Since 3 November the game ships several copies of the
+projectile hit handler and calculator and calls one of each. `LIVE_CHAIN` resolves them by following
+direct calls (or tail-call jumps) from the collision method, whatever their obfuscated names: `unchanged`
+means the profile's copy is still the called one; `switched` means the game now calls a different copy;
+`ambiguous` or `missing` stops the chain, and callers inside an unresolved method are not matched. When a
+duplicated call tail yields exactly as many equivalent sites as the profile lists, they are assigned in
+address order.
 
 Methods match namespace, owning type, name, parameter types and return type. Obfuscated-name changes
 produce missing/changed findings and need manual identification. Call analysis uses local

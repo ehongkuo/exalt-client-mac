@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "exalt-macos-intel-2026-11-03",
   "architecture": "x86_64",
-  "review_state": "native-audited",
+  "review_state": "historical-reference",
   "game_sha256": "b09e1a2dea3d5258150baeb75b27df1edde98518c2d4fa89973be88f8283b7ad",
   "il2cpp_metadata_version": 31,
   "methods": [
@@ -167,6 +167,19 @@
     {
       "namespace": "",
       "owner": "HBEAKBIHANL",
+      "name": "GJFKGLJEGKO",
+      "parameters": [
+        "int",
+        "int"
+      ],
+      "returns": "bool",
+      "offset": "0xd82fa0",
+      "id": "collision",
+      "entry_prefix": "554889e5"
+    },
+    {
+      "namespace": "",
+      "owner": "HBEAKBIHANL",
       "name": "BJDEACACFBD",
       "parameters": [
         "LKHPPBEGNOM",
@@ -174,7 +187,7 @@
       ],
       "returns": "void",
       "offset": "0xd82a70",
-      "id": "collision",
+      "id": "hit_handler",
       "entry_prefix": "554889e5"
     },
     {
@@ -412,7 +425,7 @@
     {
       "id": "damage_calculation",
       "constant": "DAMAGE_CALLER",
-      "container": "collision",
+      "container": "hit_handler",
       "target": "damage",
       "kind": "direct",
       "return_address": "0xd82c22"
@@ -420,7 +433,17 @@
     {
       "id": "projectile_notification",
       "constant": "NOTIFY_CALLER",
-      "container": "collision",
+      "container": "hit_handler",
+      "target": "notify",
+      "kind": "virtual",
+      "return_address": "0xd82e34",
+      "vtable_base": "0x138",
+      "slot_offset": "0x718"
+    },
+    {
+      "id": "projectile_notification_alt",
+      "constant": "NOTIFY_CALLER_ALT",
+      "container": "hit_handler",
       "target": "notify",
       "kind": "virtual",
       "return_address": "0xd82d90",

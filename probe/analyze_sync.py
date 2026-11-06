@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from analyze import read_events
 
+TEXT_KINDS=('xp','damage','fame','level_up','quest_complete','new_class_unlock','condition_effect',
+            'notification','exaltation','bxp')  # DGKAANOAENH on 2ce88d8b.
+
 
 def summarize(log):
     events=read_events(log)
@@ -38,6 +41,20 @@ def summarize(log):
         if before and e['hp']>before['hp']:
             increases.append(dict(event_id=e['id'],before=before['hp'],after=e['hp'],source=e['update_source'],
                 caller=hex(before['callsite']),context=e['update_context']))
+    texts={}
+    for line in log.splitlines():
+        if line.startswith('sync_object_text\t'):
+            cells=dict(c.split('=',1) for c in line.rstrip('\n').split('\t')[1:3])
+            texts[int(cells['event'])]=line.rstrip('\n').split('\ttext=',1)[-1]
+    updates=[h for h in events if h['phase']==6 and h['update_source']==1]
+    object_text=[]
+    for e in (e for e in events if e['phase']==47):
+        after=next((h for h in updates if h['ns']>=e['ns']),None)
+        object_text.append(dict(event_id=e['id'],ns=e['ns'],handler=e['flag3'],
+            kind=TEXT_KINDS[e['flag2']] if 0<=e['flag2']<len(TEXT_KINDS) else e['flag2'],
+            color=hex(e['owner'] & 0xffffffff),text=texts.get(e['id']),amount=e['value'] if e['flag0'] else None,
+            signed_plus=bool(e['flag1']),hp_at_text=e['hp'],max_hp=e['max'],
+            next_server_hp=after and after['hp'],ms_to_next_server_hp=after and round((after['ns']-e['ns'])/1e6,1)))
     counters={}
     for line in log.splitlines():
         if line.startswith('hit_probe_summary\t'):
@@ -46,9 +63,9 @@ def summarize(log):
         counters=counters,ticks=tick_rows,
         outgoing_hit_reports=[dict(event_id=e['id'],ns=e['ns'],generation=e['generation'],own_player_id=e['update_context'],
             shooter_id=e['owner'],projectile_id=e['bullet']) for e in reports],
-        received_damage=damage,hp_increases=increases,
+        received_damage=damage,hp_increases=increases,own_object_text=object_text,
         snapshot_hit_coverage='unverified',
-        limitation='Client-observed ordering and equal packet identifiers are evidence for investigation only. No server processing times or per-snapshot hit acknowledgements are inferred. Missing, capped, off-main or dropped observations cannot establish absence. Healing-source attribution remains unverified.')
+        limitation='Client-observed ordering and equal packet identifiers are evidence for investigation only. No server processing times or per-snapshot hit acknowledgements are inferred. Missing, capped, off-main or dropped observations cannot establish absence. Healing-source attribution remains unverified; own object text (phase 47) is what the game displayed, not what the server applied.')
 
 
 if __name__=='__main__':

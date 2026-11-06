@@ -46,7 +46,7 @@ def main():
  summary={version:{row['name']:{key:statistics.median(r[i][key] for r in runs) for key in row if key!='name'} for i,row in enumerate(runs[0])} for version,runs in results.items()}
  metadata=dict(runs=args.runs,host=platform.platform(),fixture_arch='x86_64',full_tick=args.full_tick,baseline=args.baseline,
   source_sha256={version:{str(p.relative_to(source)):hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in (source/'guard/guard.c',source/'guard/timing_core.h',source/'guard/guard_core.h',source/'guard/live_state.h',source/'probe/hit_probe.h',source/'probe/fatal_policy.h')}
+    for p in (source/'guard/guard.c',source/'guard/timing_core.h',source/'guard/guard_core.h',source/'guard/live_state.h',source/'probe/hit_probe.h',source/'probe/fatal_policy_v10.h')}
     for version,source in versions})
  (out/'results.json').write_text(json.dumps(dict(metadata=metadata,raw=results,median=summary),indent=2)+'\n')
  print(json.dumps(summary,indent=2))

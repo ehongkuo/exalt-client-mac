@@ -139,17 +139,18 @@ class ClientInterventionTests(unittest.TestCase):
  def test_healing_and_later_snapshots_do_not_keep_old_damage_forever(self):
   self.run_client('armed=1,potion=0,death=1',environment=24)
   self.assertIn('healing_and_fresh_updates_retire_old_burst=1',self.output)
-  self.assertIn('guard_quiet_rebase',self.log)
-  self.assertIn('assumed_settled=1',self.log)
-  rebases=self.analysis['fatal_intervention']['quiet_rebases']
-  self.assertEqual(len(rebases),1)
-  self.assertEqual((rebases[0]['hp'],rebases[0]['retired']),(300,150))
-  self.assertGreaterEqual(rebases[0]['quiet_ns'],rebases[0]['allowance_ns'])
+  self.assertIn('fatal_policy\tversion=10\treconciliation=ordering_proof',self.log)
+  self.assertFalse(self.analysis['fatal_intervention']['quiet_rebases'])
+  # The proof clears the burst once a reply sent after it is dated, never by time or HP.
+  clears=self.analysis['fatal_intervention']['proof_clears']
+  self.assertEqual(sum(c['cleared'] for c in clears),3)
+  self.assertEqual((clears[-1]['hp'],clears[-1]['pending'],clears[-1]['projected']),(300,0,300))
   self.assertFalse(any(e['phase']==20 for e in self.events))
  def test_ticks_without_hp_assignment_keep_network_heartbeat_fresh(self):
   self.run_client('armed=1,potion=0,death=1',environment=25)
   self.assertIn('omitted_hp_ticks_keep_heartbeat_without_retiring_damage=1',self.output)
   self.assertFalse(self.analysis['fatal_intervention']['quiet_rebases'])
+  self.assertFalse(self.analysis['fatal_intervention']['proof_clears'])  # A repeated round trip proves nothing.
   # The fixture enters Nexus before exit, clearing shared live state.
   updates=self.analysis['fatal_intervention']['server_hp_updates']
   self.assertEqual(len(updates),10)
@@ -232,17 +233,17 @@ class ClientInterventionTests(unittest.TestCase):
   decision=next(e for e in self.events if e['phase']==20)
   self.assertEqual(decision['hp'],40)
   self.assertEqual(decision['value'],50)
-  self.assertEqual(decision['projectile'],50)
+  self.assertEqual(decision['projectile'],100)  # An HP drop never clears the first hit.
  def test_mixed_paths_accumulate_across_hp_updates(self):
   self.run_client('armed=1,potion=0,death=1',mixed=True)
   self.assertIn('mixed_paths_rebased_and_preserved_same_window_burst=1',self.output)
   self.assertIn('nexus_calls=1',self.output)
   decision=next(e for e in self.events if e['phase']==20)
-  self.assertEqual(decision['projectile'],210)
-  self.assertEqual(decision['update_context'],(1<<64)-30)
-  self.assertEqual([e['caller'] for e in self.secondary_reports],['0x1224e00'])
+  self.assertEqual(decision['projectile'],230)  # HP drops never clear hits.
+  self.assertEqual(decision['update_context'],(1<<64)-49)
+  self.assertEqual([e['caller'] for e in self.secondary_reports],['0x92bf10'])
  def test_terrain_and_area_use_shared_escape_and_only_cancel_matching_reports(self):
-  for boundary in ('0x12e1a30UL','0x1224e00UL'):
+  for boundary in ('0x1e1ea20UL','0x92bf10UL'):
    with self.subTest(boundary=boundary):
     self.run_client('armed=1,potion=0,death=1',boundary=boundary)
     self.assertIn('boundary_sent=3 other_sent=12',self.output)
@@ -252,12 +253,12 @@ class ClientInterventionTests(unittest.TestCase):
  def test_boundary_dry_run_and_disabled_mode_preserve_damage(self):
   for settings in ('armed=0,potion=0,death=1','armed=1,potion=0,death=0'):
    with self.subTest(settings=settings):
-    self.run_client(settings,boundary='0x12e1a30UL')
+    self.run_client(settings,boundary='0x1e1ea20UL')
     self.assertIn('boundary_sent=6 other_sent=12',self.output)
     self.assertIn('nexus_calls=0',self.output)
     self.assertFalse(any(e['phase'] in (24,30) for e in self.events))
  def test_boundary_request_failure_preserves_notifications_and_reports(self):
-  for boundary in ('0x12e1a30UL','0x1224e00UL'):
+  for boundary in ('0x1e1ea20UL','0x92bf10UL'):
    for failure in ('denied','exception'):
     with self.subTest(boundary=boundary,failure=failure):
      self.run_client('armed=1,potion=0,death=1',boundary=boundary,**{failure:True})

@@ -16,7 +16,8 @@ from analyze import read_events
 
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = Path(__file__).with_name('policy_replay.c')
-TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER = 0x196ed65, 0x183f7be
+# Terrain and area notification returns, per game build (2026-10-15, 2026-11-03).
+BOUNDARY_NOTIFY_CALLERS = {0x196ed65, 0x183f7be, 0x12e1a05, 0x1224d3e, 0x1e1e9f5, 0x92be4e}
 REASONS = {0: 'none', 1: 'lethal', 2: 'stale', 3: 'capacity'}
 
 
@@ -31,6 +32,8 @@ def inputs(events):
     """Translate events into driver lines, mirroring hit_probe.h call order."""
     lines, deaths, scopes, ends = [], {}, [], {}
     scope = None
+    # Round-trip field per tick, from the sync trace's tick receive (phase 40); 0 when not traced.
+    rtts = {(e['generation'], e['tick_sequence'], e['server_time']): e['bullet'] for e in events if e['phase'] == 40}
     for e in events:
         if e['in_nexus']:
             if scope is not None:ends.setdefault(scope, 'nexus')
@@ -42,14 +45,17 @@ def inputs(events):
         phase, ns = e['phase'], e['ns']
         if phase == 12 and e['flag0'] and e['flag1']:
             lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
-        elif phase == 3 and e['callsite'] in (TERRAIN_NOTIFY_CALLER, AREA_NOTIFY_CALLER):
+        elif phase == 3 and e['callsite'] in BOUNDARY_NOTIFY_CALLERS:
             lines.append((scope, f"D {ns} {e['hp']} {e['value']}"))
         elif phase == 6 and e['update_source'] in (1, 2):
             lines.append((scope, f"H {ns} {e['hp']}"))
         elif phase == 16:
             lines.append((scope, f"T {ns}"))
         elif phase == 17:
-            lines.append((scope, f"R {ns} {e['hp']} {e['tick_sequence'] & 0xffffffff} {e['server_time'] & 0xffffffff}"))
+            rtt = rtts.get((e['generation'], e['tick_sequence'], e['server_time']), 0)
+            lines.append((scope, f"R {ns} {e['hp']} {e['tick_sequence'] & 0xffffffff} {e['server_time'] & 0xffffffff} {rtt & 0xffffffff}"))
+        elif phase == 41:
+            lines.append((scope, f"Y {ns} {e['server_time'] & 0xffffffff}"))
         elif phase == 7:
             ends.setdefault(scope, 'manual_nexus')
         if (phase == 6 and e['hp'] <= 0) or phase in (13, 15):
@@ -145,10 +151,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--input', type=Path, action='append', required=True)
     parser.add_argument('--policy', type=Path, action='append',
-                        help='Policy header to replay; repeat to compare. Default: probe/fatal_policy.h')
+                        help='Policy header to replay; repeat to compare. Default: probe/fatal_policy_v10.h (production)')
     parser.add_argument('--json', type=Path)
     args = parser.parse_args()
-    policies = args.policy or [ROOT / 'probe/fatal_policy.h']
+    policies = args.policy or [ROOT / 'probe/fatal_policy_v10.h']
     with tempfile.TemporaryDirectory() as out_dir:
         report = run(args.input, policies, out_dir)
     if args.json:
