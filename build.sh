@@ -51,7 +51,7 @@ xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header
     "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$tests/model-tests" && "$tests/model-tests"
-python3 "$src/tests/test_guard.py"
+python3 "$src/tests/parallel.py" "$src/tests/test_guard.py"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/probe/hook_tests.c" "$src/tests/probe/hook_fixture.S" -o "$tests/hook-tests"
 "$tests/hook-tests"
 clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_tests.c" -o "$tests/fatal-policy-tests"
@@ -60,8 +60,8 @@ clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v9_tests.c" -o "$test
 "$tests/fatal-policy-v9-tests"
 clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v10_tests.c" -o "$tests/fatal-policy-v10-tests"
 "$tests/fatal-policy-v10-tests"
-python3 "$src/tests/probe/test_probe.py"
-python3 "$src/tests/probe/test_client.py"
+python3 "$src/tests/parallel.py" "$src/tests/probe/test_probe.py"
+python3 "$src/tests/parallel.py" "$src/tests/probe/test_client.py"
 python3 "$src/tests/probe/test_incident.py"
 python3 "$src/tests/probe/test_latency.py"
 python3 "$src/tests/probe/test_replay.py"
