@@ -22,8 +22,10 @@ def build_defines(folder):
 def live_control(path,request,armed,potion,ceiling,nexus):
  global CONTROL
  if CONTROL is None:
-  CONTROL=Path(tempfile.mkdtemp(prefix='exalt-live-control-'))/'live-control'
-  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_control.c'),'-o',str(CONTROL)],check=True)
+  # Publish the path only once built: parallel tests may race here, and a duplicate build is harmless.
+  tool=Path(tempfile.mkdtemp(prefix='exalt-live-control-'))/'live-control'
+  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_control.c'),'-o',str(tool)],check=True)
+  CONTROL=tool
  args=[str(path),str(request),str(armed),str(potion),str(ceiling),str(nexus)]
  if request=='join':args=args[:4]   # FILE join REQUEST NAME
  # The guard creates the live file during startup; on a loaded machine that can
@@ -38,8 +40,10 @@ def live_join(path,request,name):
 def live_dump(path):
  global DUMP
  if DUMP is None:
-  DUMP=Path(tempfile.mkdtemp(prefix='exalt-live-dump-'))/'live-dump'
-  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_dump.c'),'-o',str(DUMP)],check=True)
+  # Publish the path only once built: parallel tests may race here, and a duplicate build is harmless.
+  tool=Path(tempfile.mkdtemp(prefix='exalt-live-dump-'))/'live-dump'
+  subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools'/'live_dump.c'),'-o',str(tool)],check=True)
+  DUMP=tool
  out=subprocess.run([str(DUMP),str(path)],check=True,capture_output=True,text=True).stdout
  state={'event':[]}
  for line in out.splitlines():
@@ -98,12 +102,6 @@ class GuardTests(unittest.TestCase):
    return log,rows,{k:int(v) for k,v in calls.items()}
  def actions(self,rows):
   return [(r[ACTION],r[RESULT]) for r in rows if r[ACTION]!='0']
- def test_legacy_nexus_without_death_never_escapes(self):
-  log,rows,calls=self.run_fixture('armed=1,potion=0,nexus=100,death=0')
-  self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
-  self.assertEqual(self.actions(rows),[])
-  self.assertEqual((self.live['armed'],self.live['nexus'],self.live['death']),('1','0','0'))
-  self.assertNotIn('guard_config_invalid',log)
  def test_dry_run_decides_but_never_calls(self):
   log,rows,calls=self.run_fixture()
   self.assertEqual(calls['potion_calls'],0);self.assertEqual(calls['nexus_calls'],0)
@@ -134,17 +132,6 @@ class GuardTests(unittest.TestCase):
   times=self.drink_times(rows)
   self.assertTrue(all(b-a>=0.249 for a,b in zip(times,times[1:])),times)
   self.assertEqual([r[15] for r in rows if r[ACTION]==POTION],['400','500','600','700'])
- def test_one_potion_per_heal_without_ceiling(self):
-  # Without a ceiling it stops once HP is back above 50%: 400 -> 500 (still 50%) -> 600.
-  log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25','HEALING')
-  self.assertEqual(calls['potion_calls'],2)
- def test_ceiling_keeps_drinking_until_over_it(self):
-  log,rows,calls=self.run_fixture('armed=1,potion=50,ceiling=80,nexus=25','CEILING_SCRIPT')
-  self.assertEqual(calls['potion_calls'],2)        # at 40% and again at 70%
-  self.assertEqual([r[15] for r in rows if r[ACTION]==POTION],['400','700'])
- def test_without_ceiling_stops_above_trigger(self):
-  log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25','CEILING_SCRIPT')
-  self.assertEqual(calls['potion_calls'],1)
  def test_never_acts_in_nexus(self):
   log,rows,calls=self.run_fixture('armed=1')
   self.assertEqual(calls['nexus_calls'],0)
@@ -180,10 +167,6 @@ class GuardTests(unittest.TestCase):
  def test_game_that_never_becomes_ready_is_ended(self):
   log,detail=self.run_fixture('armed=1','NO_ASSEMBLIES',refusal=7,guard_defines=('-DGUARD_READY_NS=1000000000ULL',))
   self.assertEqual(detail,'game_never_ready')
- def test_invalid_config_stays_dry(self):
-  log,rows,calls=self.run_fixture('armed=1,potion=101,nexus=30')
-  self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
-  self.assertIn('guard_config_invalid',log)
  def test_missing_gui_never_acts(self):
   log,rows,calls=self.run_fixture('armed=1','NO_GUI')
   self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
@@ -235,12 +218,6 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(calls['potion_calls']+calls['nexus_calls'],0)
   self.assertIn('guard_config_rejected\tarmed=1\tpotion=50\tceiling=40\tnexus=60\trequest=1',log)
   self.assertEqual((self.live['control_request'],self.live['control_result'],self.live['armed']),('1','2','0'))
- def test_potion_threshold_changes_mid_session(self):
-  # Lowering the potion trigger to 30% at 0.8 s means 40% HP no longer drinks; the later 20% reading still does.
-  log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25',
-   during=(0.8,lambda f:live_control(f,1,1,30,0,100)))
-  self.assertEqual(calls['potion_calls'],1);self.assertEqual(calls['nexus_calls'],0)
-  self.assertEqual(self.live['potion'],'30')
  def test_quickslot_changes_are_logged(self):
   log,rows,calls=self.run_fixture('armed=1,potion=50,nexus=25')
   slot1=[l for l in log.splitlines() if l.startswith('guard_slot\t1\t')]

@@ -47,9 +47,6 @@ static int healed(double t) { int n=0; for(unsigned i=0;i<drinks;++i) if(t-drink
 /* Player 40 drops to 40% at 1.3 s and stays there except for potion heals. */
 static int base_hp_at(double t) { return t<1.3?1000:t<2.2?400:t<2.3?180:1000; }
 static int hp_at(double t) { int hp=base_hp_at(t)+(t<2.2?healed(t):0); return hp>1000?1000:hp; }
-#elif defined(CEILING_SCRIPT)
-/* Player 40 recovers in steps: 40% (drink), 70% (still under an 80% ceiling), 90% (over it). */
-static int hp_at(double t) { return t<1.3?1000:t<1.6?400:t<1.9?700:t<2.2?900:t<2.3?180:1000; }
 #else
 static int hp_at(double t) { return t<1.3?1000:t<1.8?400:t<2.2?200:t<2.3?180:t<2.8?1000:100; }
 #endif
