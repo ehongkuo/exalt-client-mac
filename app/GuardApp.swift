@@ -136,6 +136,7 @@ final class PartyAlerts: ObservableObject {
     @Published private(set) var popup: PartyCall?
     @Published private(set) var joinStatus: JoinStatus = .idle
     private var popupShownAt = 0.0, statusSince = 0.0
+    private var popupIsTest = false
     private var joinSent: UInt32?
     private var lastJoinRequest: UInt32 = 0
     private var tracker = PartyAlertTracker()
@@ -188,7 +189,8 @@ final class PartyAlerts: ObservableObject {
         let status = JoinStatus.evaluate(sent: joinSent, snapshot: source.snapshot, live: source.link.isLive)
         if status != joinStatus { joinStatus = status; statusSince = now }
         guard popup != nil, JoinPopupRules.shouldClose(shownAt: popupShownAt, now: now, snapshot: source.snapshot,
-                                                       live: source.link.isLive, status: joinStatus, statusSince: statusSince)
+                                                       live: source.link.isLive, status: joinStatus, statusSince: statusSince,
+                                                       test: popupIsTest)
         else { return }
         dismiss()
     }
@@ -204,7 +206,8 @@ final class PartyAlerts: ObservableObject {
         }
         GameFocus.bringForward(pid: s.pid)
     }
-    func alert(_ call: PartyCall) {
+    func alert(_ call: PartyCall, test: Bool = false) {
+        popupIsTest = test
         // No banner: the popup already shows over everything, including full-screen video.
         popup = call; popupShownAt = now; joinSent = nil; joinStatus = .idle
         #if !GUARD_UI_TEST
@@ -419,6 +422,35 @@ struct PanelSection<Content: View>: View {
     }
 }
 
+/// Dry run | Armed, drawn in SwiftUI. The native segmented Picker re-measures its AppKit
+/// control on every 30 Hz redraw, and that cost grew without limit (99% CPU after 15 minutes).
+struct ModeSwitch: View {
+    @Binding var armed: Bool
+    var body: some View {
+        HStack(spacing: 2) {
+            segment("Dry run", value: false)
+            segment("Armed", value: true)
+        }
+        .padding(2)
+        .background(Color.black.opacity(0.25))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+    }
+    private func segment(_ title: String, value: Bool) -> some View {
+        let selected = armed == value
+        return Button { if !selected { armed = value } } label: {
+            Text(title).font(.system(size: 12))
+                .foregroundStyle(selected ? Color.primary : Color.secondary)
+                .padding(.horizontal, 10).frame(height: 20)
+                .background(selected ? Color.white.opacity(0.16) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 /// One line of a section: label on the left, value or control on the right.
 struct PanelRow<Content: View>: View {
     @ViewBuilder var content: Content
@@ -599,14 +631,10 @@ struct GuardPanel {
                     Text("Mode")
                     Spacer()
                     // Applies at once, unlike the rows below.
-                    Picker("Mode", selection: Binding(get: { settings.draft.armed }, set: { value in
+                    ModeSwitch(armed: Binding(get: { settings.draft.armed }, set: { value in
                         var next = running?.settings ?? settings.draft; next.armed = value
                         settings.apply(next, source: source)
-                    })) {
-                        Text("Dry run").tag(false)
-                        Text("Armed").tag(true)
-                    }
-                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    }))
                     .help("Dry run only shows what it would do. Armed drinks and Nexuses for you. Applies immediately.")
                 }
                 RowDivider()
@@ -767,7 +795,7 @@ struct GuardPanel {
                 Toggle("Play a sound", isOn: $alerts.settings.sound).toggleStyle(.checkbox)
                 Spacer()
                 Button("Test alert") {
-                    alerts.alert(PartyCall(caller: "Test", text: "j cit", epoch: Date().timeIntervalSince1970, count: 0))
+                    alerts.alert(PartyCall(caller: "Test", text: "j cit", epoch: Date().timeIntervalSince1970, count: 0), test: true)
                 }
             }
             .disabled(!alerts.settings.enabled)
