@@ -8,8 +8,8 @@ A local macOS companion for Realm of the Mad God Exalt. It launches the game thr
 | --- | --- |
 | **Nexus on death** | Predicts lethal audited projectile, ground and radius/AOE damage and requests Nexus before reporting the fatal hit. Once the game confirms the local Nexus state, the fatal and subsequent projectile reports are withheld during escape. Optional and off by default. |
 | **Auto-potion** | Starts drinking at the potion trigger and continues until HP exceeds the ceiling. Uses quickslots in order and waits for healing before drinking again. |
-| **Party-call alerts and Join** | Alerts when another party member calls “j” or “join” while you are in a waiting area. Offers a one-click Join button in the main window, popup, and compact strip. |
-| **Live display** | Shows HP, map, quickslots, recent actions, session totals, and timing measurements. Switch between the full window and an always-on-top compact strip. |
+| **Party-call alerts and Join** | Alerts when another party member calls “j” or “join” while you are in a waiting area. Offers a one-click Join button in a popup over the game, also in full screen; the compact strip names the caller. |
+| **Live display** | Shows connection, map, HP, potions, protection status, session totals, and timing measurements. Switch between the full window and an always-on-top compact strip. |
 | **Saved settings and logs** | Apply settings while the game runs, retain them for future launches, and export session logs with your settings. |
 
 **Armed** enables automatic health actions. **Dry Run** records predicted actions without drinking, automatically requesting Nexus, or suppressing damage. Party alerts and the user-clicked Join button remain available.
@@ -17,19 +17,19 @@ A local macOS companion for Realm of the Mad God Exalt. It launches the game thr
 <p>
   <img src="docs/join-popup.png" width="380" alt="Party-call popup with a Join button">
   &nbsp;
-  <img src="docs/compact-strip.png" width="340" alt="Compact strip showing health, guard status, and party alerts">
+  <img src="docs/compact-strip.png" width="340" alt="Compact strip showing mode, health, and potions">
 </p>
 
 <details>
 <summary>Full window</summary>
 <p>
-  <img src="docs/full-view.png" width="360" alt="Full window with health, session summary, party calls, and settings">
+  <img src="docs/full-view.png" width="360" alt="Full window with connection status, health, and the Protection and More sections">
   &nbsp;
-  <img src="docs/full-view-scrolled.png" width="360" alt="Settings, quickslots, action history, and timing measurements">
+  <img src="docs/full-view-scrolled.png" width="360" alt="The More section opened: session totals, party call settings, and timing measurements">
 </p>
 </details>
 
-These screenshots use synthetic test data and illustrate the window layouts. The current app also includes the Nexus on death checkbox and its readiness status.
+These screenshots use synthetic test data.
 
 ## Build and install
 
@@ -57,8 +57,8 @@ The installed app contains its integration library and supported-game fingerprin
 1. Open **Exalt Client Mac** from `~/Applications` or Launchpad.
 2. Choose your settings and click **Apply**. A fresh installation starts in Dry Run, with Nexus on death off.
 3. Click **Start game**, then **Play** in DECA's launcher.
-4. For Nexus on death, enter Nexus and wait for **Nexus on death ready** before leaving.
-5. Use **Test alert** in Party calls to check notifications and sound.
+4. For Nexus on death, enter Nexus and wait until **Nexus on death** reads **Ready** before leaving.
+5. Use **Test alert** under **More › Party calls** to check the popup and sound.
 
 Always start the game through Exalt Client Mac to load its integration. An already-running game keeps the library it loaded at launch; restart it through the app after installing a new version.
 
@@ -70,18 +70,18 @@ The guard does not let a game run unprotected. If the fingerprint, a method, a f
 
 The defaults are a 50% potion trigger and an 80% potion ceiling, with Nexus on death off. Saved potion and death-toggle settings retain your values. Legacy percentage Nexus values are discarded when settings are loaded or sent to the guard.
 
-- **Potion trigger:** start drinking at or below this percentage. Off disables automatic potions.
-- **Ceiling:** continue drinking until HP is above this percentage. Off stops drinking above the potion trigger. If the potion trigger is Off, the ceiling must also be Off.
-- **Nexus on death:** enable predicted lethal-damage intervention, the only automatic Nexus mode. Requires Armed and prepared hooks.
+- **Drink potions at** (potion trigger): start drinking at or below this percentage. Off disables automatic potions.
+- **Keep drinking to** (ceiling): continue drinking until HP is above this percentage. Off stops drinking above the trigger. If the trigger is Off, this must also be Off.
+- **Nexus on death:** enable predicted lethal-damage intervention, the only automatic Nexus mode. It acts only in Armed mode with prepared hooks; Dry Run logs what it would do.
 
 To use **only Nexus on death**:
 
-1. Switch **Armed** on first.
-2. Set **Potion trigger** and **Ceiling** to **Off** by moving both sliders fully left.
-3. Check **Nexus on death** and click **Apply**.
+1. Set **Mode** to **Armed** first.
+2. Set **Drink potions at** and **Keep drinking to** to **Off** by moving both sliders fully left.
+3. Turn on **Nexus on death** and click **Apply**.
 4. Wait in Nexus for the readiness message.
 
-The Armed switch applies immediately. Set it before editing other controls: while connected, switching it can replace pending edits with the current running settings. Other edits take effect when you click Apply.
+**Mode** applies immediately. Set it before editing other controls: while connected, switching it can replace pending edits with the current running settings. Other edits take effect when you click Apply.
 
 Nexus on death can also run alongside potions. Once a predicted-death escape starts, further health actions pause and damage suppression stays latched until Nexus arrival or a validated player/map/connection change. Turning the toggle or Armed off does not cancel that escape in progress.
 
@@ -187,6 +187,6 @@ The automated tests use a simulated game/runtime and do not act on the real game
 | `docs/` | Architecture notes, intervention notes, and screenshots. |
 | `build/`, `module-cache/` | Generated binaries and compiler caches, excluded from Git. |
 
-Settings and session logs live in `~/Library/Application Support/Exalt Client Mac/`. The app's **Export logs** button bundles the session logs and saved settings into a zip.
+Settings and session logs live in `~/Library/Application Support/Exalt Client Mac/`. **Export logs…** under **More › Diagnostics and logs** bundles the session logs and saved settings into a zip.
 
 🤖 Generated with Codex

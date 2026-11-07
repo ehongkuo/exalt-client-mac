@@ -4,9 +4,9 @@ import UniformTypeIdentifiers
 import SwiftUI
 import UserNotifications
 
-private let mint = Color(red: 0.35, green: 0.88, blue: 0.72)
-private let amber = Color(red: 0.98, green: 0.74, blue: 0.30)
-private let coral = Color(red: 0.98, green: 0.42, blue: 0.40)
+// System colors, used only for state: fine, needs attention, wrong.
+private let ok = Color.green, warn = Color.orange, bad = Color.red
+private let panelBackground = Color(white: 0.15)
 
 #if GUARD_UI_TEST
 private let liveURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_LIVE_FILE"] ?? "/dev/null")
@@ -127,13 +127,12 @@ final class LaunchController: ObservableObject {
     }
 }
 
-/// Party call alerts: a notification banner, a sound and a flash on the compact strip. Checked
+/// Party call alerts: a sound, the Join popup and an outline on the compact strip. Checked
 /// on a timer rather than by the views, which stop redrawing while hidden or behind a
 /// full-screen game. Preferences are kept in the app's defaults.
 final class PartyAlerts: ObservableObject {
     @Published var settings: PartyAlertSettings { didSet { save() } }
-    @Published private(set) var flashUntil = Date.distantPast
-    /// The call shown in the Join popup (and as a Join button on the compact strip), if any.
+    /// The call shown in the Join popup (and named on the compact strip), if any.
     @Published private(set) var popup: PartyCall?
     @Published private(set) var joinStatus: JoinStatus = .idle
     private var popupShownAt = 0.0, statusSince = 0.0
@@ -162,7 +161,6 @@ final class PartyAlerts: ObservableObject {
     private func save() {
         defaults.set(settings.enabled, forKey: "partyAlerts")
         defaults.set(settings.sound, forKey: "partyAlertSound")
-        if settings.enabled { requestPermission() }
     }
     func requestPermission() {
         guard canNotify else { return }
@@ -207,17 +205,11 @@ final class PartyAlerts: ObservableObject {
         GameFocus.bringForward(pid: s.pid)
     }
     func alert(_ call: PartyCall) {
-        flashUntil = Date().addingTimeInterval(8)
+        // No banner: the popup already shows over everything, including full-screen video.
         popup = call; popupShownAt = now; joinSent = nil; joinStatus = .idle
         #if !GUARD_UI_TEST
         if settings.sound { NSSound(named: "Glass")?.play() }
         #endif
-        guard canNotify else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "Party call from \(call.caller)"
-        content.body = call.text
-        // One notification at a time: a newer call replaces the previous banner.
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "party-call", content: content, trigger: nil))
     }
     func alert(_ refusal: GuardRefusal) {
         #if !GUARD_UI_TEST
@@ -239,7 +231,6 @@ final class PartyAlerts: ObservableObject {
         content.body = "No potions or Nexus will be used for you. Quit the game and start it from Exalt Client Mac."
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "guard-missing", content: content, trigger: nil))
     }
-    func flashing(at date: Date) -> Bool { date < flashUntil }
 }
 
 /// Brings the game to the front, also from a full-screen video in another space.
@@ -259,6 +250,7 @@ enum GameFocus {
 }
 
 /// The Join popup: a small card at the top of the screen, over everything, for the newest call.
+/// The only place a call can be joined from.
 struct JoinPopupView: View {
     @ObservedObject var alerts: PartyAlerts
     let source: LiveSource
@@ -278,29 +270,31 @@ struct JoinPopupContent: View {
     var dismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("PARTY CALL").font(.system(size: 10, weight: .bold)).foregroundStyle(amber)
-                Text(call.caller).font(.system(size: 17, weight: .semibold)).lineLimit(1)
-                Text(status == .idle ? call.text : status.text).font(.system(size: 12))
-                    .foregroundStyle({ if case .failed = status { return coral } else { return Color.secondary } }())
-                    .lineLimit(1)
+        let failed: Bool = { if case .failed = status { return true } else { return false } }()
+        HStack(spacing: 12) {
+            Image(systemName: "person.2.fill").font(.system(size: 14))
+                .frame(width: 34, height: 34).background(Color.white.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(call.caller).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(status == .idle ? "Party call · \(call.text)" : status.text).font(.system(size: 12))
+                    .foregroundStyle(failed ? bad : Color.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
+            // A plain colored label: a prominent button turns gray in this never-key panel.
             Button(action: join) {
-                Text(status == .sending ? "Joining..." : "Join")
-                    .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
-                    .frame(width: 84, height: 36)
-                    .background(amber).clipShape(RoundedRectangle(cornerRadius: 9))
+                Text(status == .sending ? "Joining…" : "Join").font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white).frame(width: 72, height: 30)
+                    .background(Color.accentColor).clipShape(RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(.plain).disabled(status == .sending || status == .sent)
-            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
+            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Dismiss")
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .frame(width: 380, height: 76)
-        .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.96))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(amber.opacity(0.7), lineWidth: 1.5))
+        .background(panelBackground.opacity(0.97))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .environment(\.colorScheme, .dark)
     }
@@ -311,6 +305,10 @@ final class WindowState: ObservableObject {
     @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
+    /// Which rows of the More section are open.
+    @Published var sessionOpen = false
+    @Published var partyOpen = false
+    @Published var diagnosticsOpen = false
     func setFloating(_ value: Bool) {
         floating = value; window?.level = value ? .floating : .normal
         UserDefaults.standard.set(value, forKey: "keepOnTop")
@@ -345,25 +343,28 @@ struct Pill: View {
     }
 }
 
-/// HP bar with markers at the potion and ceiling thresholds.
+/// HP bar with markers at the potion (solid) and ceiling (faint) thresholds.
 struct HPBar: View {
     var fraction: Double
     var potion: Int, ceiling: Int
     var color: Color
+    var height: CGFloat = 6
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08))
-                RoundedRectangle(cornerRadius: 6).fill(color).frame(width: max(0, min(1, fraction)) * w)
-                ForEach([(potion, amber), (ceiling, mint)], id: \.0) { value, tint in
+                Capsule().fill(Color.white.opacity(0.12)).frame(height: height)
+                Capsule().fill(color).frame(width: max(0, min(1, fraction)) * w, height: height)
+                ForEach([(potion, 1.0), (ceiling, 0.5)], id: \.1) { value, opacity in
                     if value > 0 {
-                        Rectangle().fill(tint).frame(width: 2).offset(x: w * Double(value) / 100 - 1)
+                        Rectangle().fill(Color.white.opacity(opacity)).frame(width: 1.5, height: height + 6)
+                            .offset(x: w * Double(value) / 100 - 0.75)
                     }
                 }
             }
+            .frame(maxHeight: .infinity)
         }
-        .frame(height: 18)
+        .frame(height: height + 6)
     }
 }
 
@@ -397,8 +398,37 @@ struct MainLayout<Content: View>: View {
         ScrollView(.vertical) {
             content.padding(16).frame(maxWidth: .infinity, alignment: .top)
         }
-        .background(Color(red: 0.07, green: 0.08, blue: 0.10))
+        .background(Color(white: 0.12))
     }
+}
+
+/// A titled group of rows, in the style of System Settings.
+struct PanelSection<Content: View>: View {
+    var title: String? = nil
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title { Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).padding(.leading, 4) }
+            VStack(alignment: .leading, spacing: 0) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+        }
+        .padding(.top, 14)
+    }
+}
+
+/// One line of a section: label on the left, value or control on the right.
+struct PanelRow<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(spacing: 8) { content }.frame(minHeight: 32).padding(.horizontal, 12)
+    }
+}
+
+struct RowDivider: View {
+    var body: some View { Divider().padding(.leading, 12) }
 }
 
 /// The window's contents for one snapshot; separate from the timeline so it can be rendered offscreen.
@@ -413,9 +443,9 @@ struct GuardPanel {
         #if GUARD_SYNC_CAPTURE
         VStack(alignment: .leading, spacing: 16) {
             Text("Exalt Client Mac").font(.title2.bold())
-            Pill(text: "SYNC OBSERVATION ONLY", color: amber)
+            Pill(text: "SYNC OBSERVATION ONLY", color: warn)
             Text("Auto Nexus, damage cancellation, auto potions and party Join are off for this capture.")
-                .foregroundStyle(amber)
+                .foregroundStyle(warn)
             Text("Your saved gameplay settings are preserved.").foregroundStyle(.secondary)
             Card(title: "Recorder") {
                 if link.isLive, let s {
@@ -429,7 +459,7 @@ struct GuardPanel {
                     .font(.callout).foregroundStyle(.secondary)
             }
             if case .failed(let message) = launch.state {
-                Text(message).foregroundStyle(coral)
+                Text(message).foregroundStyle(bad)
             }
             if case .launched = launch.state {
                 Text("Launcher started. Click Play in its window.").foregroundStyle(.secondary)
@@ -439,164 +469,349 @@ struct GuardPanel {
             Spacer(minLength: 0)
         }
         #else
-        VStack(alignment: .leading, spacing: 12) {
-            header(s, link)
-            if let refusal = s?.refusal { refusalCard(refusal) }
-            if !alerts.unguarded.isEmpty { unguardedCard() }
-            if case .offline = link {
-                // No game running (never started, or it closed): offer Start, keep the last
-                // session's summary visible, and edit settings for the next launch.
-                startCard(link)
-                if let s, link == .offline("Game closed") { summaryCard(s, title: "Last session") }
-                settingsCard(nil)
-                partyCard(nil)
-            } else if let s {
-                mapCard(s)
-                hpCard(s)
-                summaryCard(s)
-                partyCard(s)
-                settingsCard(s)
-                potionCard(s)
-                eventsCard(s)
-                latencyCard(s, link, rate)
+        // Not running: no live snapshot; settings edit what the next Start uses.
+        let running: GuardSnapshot? = { if case .offline = link { return nil } else { return s } }()
+        VStack(alignment: .leading, spacing: 0) {
+            statusBar(s, link)
+            if let refusal = s?.refusal {
+                alarm("Game closed: guard checks failed", refusal.reason,
+                      detail: "The game was not left running without protection. Check: \(refusal.detail)")
             }
+            if !alerts.unguarded.isEmpty {
+                alarm("Game running without the guard", "No potions or Nexus will be used for you. Quit the game and start it from here.")
+            }
+            if let running { health(running) } else { startSection(link) }
+            protection(running)
+            more(s, running, link, rate)
             Spacer(minLength: 0)
         }
         #endif
     }
 
-    private func header(_ s: GuardSnapshot?, _ link: Link) -> some View {
-        // Live or stale: what the guard is running. Not running: what Start will use.
-        let running: Bool = { switch link { case .live, .stale: return true; case .offline: return false } }()
-        let armed = running ? (s?.armed ?? settings.saved.armed) : settings.saved.armed
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Exalt Client Mac").font(.system(size: 18, weight: .semibold)).lineLimit(1).fixedSize()
-                Spacer()
-                switch link {
-                case .live: Pill(text: "LIVE", color: mint)
-                case .stale(let age): Pill(text: "STALE \(Format.age(age))", color: amber)
-                case .offline(let why): Pill(text: why == "Game closed" ? "GAME CLOSED" : "OFFLINE", color: coral)
-                }
-                Pill(text: armed ? "ARMED" : "DRY RUN", color: armed ? mint : .gray)
+    // MARK: Status
+
+    private func statusBar(_ s: GuardSnapshot?, _ link: Link) -> some View {
+        let (dot, text): (Color, String) = {
+            switch link {
+            case .live: return (ok, s.map { "Connected · \(place($0))" } ?? "Connected")
+            case .stale(let age): return (warn, "Connected, no update for \(Format.age(age))")
+            case .offline(let why): return (.gray, why == "Game closed" ? "Game closed" : "Game not running")
             }
-            HStack(spacing: 12) {
-                Spacer()
-                Toggle("Keep on top", isOn: Binding(get: { window.floating }, set: { window.setFloating($0) }))
-                    .toggleStyle(.checkbox).font(.system(size: 11)).fixedSize()
-                Button("Export logs...") { exportLogs() }.font(.system(size: 11)).fixedSize()
-                Button("Compact view") { window.showCompact() }.font(.system(size: 11)).fixedSize()
-            }
+        }()
+        return HStack(spacing: 8) {
+            Circle().fill(dot).frame(width: 7, height: 7)
+            Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
+                .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
+            Button { window.showCompact() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
+                .buttonStyle(.borderless).help("Compact view")
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func place(_ s: GuardSnapshot) -> String {
+        let map = s.mapKnown ? (s.map.isEmpty ? "Loading map" : s.map) : "Unknown map"
+        if s.inNexus { return "\(map), actions paused" }
+        switch s.status {
+        case 0: return s.settled ? map : "\(map), settling"
+        case 1: return "Starting"
+        case 2: return "Waiting for the game's HUD"
+        case 3: return "Waiting for the player"
+        default: return "No data"
         }
     }
 
-    /// Stays until the next game starts: the guard ended this one rather than run it unprotected.
-    private func refusalCard(_ refusal: GuardRefusal) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("GAME CLOSED: GUARD CHECKS FAILED").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
-            Text(refusal.reason).font(.system(size: 13))
-            Text("The game was not left running without protection. Check: \(refusal.detail)")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+    /// Stays until the cause is gone: a refused game, or one running without the guard.
+    private func alarm(_ title: String, _ message: String, detail: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(bad)
+            Text(message).font(.system(size: 12))
+            if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(coral.opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(coral.opacity(0.6)))
+        .padding(12)
+        .background(bad.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(bad.opacity(0.45), lineWidth: 0.5))
+        .padding(.top, 12)
     }
 
-    private func unguardedCard() -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("GAME RUNNING WITHOUT THE GUARD").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
-            Text("No potions or Nexus will be used for you. Quit the game and start it from here.")
-                .font(.system(size: 13))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(coral.opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(coral.opacity(0.6)))
-    }
+    // MARK: Health or Start
 
-    private func mapCard(_ s: GuardSnapshot) -> some View {
-        Card(title: "Map") {
-            HStack {
-                Text(s.mapKnown ? (s.map.isEmpty ? "-" : s.map) : "Unknown map")
-                    .font(.system(size: 15, weight: .medium))
-                Spacer()
-                if s.inNexus { Pill(text: "NEXUS: ACTIONS OFF", color: amber) }
-                else if !s.settled && s.status == 0 { Pill(text: "SETTLING", color: amber) }
-                else if s.status == 0 { Pill(text: "ACTIONS ON", color: mint) }
-                else { Pill(text: statusText(s.status), color: .gray) }
-            }
-        }
-    }
-
-    private func hpCard(_ s: GuardSnapshot) -> some View {
+    private func health(_ s: GuardSnapshot) -> some View {
         let percent = s.percent ?? 0
-        let color = s.deathBlocking ? coral : percent <= Double(s.potion) ? amber : mint
-        return Card(title: "Health") {
-            HStack(alignment: .firstTextBaseline) {
-                Text(s.percent == nil ? "-" : "\(s.hp)").font(.system(size: 34, weight: .semibold, design: .rounded))
-                Text("/ \(s.maxHP)").font(.system(size: 16)).foregroundStyle(.secondary)
+        let color = s.deathBlocking ? bad : percent <= Double(s.potion) ? warn : ok
+        let (line, urgent) = potionLine(s)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(s.percent == nil ? "-" : s.hp.formatted()).font(.system(size: 30, weight: .light))
+                Text("/ \(s.maxHP.formatted())").font(.system(size: 14)).foregroundStyle(.secondary)
                 Spacer()
-                Text(s.percent.map { String(format: "%.0f%%", $0) } ?? "").font(.system(size: 22, weight: .medium, design: .rounded))
-                    .foregroundStyle(color)
+                Text(s.percent.map { String(format: "%.0f%%", $0) } ?? "").font(.system(size: 16)).foregroundStyle(.secondary)
             }
+            .monospacedDigit()
             HPBar(fraction: percent / 100, potion: s.potion, ceiling: s.ceiling, color: color)
-            HStack(spacing: 14) {
-                legend("Potion \(s.potion)%", amber)
-                if s.ceiling > 0 { legend("Ceiling \(s.ceiling)%", mint) }
+            Text(line).font(.system(size: 11)).foregroundStyle(urgent ? warn : Color.secondary)
+        }
+        .padding(.horizontal, 4).padding(.top, 14)
+    }
+
+    private func potionLine(_ s: GuardSnapshot) -> (String, Bool) {
+        if s.deathBlocking { return ("Escaping to Nexus", true) }
+        if s.drinking { return ("Drinking until over \(s.stopPercent)%", true) }
+        if s.stacks.isEmpty { return ("Quickslots not read yet", false) }
+        if s.totalPotions == 0 { return (s.nexusOnDeath ? "Out of potions. Nexus on death stays on." : "Out of potions", true) }
+        return ("\(s.totalPotions) potions" + (s.nextSlot >= 0 ? " · next from slot \(s.nextSlot + 1)" : ""), false)
+    }
+
+    private func startSection(_ link: Link) -> some View {
+        PanelSection {
+            VStack(alignment: .leading, spacing: 8) {
+                switch launch.state {
+                case .checking:
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking the game files…") }
+                case .launched(let when) where Date().timeIntervalSince(when) < 120:
+                    Text("DECA's launcher is opening with the guard. Click Play; this window goes live when the game loads.")
+                        .foregroundStyle(.secondary)
+                default:
+                    Text(link == .offline("Game closed") ? "Start the game again here." : "Start the game with the guard, using the settings below.")
+                        .foregroundStyle(.secondary)
+                    if case .failed(let message) = launch.state {
+                        Text(message).font(.system(size: 12, weight: .semibold)).foregroundStyle(bad)
+                    }
+                    Button("Start game") { launch.start() }.keyboardShortcut("r", modifiers: .command)
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+        }
+    }
+
+    // MARK: Protection
+
+    private func protection(_ running: GuardSnapshot?) -> some View {
+        let changed = running != nil && settings.draft != running?.settings
+        let (dot, status) = nexusStatus(running)
+        return VStack(alignment: .leading, spacing: 0) {
+            PanelSection(title: "Protection") {
+                PanelRow {
+                    Text("Mode")
+                    Spacer()
+                    // Applies at once, unlike the rows below.
+                    Picker("Mode", selection: Binding(get: { settings.draft.armed }, set: { value in
+                        var next = running?.settings ?? settings.draft; next.armed = value
+                        settings.apply(next, source: source)
+                    })) {
+                        Text("Dry run").tag(false)
+                        Text("Armed").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Dry run only shows what it would do. Armed drinks and Nexuses for you. Applies immediately.")
+                }
+                RowDivider()
+                PanelRow {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nexus on death")
+                        HStack(spacing: 5) {
+                            if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
+                            Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    Spacer()
+                    Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                }
+                .help("Escapes before lethal projectile, ground, area or locally calculated damage. May escape early when timing is uncertain. Meter limits alone never trigger it.")
+                RowDivider()
+                sliderRow("Drink potions at", $settings.draft.potion, help: "Start drinking at or below this HP. Off: no automatic potions.")
+                RowDivider()
+                sliderRow("Keep drinking to", $settings.draft.ceiling, help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
+            }
+            if let problem = settings.draft.problem ?? settings.error {
+                Text(problem).font(.system(size: 11, weight: .semibold)).foregroundStyle(bad).padding(.top, 8).padding(.horizontal, 4)
+            }
+            HStack(spacing: 8) {
+                Text(running == nil && settings.state(source) == .idle
+                     ? "Apply saves for the next launch."
+                     : applyText(settings.state(source), changed: changed))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                if s.drinking { Text("Drinking until over \(s.stopPercent)%").font(.system(size: 11, weight: .semibold)).foregroundStyle(amber) }
+                Button("Revert") { settings.draft = running?.settings ?? settings.saved }
+                    .disabled(running != nil && !changed)
+                Button("Apply") { settings.apply(settings.draft, source: source) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(settings.draft.problem != nil || (running != nil && !changed))
             }
+            .padding(.top, 8).padding(.horizontal, 4)
         }
     }
 
-    private func startCard(_ link: Link) -> some View {
-        Card(title: "Start") {
-            switch launch.state {
-            case .checking:
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking the game files...").font(.system(size: 13)) }
-            case .launched(let when) where Date().timeIntervalSince(when) < 120:
-                Text("DECA's launcher is opening with the guard. Click Play; this window goes live when the game loads.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
-            default:
-                if case .offline("Game closed") = link {
-                    Text("The game closed. Start it again here.").font(.system(size: 13)).foregroundStyle(.secondary)
-                } else {
-                    Text("Start the game with the guard. Uses the saved settings below.").font(.system(size: 13)).foregroundStyle(.secondary)
-                }
-                if case .failed(let message) = launch.state {
-                    Text(message).font(.system(size: 12, weight: .semibold)).foregroundStyle(coral)
-                }
-                Button(settings.saved.armed ? "Start game (armed)" : "Start game (dry run)") { launch.start() }
-                    .keyboardShortcut("r", modifiers: .command)
-            }
+    /// What the running guard's Nexus on death is doing; a description while it is off or not running.
+    private func nexusStatus(_ s: GuardSnapshot?) -> (Color?, String) {
+        guard let s, s.nexusOnDeath || s.deathBlocking else { return (nil, "Escapes to Nexus before a hit that would kill you") }
+        if s.deathBlocking { return (bad, "Escaping to Nexus") }
+        if s.deathReady { return s.armed ? (ok, "Ready") : (.gray, "Watching only (dry run)") }
+        if s.deathStatus < 0 { return (warn, "Unavailable for this game build") }
+        return (warn, "Enter Nexus to prepare")
+    }
+
+    private func sliderRow(_ title: String, _ value: Binding<Int>, help: String) -> some View {
+        PanelRow {
+            Text(title)
+            Spacer()
+            // No step: on macOS it draws 101 tick marks. The binding rounds to whole percent.
+            Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0.rounded()) }),
+                   in: 0...100)
+                .frame(width: 150)
+            Text(value.wrappedValue == 0 ? "Off" : "\(value.wrappedValue)%").monospacedDigit()
+                .foregroundStyle(.secondary).frame(width: 34, alignment: .trailing)
+        }
+        .help(help)
+    }
+
+    private func applyText(_ state: ApplyState, changed: Bool) -> String {
+        switch state {
+        case .waiting: return "Sending to the guard…"
+        case .applied: return changed ? "Edited, not applied" : "Applied to the running guard"
+        case .rejected: return "The guard refused these settings"
+        case .savedForNextLaunch: return "Saved. Used next time you start the game."
+        case .idle: return changed ? "Edited, not applied" : "Matches the running guard"
         }
     }
 
-    private func summaryCard(_ s: GuardSnapshot, title: String = "This session") -> some View {
+    // MARK: More
+
+    private func more(_ s: GuardSnapshot?, _ running: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
+        // The last session stays readable after the game closes.
+        let session = running ?? (link == .offline("Game closed") ? s : nil)
+        return PanelSection(title: "More") {
+            if let session {
+                disclosure($window.sessionOpen, running == nil ? "Last session" : "This session",
+                           value: sessionLength(session, closed: running == nil)) { sessionDetail(session) }
+                RowDivider()
+            }
+            disclosure($window.partyOpen, "Party calls", value: partyValue(running)) { partyDetail(running) }
+            RowDivider()
+            disclosure($window.diagnosticsOpen, "Diagnostics and logs", value: "") { diagnostics(running, link, rate) }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func disclosure<Content: View>(_ open: Binding<Bool>, _ title: String, value: String,
+                                           @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { open.wrappedValue.toggle() } label: {
+                HStack(spacing: 8) {
+                    Text(title)
+                    Spacer()
+                    Text(value).foregroundStyle(.secondary).lineLimit(1)
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
+                }
+                .frame(minHeight: 32).padding(.horizontal, 12).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open.wrappedValue { content().padding(.horizontal, 12).padding(.bottom, 10) }
+        }
+    }
+
+    private func sessionLength(_ s: GuardSnapshot, closed: Bool) -> String {
+        guard s.summary.start > 0 else { return "-" }
+        return Format.duration((closed ? s.sampleEpoch : Date().timeIntervalSince1970) - s.summary.start)
+    }
+
+    private func sessionDetail(_ s: GuardSnapshot) -> some View {
         let summary = s.summary
         let dry = !s.armed && summary.potionsSent == 0 && summary.nexusSent == 0
-        return Card(title: title) {
-            HStack(spacing: 18) {
-                metric("Length", summary.start > 0 ? Format.duration((title == "This session" ? Date().timeIntervalSince1970 : s.sampleEpoch) - summary.start) : "-")
-                metric(dry ? "Potions (would)" : "Potions used", "\(dry ? summary.potionsDry : summary.potionsSent)")
-                metric(dry ? "Nexus (would)" : "Nexus", "\(dry ? summary.nexusDry : summary.nexusSent)")
-                metric("Closest call", summary.closestText)
-                Spacer()
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                tile("Potions", "\(dry ? summary.potionsDry : summary.potionsSent)")
+                tile("Nexus", "\(dry ? summary.nexusDry : summary.nexusSent)")
+                tile("Lowest HP", summary.closestPercent.map { String(format: "%.0f%%", $0) } ?? "-")
+                    .help(summary.closestPercent == nil ? "No damage outside the Nexus yet"
+                          : "\(summary.closestText), outside the Nexus at \(Format.time(summary.lowestEpoch))")
             }
             HStack {
-                if summary.closestPercent != nil {
-                    Text("Lowest HP outside the Nexus at \(Format.time(summary.lowestEpoch))")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                }
+                if dry { Text("Dry run: counts what it would have done") }
                 Spacer()
-                Button("Show log") { showLog(summary.logName) }.font(.system(size: 11)).disabled(summary.logName.isEmpty)
+                Button("Show log") { showLog(summary.logName) }.buttonStyle(.link).disabled(summary.logName.isEmpty)
             }
+            .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(size: 17)).monospacedDigit()
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func partyValue(_ s: GuardSnapshot?) -> String {
+        guard alerts.settings.enabled else { return "Off" }
+        guard let call = s?.lastCall else { return "On" }
+        let ago = Date().timeIntervalSince1970 - call.epoch
+        if ago >= 300 { return "On" }
+        return "\(call.caller), " + (ago < 60 ? "\(max(0, Int(ago))) s ago" : "\(Int(ago / 60)) min ago")
+    }
+
+    private func partyDetail(_ s: GuardSnapshot?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Alert when someone calls j in party chat", isOn: $alerts.settings.enabled).toggleStyle(.switch).controlSize(.small)
+            HStack {
+                Toggle("Play a sound", isOn: $alerts.settings.sound).toggleStyle(.checkbox)
+                Spacer()
+                Button("Test alert") {
+                    alerts.alert(PartyCall(caller: "Test", text: "j cit", epoch: Date().timeIntervalSince1970, count: 0))
+                }
+            }
+            .disabled(!alerts.settings.enabled)
+            if let s {
+                let (text, problem): (String, Bool) = {
+                    switch s.chatStatus {
+                    case Int32(CHAT_READING) where !WaitingMaps.contains(s): return ("In a dungeon: quiet", false)
+                    case Int32(CHAT_READING): return ("Waiting for calls", false)
+                    case Int32(CHAT_UNAVAILABLE): return ("Chat not supported in this build", true)
+                    default: return ("Looking for chat", false)
+                    }
+                }()
+                Text("\(text) · \(s.partyCalls) this session").foregroundStyle(problem ? bad : Color.secondary)
+            }
+            Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" from other players while you wait in the Nexus, Vault, Realm, Guild Hall, Pet Yard or Daily Quest Room. Quiet in dungeons. A burst alerts once every 5 s.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 11))
+    }
+
+    private func diagnostics(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let s {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
+                    GridRow { Text("Checks per second").foregroundStyle(.secondary); Text(rate.map { String(format: "%.0f", $0) } ?? "-") }
+                    GridRow { Text("Last gap").foregroundStyle(.secondary); Text(Format.ms(s.lastGapUs)) }
+                    GridRow { Text("Worst gap (1 s)").foregroundStyle(.secondary); Text(Format.ms(s.maxGapUs)) }
+                    GridRow { Text("Check work").foregroundStyle(.secondary); Text(String(format: "%.1f µs", Double(s.workNs) / 1000)) }
+                    GridRow { Text("Data age").foregroundStyle(.secondary); Text(ageText(link)) }
+                }
+                .monospacedDigit()
+            }
+            Button("Export logs…") { exportLogs() }
+        }
+        .font(.system(size: 11))
+    }
+
+    private func ageText(_ link: Link) -> String {
+        switch link {
+        case .live(let age), .stale(let age): return Format.age(age)
+        case .offline: return "-"
+        }
+    }
+
     /// Saves every session log plus the settings as one zip, then shows it in Finder.
     private func exportLogs() {
         let panel = NSSavePanel()
@@ -616,208 +831,6 @@ struct GuardPanel {
         let log = liveURL.deletingLastPathComponent().appendingPathComponent(name)
         NSWorkspace.shared.activateFileViewerSelecting([log])
     }
-
-    private func settingsCard(_ s: GuardSnapshot?) -> some View {
-        let running = s?.settings
-        let changed = running != nil && settings.draft != running
-        return Card(title: "Settings") {
-            HStack {
-                Toggle(isOn: Binding(get: { settings.draft.armed }, set: { value in
-                    var next = running ?? settings.draft; next.armed = value
-                    settings.apply(next, source: source)
-                })) {
-                    Text(settings.draft.armed ? "Armed: drinks and Nexuses for you" : "Dry run: only shows what it would do")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .toggleStyle(.switch)
-                Spacer()
-            }
-            thresholdRow("Potion trigger", value: $settings.draft.potion, tint: amber,
-                         help: "Start drinking at or below this HP.")
-            thresholdRow("Ceiling", value: $settings.draft.ceiling, tint: mint,
-                         help: "Keep drinking until HP is over this. Off: stop once above the trigger.")
-            Toggle("Nexus on death", isOn: $settings.draft.nexusOnDeath)
-                .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
-            Text("Attempts to escape before lethal projectile, ground, area, or locally calculated damage. Requires Armed. May escape early when damage or update timing is uncertain. Meter limits alone do not trigger escape; environmental coverage remains unverified.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-            if let s, s.nexusOnDeath || s.deathBlocking {
-                Text(s.deathBlocking ? "Nexus escape in progress" : s.deathReady ? (s.armed ? "Nexus on death ready" : "Nexus on death: dry run") : s.deathStatus < 0 ? "Nexus on death unavailable for this game build" : "Enter Nexus to prepare Nexus on death")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(s.deathReady ? mint : amber)
-            }
-            if let problem = settings.draft.problem {
-                Text(problem).font(.system(size: 11, weight: .semibold)).foregroundStyle(coral)
-            } else if let error = settings.error {
-                Text(error).font(.system(size: 11, weight: .semibold)).foregroundStyle(coral)
-            }
-            HStack(spacing: 10) {
-                Button("Apply") { settings.apply(settings.draft, source: source) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(settings.draft.problem != nil || (running != nil && !changed))
-                Button("Revert") { settings.draft = running ?? settings.saved }
-                    .disabled(running != nil && !changed)
-                Spacer()
-                Text(running == nil && settings.state(source) == .idle
-                     ? "Game not running. Apply saves for the next launch."
-                     : applyText(settings.state(source), changed: changed))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-        }
-    }
-    private func thresholdRow(_ title: String, value: Binding<Int>, tint: Color, help: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title).font(.system(size: 12, weight: .medium))
-                Spacer()
-                Text(value.wrappedValue == 0 ? "Off" : "\(value.wrappedValue)%")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(tint)
-            }
-            Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0.rounded()) }),
-                   in: 0...100, step: 1)
-                .tint(tint)
-            Text(help).font(.system(size: 10)).foregroundStyle(.secondary)
-        }
-    }
-    private func applyText(_ state: ApplyState, changed: Bool) -> String {
-        switch state {
-        case .waiting: return "Sending to the guard..."
-        case .applied: return changed ? "Edited, not applied" : "Applied to the running guard"
-        case .rejected: return "The guard refused these settings"
-        case .savedForNextLaunch: return "Saved. Used next time you start the game."
-        case .idle: return changed ? "Edited, not applied" : "Matches the running guard"
-        }
-    }
-
-    private func partyCard(_ s: GuardSnapshot?) -> some View {
-        Card(title: "Party calls") {
-            HStack {
-                Toggle(isOn: $alerts.settings.enabled) {
-                    Text("Alert me when someone calls j in party chat").font(.system(size: 12, weight: .medium))
-                }
-                .toggleStyle(.switch)
-                Spacer()
-            }
-            HStack(spacing: 14) {
-                Toggle("Play a sound", isOn: $alerts.settings.sound).toggleStyle(.checkbox).font(.system(size: 11))
-                    .disabled(!alerts.settings.enabled)
-                Spacer()
-                Button("Test alert") {
-                    alerts.requestPermission()
-                    alerts.alert(PartyCall(caller: "Test", text: "j cit", epoch: Date().timeIntervalSince1970, count: 0))
-                }
-                .font(.system(size: 11)).disabled(!alerts.settings.enabled)
-            }
-            Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" as the first word, from other players in party chat only, while you wait in the Nexus, Vault, Realm, Guild Hall, Pet Yard or Daily Quest Room. Quiet once you are in a dungeon. A burst alerts once every 5 s.")
-                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let s {
-                HStack(spacing: 8) {
-                    switch s.chatStatus {
-                    case Int32(CHAT_READING) where !WaitingMaps.contains(s): Pill(text: "IN DUNGEON: QUIET", color: .gray)
-                    case Int32(CHAT_READING): Pill(text: "WAITING FOR CALLS", color: mint)
-                    case Int32(CHAT_UNAVAILABLE): Pill(text: "CHAT NOT SUPPORTED IN THIS BUILD", color: coral)
-                    default: Pill(text: "LOOKING FOR CHAT", color: .gray)
-                    }
-                    Spacer()
-                    Text("\(s.partyCalls) this session").font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                if let call = s.lastCall {
-                    HStack(spacing: 8) {
-                        Text(Format.time(call.epoch)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                        Text(call.caller).font(.system(size: 12, weight: .semibold)).foregroundStyle(amber)
-                        Text(call.text).font(.system(size: 12)).lineLimit(1)
-                        Spacer()
-                        Button("Join") { alerts.join(call, source: source) }.font(.system(size: 11))
-                            .disabled(alerts.joinStatus == .sending)
-                    }
-                }
-            }
-        }
-    }
-
-    private func potionCard(_ s: GuardSnapshot) -> some View {
-        Card(title: "Quickslots (used in order)") {
-            if s.stacks.isEmpty {
-                Text("No quickslots read yet").font(.system(size: 12)).foregroundStyle(.secondary)
-            } else {
-                HStack(spacing: 10) {
-                    ForEach(Array(s.stacks.enumerated()), id: \.offset) { index, count in
-                        let next = index == s.nextSlot
-                        VStack(spacing: 4) {
-                            Text("\(count)").font(.system(size: 22, weight: .semibold, design: .rounded))
-                                .foregroundStyle(count == 0 ? .secondary : .primary)
-                            Text("Slot \(index + 1)").font(.system(size: 10)).foregroundStyle(.secondary)
-                            Text(s.cooling[index] ? "cooldown" : next ? "next" : " ")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(s.cooling[index] ? amber : mint)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
-                        .background(next ? mint.opacity(0.10) : Color.white.opacity(0.03))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-                if s.totalPotions == 0 { Text(s.nexusOnDeath ? "Out of potions: Nexus protection remains enabled" : "Out of potions: automatic Nexus is off").font(.system(size: 11)).foregroundStyle(amber) }
-            }
-        }
-    }
-
-    private func eventsCard(_ s: GuardSnapshot) -> some View {
-        Card(title: "Actions (newest first)") {
-            if s.events.isEmpty {
-                Text("None yet").font(.system(size: 12)).foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(s.events.reversed().enumerated()), id: \.offset) { _, e in
-                        HStack(spacing: 8) {
-                            Text(Format.time(e.epoch)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                            Text(e.title).font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(e.action == .nexus || e.action == .nexusOnDeath ? coral : amber)
-                                .frame(width: e.action == .nexusOnDeath ? 104 : 48, alignment: .leading)
-                            Text("\(e.hp)/\(e.maxHP)").font(.system(size: 11, design: .monospaced))
-                            if e.action == .potion && e.slot >= 0 { Text("slot \(e.slot + 1)").font(.system(size: 11)).foregroundStyle(.secondary) }
-                            Spacer()
-                            Text(e.outcome).font(.system(size: 11)).foregroundStyle(e.succeeded ? mint : e.result == 0 ? .secondary : coral)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func latencyCard(_ s: GuardSnapshot, _ link: Link, _ rate: Double?) -> some View {
-        Card(title: "Latency") {
-            HStack(spacing: 18) {
-                metric("Checks/s", rate.map { String(format: "%.0f", $0) } ?? "-")
-                metric("Last gap", Format.ms(s.lastGapUs))
-                metric("Worst gap (1 s)", Format.ms(s.maxGapUs))
-                metric("Check work", String(format: "%.1f µs", Double(s.workNs) / 1000))
-                metric("Data age", ageText(link))
-            }
-        }
-    }
-
-    private func ageText(_ link: Link) -> String {
-        switch link {
-        case .live(let age), .stale(let age): return Format.age(age)
-        case .offline: return "-"
-        }
-    }
-    private func statusText(_ status: Int32) -> String {
-        switch status {
-        case 1: return "STARTING"
-        case 2: return "WAITING FOR HUD"
-        case 3: return "WAITING FOR PLAYER"
-        default: return "NO DATA"
-        }
-    }
-    private func legend(_ text: String, _ color: Color) -> some View {
-        HStack(spacing: 4) { Rectangle().fill(color).frame(width: 8, height: 8); Text(text).font(.system(size: 10)).foregroundStyle(.secondary) }
-    }
-    private func metric(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 13, weight: .medium, design: .monospaced))
-        }
-    }
 }
 
 /// Small always-on-top strip: HP, potions and guard state. Never takes focus from the game.
@@ -827,12 +840,9 @@ struct CompactView: View {
     var expand: () -> Void
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let _ = source.refresh()
-            CompactContent(snapshot: source.snapshot, link: source.link, expand: expand,
-                           flash: alerts.flashing(at: context.date) ? context.date.timeIntervalSinceReferenceDate : nil,
-                           pendingCall: alerts.popup,
-                           join: { call in alerts.join(call, source: source) })
+            CompactContent(snapshot: source.snapshot, link: source.link, expand: expand, call: alerts.popup)
         }
     }
 }
@@ -841,49 +851,44 @@ struct CompactContent: View {
     var snapshot: GuardSnapshot?
     var link: Link
     var expand: () -> Void
-    /// While a party call is fresh: the current time, which drives the pulse. nil otherwise.
-    var flash: Double? = nil
-    /// A call waiting for a Join click: the strip shows a Join button in place of the potion count.
-    var pendingCall: PartyCall? = nil
-    var join: (PartyCall) -> Void = { _ in }
+    /// The call in the Join popup, if any: the strip names the caller and outlines itself.
+    var call: PartyCall? = nil
 
     var body: some View {
+        let stale: Bool = { if case .stale = link { return true } else { return false } }()
         HStack(spacing: 10) {
-            Circle().fill(link.isLive ? mint : link == .offline("Waiting for the guard") ? Color.gray : coral).frame(width: 8, height: 8)
-            if let s = snapshot, s.refusal == nil, link.isLive || { if case .stale = link { return true } else { return false } }() {
+            if let s = snapshot, s.refusal == nil, link.isLive || stale {
                 let percent = s.percent ?? 0
-                let color = s.deathBlocking ? coral : percent <= Double(s.potion) ? amber : mint
-                Text(s.armed ? "ARMED" : "DRY").font(.system(size: 10, weight: .bold)).foregroundStyle(s.armed ? mint : .gray)
-                VStack(alignment: .leading, spacing: 3) {
+                let color = s.deathBlocking ? bad : percent <= Double(s.potion) ? warn : ok
+                HStack(spacing: 5) {
+                    Circle().fill(stale ? warn : s.armed ? ok : Color.gray).frame(width: 6, height: 6)
+                    Text(s.armed ? "Armed" : "Dry run").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .frame(width: 62, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        if flash != nil, let call = s.lastCall {
-                            Text("J  \(call.caller)").font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(amber).lineLimit(1)
+                        if let call {
+                            Text("\(call.caller) called").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                            Spacer()
+                            Text(call.text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                         } else {
-                            Text(s.percent == nil ? "-" : "\(s.hp)/\(s.maxHP)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                            Text(s.percent == nil ? "-" : "\(s.hp.formatted()) / \(s.maxHP.formatted())").font(.system(size: 12))
+                            Spacer()
+                            Text(s.inNexus ? "Nexus" : s.percent.map { String(format: "%.0f%%", $0) } ?? "")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        Text(s.inNexus ? "NEXUS" : s.percent.map { String(format: "%.0f%%", $0) } ?? "")
-                            .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(s.inNexus ? amber : color)
                     }
-                    HPBar(fraction: percent / 100, potion: s.potion, ceiling: s.ceiling, color: color)
-                        .frame(height: 8)
+                    .monospacedDigit()
+                    HPBar(fraction: percent / 100, potion: s.potion, ceiling: s.ceiling, color: color, height: 5)
                 }
-                if let call = pendingCall {
-                    Button { join(call) } label: {
-                        Text("Join").font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
-                            .frame(width: 46, height: 26).background(amber).clipShape(RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain).help("Join \(call.caller)'s dungeon and switch to the game")
-                } else {
-                    VStack(spacing: 0) {
-                        Text("\(s.totalPotions)").font(.system(size: 14, weight: .semibold, design: .rounded))
-                        Text(s.nextSlot >= 0 ? "slot \(s.nextSlot + 1)" : "none").font(.system(size: 9)).foregroundStyle(.secondary)
-                    }
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text("\(s.totalPotions)").font(.system(size: 14)).monospacedDigit()
+                    Text("pots").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
+                .frame(width: 30, alignment: .trailing)
             } else if snapshot?.refusal != nil {
-                Text("GUARD CHECKS FAILED: game closed").font(.system(size: 12, weight: .bold)).foregroundStyle(coral)
-                    .lineLimit(1)
+                Label("Guard checks failed: game closed", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(bad).lineLimit(1)
                 Spacer()
             } else {
                 Text(link == .offline("Game closed") ? "Game closed" : "Waiting for the guard")
@@ -893,21 +898,35 @@ struct CompactContent: View {
             Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Back to the full window")
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 12)
         .frame(width: 340, height: 52)
-        .background(Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92))
-        .overlay {
-            if let flash {
-                RoundedRectangle(cornerRadius: 10).strokeBorder(amber, lineWidth: 3)
-                    .opacity(0.55 + 0.45 * sin(flash * 2 * .pi * 1.5))
-            }
-        }
+        .background(panelBackground.opacity(0.95))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(call != nil ? Color.accentColor : Color.white.opacity(0.12), lineWidth: call != nil ? 1.5 : 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .environment(\.colorScheme, .dark)
     }
 }
 
 #if GUARD_UI_TEST
+/// Draws a view through a real offscreen window, so native switches, sliders and buttons appear
+/// (ImageRenderer leaves placeholders for them), then writes it as a PNG and exits.
+@MainActor func writePNG<V: View>(_ view: V, to path: String) -> Never {
+    _ = NSApplication.shared
+    let host = NSHostingView(rootView: view)
+    host.frame.size = host.fittingSize
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .darkAqua)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
+    do { try png.write(to: URL(fileURLWithPath: path)) } catch { exit(1) }
+    exit(0)
+}
+
 /// Test mode: render the live file's current state to a PNG and exit (no screen recording needed).
 @MainActor func renderSnapshot(to path: String) {
     let source = LiveSource(); source.refresh()
@@ -918,21 +937,15 @@ struct CompactContent: View {
         if v.count == 3 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2]) }
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_COMPACT"] != nil {
-        let flashing = ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil
+        let calling = ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil
         let compact = CompactContent(snapshot: source.snapshot, link: source.link, expand: {},
-                                     flash: flashing ? 0.1 : nil, pendingCall: flashing ? source.snapshot?.lastCall : nil)
-        let renderer = ImageRenderer(content: compact); renderer.scale = 2
-        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
-        try! png.write(to: URL(fileURLWithPath: path)); exit(0)
+                                     call: calling ? source.snapshot?.lastCall : nil)
+        writePNG(compact, to: path)
     }
     if ProcessInfo.processInfo.environment["GUARD_RENDER_POPUP"] != nil {
         let popup = JoinPopupContent(call: PartyCall(caller: "Lyra", text: "j cit", epoch: 0, count: 1),
                                      status: .idle, join: {}, dismiss: {})
-        let renderer = ImageRenderer(content: popup); renderer.scale = 2
-        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
-        try! png.write(to: URL(fileURLWithPath: path)); exit(0)
+        writePNG(popup, to: path)
     }
     let launch = LaunchController()
     if ProcessInfo.processInfo.environment["GUARD_RENDER_LAUNCH"] != nil {
@@ -940,14 +953,16 @@ struct CompactContent: View {
         let deadline = Date().addingTimeInterval(20)
         while launch.state == .checking && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
-    let view = GuardPanel(window: WindowState(), settings: settings, launch: launch, alerts: PartyAlerts(), source: source).content(source.snapshot, source.link, source.rate)
+    let window = WindowState()
+    // GUARD_RENDER_OPEN shows the More rows opened.
+    if ProcessInfo.processInfo.environment["GUARD_RENDER_OPEN"] != nil {
+        window.sessionOpen = true; window.partyOpen = true; window.diagnosticsOpen = true
+    }
+    let view = GuardPanel(window: window, settings: settings, launch: launch, alerts: PartyAlerts(), source: source).content(source.snapshot, source.link, source.rate)
         .padding(16).frame(width: 460, alignment: .top)
-        .background(Color(red: 0.07, green: 0.08, blue: 0.10))
+        .background(Color(white: 0.12))
         .environment(\.colorScheme, .dark)
-    let renderer = ImageRenderer(content: view); renderer.scale = 2
-    guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-          let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { exit(1) }
-    try! png.write(to: URL(fileURLWithPath: path)); exit(0)
+    writePNG(view, to: path)
 }
 #endif
 
@@ -987,7 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit Exalt Client Mac", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; NSApp.mainMenu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 1000), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 760), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         #if GUARD_SYNC_CAPTURE
         window.title = "Exalt Client Mac — Sync observation"
         #else
@@ -1090,13 +1105,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }
-    /// Clicking a party call banner switches to the game.
+    /// Clicking a guard banner switches to the game, if one is running.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         if let pid = source.snapshot?.pid, source.link.isLive { GameFocus.bringForward(pid: pid) }
         completionHandler()
     }
-    /// Show party call banners even while this app is in front.
+    /// Show guard banners even while this app is in front.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .list])
