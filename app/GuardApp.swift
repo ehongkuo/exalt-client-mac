@@ -1066,7 +1066,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             guard let self, let panel = self.joinPopup else { return }
             if call == nil { panel.orderOut(nil); return }
             if let screen = NSScreen.main {
-                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: screen.visibleFrame.maxY - 12))
+                // In full screen the visible frame reaches into the camera notch; stay below both.
+                let top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
+                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top - 12))
             }
             panel.orderFrontRegardless()
         }
