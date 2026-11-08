@@ -53,7 +53,7 @@ def live_dump(path):
  return state
 
 class GuardTests(unittest.TestCase):
- def run_fixture(self, config=None, *defines, during=None, data_dir=False, refusal=None, build_changed=False, guard_defines=()):
+ def run_fixture(self, config=None, *defines, during=None, data_dir=False, refusal=None, build_changed=False, guard_defines=(), stale_log=False):
   with tempfile.TemporaryDirectory(prefix='exalt-guard-') as folder:
    p=Path(folder)
    # data_dir: the app's way, no compiled-in folder; EXALT_GUARD_DIR names the data folder.
@@ -69,7 +69,13 @@ class GuardTests(unittest.TestCase):
    if config is not None:env['EXALT_GUARD']=config
    env.pop('EXALT_GUARD_DIR',None)
    if data_dir:(p/'data').mkdir();env['EXALT_GUARD_DIR']=str(p/'data')
-   game=subprocess.Popen([str(p/'RotMGExalt')],env=env,stdout=subprocess.PIPE,text=True)
+   launch=[str(p/'RotMGExalt')]
+   if stale_log:
+    # An older session's log under this process ID. sh keeps its pid through exec; SIP strips
+    # DYLD_ variables from /bin/sh, so the script sets it again for the game.
+    env['STALE_GUARD']=env.pop('DYLD_INSERT_LIBRARIES')
+    launch=['/bin/sh','-c','printf old >"$1/guard-$$.tsv"; DYLD_INSERT_LIBRARIES=$STALE_GUARD exec "$2"','sh',str(logdir),launch[0]]
+   game=subprocess.Popen(launch,env=env,stdout=subprocess.PIPE,text=True)
    if during:
     # Time the action from the guard's start (its live file), not from process launch,
     # which can lag on a loaded machine and collapse the test's intended spacing.
@@ -80,14 +86,14 @@ class GuardTests(unittest.TestCase):
    if refusal is not None:
     # A failed check ends the game: the refusal and its reason reach the app, nothing else runs.
     self.assertEqual(game.returncode,78)
-    log=next(logdir.glob('guard-*.tsv')).read_text()
+    log=(logdir/f'guard-{game.pid}.tsv').read_text()
     self.assertIn('status\trefused',log)
     self.assertNotIn('status\tcomplete',log)
     self.live=live_dump(logdir/'guard-live.bin')
     self.assertEqual(self.live['refusal'],str(refusal))
     return log,self.live['refusal_detail']
    self.assertEqual(game.returncode,0)
-   log=next(logdir.glob('guard-*.tsv')).read_text()
+   log=(logdir/f'guard-{game.pid}.tsv').read_text()
    self.assertIn('status\tcomplete',log)
    latency=[line for line in log.splitlines() if line.startswith('guard_latency\t')]
    self.assertTrue(latency, 'bounded latency summary emitted at shutdown')
@@ -97,6 +103,7 @@ class GuardTests(unittest.TestCase):
    calls=dict(kv.split('=') for kv in out.split())
    rows=[l.split('\t') for l in log.splitlines() if l.startswith('timing\t')]
    self.live=live_dump(logdir/'guard-live.bin')
+   if stale_log:self.previous=(logdir/f'guard-{game.pid}-previous.tsv').read_text()
    # Join results are checked on their own, so the exact potion/Nexus comparisons stay as they were.
    self.join={'calls':int(calls.pop('join_calls')),'cooldown':int(calls.pop('join_cooldown_arg')),'name':calls.pop('join_name')}
    return log,rows,{k:int(v) for k,v in calls.items()}
@@ -150,6 +157,11 @@ class GuardTests(unittest.TestCase):
   log,rows,calls=self.run_fixture('armed=1','NO_MAP')
   self.assertIn('guard_map_unknown',log)
   self.assertEqual(calls['nexus_calls'],0)
+ def test_older_log_with_the_same_pid_is_kept_aside(self):
+  # Process IDs wrap: an old guard-<pid>.tsv used to end the game before it started.
+  log,rows,calls=self.run_fixture('armed=1',stale_log=True)
+  self.assertIn('status\tcomplete',log)
+  self.assertEqual(self.previous,'old')
  def test_all_quickslots_empty_never_acts(self):
   log,rows,calls=self.run_fixture('armed=1','ALL_EMPTY')
   self.assertEqual(calls['potion_calls'],0);self.assertEqual(calls['nexus_calls'],0)

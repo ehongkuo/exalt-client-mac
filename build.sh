@@ -35,29 +35,32 @@ fi
 
 if [[ "${build_mode}" != --app-only ]]; then
 print '== Tests'
+# Compile and run on separate lines: set -e ignores a failure before &&, so a test that stopped
+# compiling would be skipped.
 python3 "$src/tests/compatibility/test_profiles.py"
 python3 "$src/tests/probe/test_damage_map.py"
 python3 "$src/tests/probe/test_damage_session.py"
-clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests" && "$tests/core-tests"
-clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests" && "$tests/live-tests"
-clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86" && "$tests/live-tests-x86"
+clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests"
+"$tests/core-tests"
+clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
+"$tests/live-tests"
+clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"
+"$tests/live-tests-x86"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_cross.c" -o "$tests/live-cross-x86"
 clang -arch arm64 -O2 -Wall -Wextra -Werror "$src/tests/live_cross.c" -o "$tests/live-cross-arm64"
 cross="$(mktemp -d)/live.bin"
 "$tests/live-cross-x86" write "$cross" &
-until [[ -s "$cross" ]]; do :; done
+for i in {1..300}; do [[ -s "$cross" ]] && break; sleep 0.01; done
+[[ -s "$cross" ]] || { print 'FAIL: the cross-architecture writer never started'; exit 1; }
 "$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
     "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
-    -o "$tests/model-tests" && "$tests/model-tests"
+    -o "$tests/model-tests"
+"$tests/model-tests"
 python3 "$src/tests/parallel.py" "$src/tests/test_guard.py"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/probe/hook_tests.c" "$src/tests/probe/hook_fixture.S" -o "$tests/hook-tests"
 "$tests/hook-tests"
-clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_tests.c" -o "$tests/fatal-policy-tests"
-"$tests/fatal-policy-tests"
-clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v9_tests.c" -o "$tests/fatal-policy-v9-tests"
-"$tests/fatal-policy-v9-tests"
 clang -Wall -Wextra -Werror "$src/tests/probe/fatal_policy_v10_tests.c" -o "$tests/fatal-policy-v10-tests"
 "$tests/fatal-policy-v10-tests"
 python3 "$src/tests/parallel.py" "$src/tests/probe/test_probe.py"

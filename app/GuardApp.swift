@@ -863,12 +863,15 @@ struct GuardPanel {
         panel.allowedContentTypes = [.zip]
         panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try LogExport.export(data: dataURL, to: url)
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } catch {
-            let alert = NSAlert(); alert.messageText = "Could not export the logs"
-            alert.informativeText = error.localizedDescription; alert.runModal()
+        // Copying and zipping tens of MB off the main thread keeps party-call checks running.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let failure: Error?
+            do { try LogExport.export(data: dataURL, to: url); failure = nil } catch { failure = error }
+            DispatchQueue.main.async {
+                guard let failure else { NSWorkspace.shared.activateFileViewerSelecting([url]); return }
+                let alert = NSAlert(); alert.messageText = "Could not export the logs"
+                alert.informativeText = failure.localizedDescription; alert.runModal()
+            }
         }
     }
     private func showLog(_ name: String) {

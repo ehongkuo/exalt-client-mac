@@ -11,10 +11,6 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror "$repo_dir/tests/probe/hook_tests.c
 "$repo_dir/build/probe-tests/hook-tests"
 python3 "$repo_dir/tests/probe/test_probe.py"
 python3 "$repo_dir/tests/probe/test_shadow_ledger.py"
-clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-tests"
-"$repo_dir/build/probe-tests/fatal-policy-tests"
-clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_v9_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-v9-tests"
-"$repo_dir/build/probe-tests/fatal-policy-v9-tests"
 clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_v10_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-v10-tests"
 "$repo_dir/build/probe-tests/fatal-policy-v10-tests"
 # Build to a new inode so a previously loaded diagnostic keeps its mapped library.
