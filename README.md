@@ -187,6 +187,6 @@ The automated tests use a simulated game/runtime and do not act on the real game
 | `docs/` | Architecture notes, intervention notes, and screenshots. |
 | `build/`, `module-cache/` | Generated binaries and compiler caches, excluded from Git. |
 
-Settings and session logs live in `~/Library/Application Support/Exalt Client Mac/`. **Export logs…** under **More › Diagnostics and logs** bundles the session logs and saved settings into a zip.
+Settings and session logs live in `~/Library/Application Support/Exalt Client Mac/`. Session logs and diagnostic recordings are deleted when the app starts if they haven't been written to for 14 days. **Export logs…** under **More › Diagnostics and logs** bundles the session logs and saved settings into a zip.
 
 🤖 Generated with Codex

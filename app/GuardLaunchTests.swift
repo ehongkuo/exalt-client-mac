@@ -92,6 +92,17 @@ enum LaunchTests {
         check(entries.contains("export/guard-settings.conf"), "settings in zip")
         check(!entries.contains { $0.hasSuffix("guard-live.bin") }, "live file left out")
         check(LogExport.defaultName(date: Date(timeIntervalSince1970: 0)).hasPrefix("Exalt Client Mac logs 19"), "default name")
+        // Cleanup: logs and recordings older than the limit go; recent logs, the live file and settings stay.
+        let old = Date().addingTimeInterval(-(LogCleanup.keepDays + 1) * 86400)
+        try! Data().write(to: exportLogs.appendingPathComponent("hit-flight-3.bin"))
+        try! Data().write(to: exportLogs.appendingPathComponent("notes.txt"))
+        for name in ["guard-1.tsv", "hit-flight-3.bin", "guard-live.bin", "notes.txt"] {
+            try! FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: exportLogs.appendingPathComponent(name).path)
+        }
+        check(LogCleanup.removeOld(data: exportData) == 2, "old log and recording removed")
+        let left = Set((try? FileManager.default.contentsOfDirectory(atPath: exportLogs.path)) ?? [])
+        check(left == ["guard-2.tsv", "guard-live.bin", "notes.txt"], "recent log, live file and other files kept \(left)")
+        check(FileManager.default.fileExists(atPath: GuardPaths.settingsFile(data: exportData).path), "settings kept")
         try? FileManager.default.removeItem(at: exportData)
         print("Guard launch and summary tests passed")
     }
