@@ -1061,7 +1061,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         joinPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         joinPopup.backgroundColor = .clear; joinPopup.isOpaque = false; joinPopup.hasShadow = true
         joinPopup.hidesOnDeactivate = false
-        joinPopup.contentView = NSHostingView(rootView: JoinPopupView(alerts: alerts, source: source))
+        let popupHost = NSHostingView(rootView: JoinPopupView(alerts: alerts, source: source))
+        // Fixed size: otherwise the empty view shrinks the panel to zero and the next popup grows upward off screen.
+        popupHost.sizingOptions = []
+        joinPopup.contentView = popupHost
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
             guard let self, let panel = self.joinPopup else { return }
             if call == nil { panel.orderOut(nil); return }
