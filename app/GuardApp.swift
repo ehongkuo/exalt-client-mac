@@ -18,26 +18,45 @@ private let liveURL = GuardPaths.liveFile(data: dataURL)
 private let settingsURL = GuardPaths.settingsFile(data: dataURL)
 #endif
 
-/// Shares feed reads between the visual refresh and alert timer. Not observable: the TimelineView drives redraws.
-final class LiveSource {
+/// Shares feed reads between the windows and the alert timer. Publishes only when something the
+/// windows show changes: redrawing the whole panel on every guard tick cost about a third of a core.
+final class LiveSource: ObservableObject {
     let feed = LiveFeed(url: liveURL)
     private var meter = RateMeter()
-    private var lastRefreshNs: UInt64 = 0
+    private var shown: Shown?
     private(set) var snapshot: GuardSnapshot?
     private(set) var link: Link = .offline("Waiting for the guard")
     private(set) var rate: Double?
 
-    func refresh(force: Bool = false) {
-        let now = Clock.monotonicNs()
-        // Coalesce nearby UI/timer reads; alerts always get a fresh read.
-        if !force && lastRefreshNs != 0 && now - lastRefreshNs < 16_000_000 { return }
-        lastRefreshNs = now
+    /// `detailed`: the diagnostics are open, so timing fields and the data age are on screen too.
+    func refresh(detailed: Bool = false) {
         if let fresh = feed.read() {
             snapshot = fresh
             rate = meter.add(ns: fresh.sampleNs, ticks: fresh.ticks)
         }
         let alive = snapshot.map { guard_process_alive($0.pid) != 0 } ?? false
         link = Link.evaluate(snapshot, nowNs: Clock.monotonicNs(), processAlive: alive)
+        let next = Shown(snapshot, link, rate, detailed: detailed)
+        if next != shown { shown = next; objectWillChange.send() }
+    }
+
+    /// The part of the feed the windows draw. Session and party times count in whole seconds.
+    private struct Shown: Equatable {
+        var snapshot: GuardSnapshot?, link: String, rate: Int?, second: Int
+        init(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?, detailed: Bool) {
+            snapshot = s; second = Int(Date().timeIntervalSince1970)
+            switch link {
+            case .live(let age): self.link = detailed ? Format.age(age) : "live"
+            case .stale(let age): self.link = "stale " + Format.age(age)
+            case .offline(let why): self.link = why
+            }
+            self.rate = detailed ? rate.map { Int($0) } : nil
+            if !detailed {  // change every tick but are only shown in the diagnostics
+                snapshot?.sampleNs = 0; snapshot?.sampleEpoch = 0; snapshot?.ticks = 0
+                snapshot?.lastGapUs = 0; snapshot?.maxGapUs = 0; snapshot?.workNs = 0
+            }
+            snapshot?.events = []; snapshot?.eventCount = 0
+        }
     }
 }
 
@@ -372,21 +391,18 @@ struct HPBar: View {
 }
 
 struct GuardView: View {
-    let source: LiveSource
+    @ObservedObject var source: LiveSource
     @ObservedObject var window: WindowState
     @ObservedObject var settings: SettingsController
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
-            let _ = source.refresh()
-            #if !GUARD_SYNC_CAPTURE
-            let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
-            #endif
-            MainLayout {
-                GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, source: source).content(source.snapshot, source.link, source.rate)
-            }
+        #if !GUARD_SYNC_CAPTURE
+        let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
+        #endif
+        MainLayout {
+            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, source: source).content(source.snapshot, source.link, source.rate)
         }
         .frame(minWidth: 420, minHeight: 360)
         .preferredColorScheme(.dark)
@@ -863,15 +879,12 @@ struct GuardPanel {
 
 /// Small always-on-top strip: HP, potions and guard state. Never takes focus from the game.
 struct CompactView: View {
-    let source: LiveSource
+    @ObservedObject var source: LiveSource
     @ObservedObject var alerts: PartyAlerts
     var expand: () -> Void
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
-            let _ = source.refresh()
-            CompactContent(snapshot: source.snapshot, link: source.link, expand: expand, call: alerts.popup)
-        }
+        CompactContent(snapshot: source.snapshot, link: source.link, expand: expand, call: alerts.popup)
     }
 }
 
@@ -1007,16 +1020,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var alertTimer: Timer?
     private var activity: NSObjectProtocol?
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Party calls are checked 10 times a second whatever the windows are doing. Without the
+        // The feed is read and party calls are checked 10 times a second, also while a slider or the
+        // window is being dragged; the windows redraw only when what they show changes. Without the
         // activity, App Nap slows timers while the game is in front.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.source.refresh(force: true)
+            self.source.refresh(detailed: self.state.diagnosticsOpen)
             #if !GUARD_SYNC_CAPTURE
             self.alerts.check(self.source)
             #endif
         }
+        RunLoop.main.add(alertTimer!, forMode: .common)
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
