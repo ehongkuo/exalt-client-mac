@@ -19,7 +19,7 @@ def build_defines(folder):
  return [f'-DGUARD_BUILD_FILE="{folder}/GameAssembly.dylib"',f'-DGUARD_BUILD_SHA256="{digest}"']
 
 class ClientInterventionTests(unittest.TestCase):
- def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False,link=(),refusal=None):
+ def run_client(self,settings,denied=False,exception=False,reconcile=False,toggle=False,boundary=None,mixed=False,hp_cross=False,environment=None,no_context=False,false_positive=False,map_gap=False,link=(),refusal=None):
   with tempfile.TemporaryDirectory(prefix='exalt-client-fatal-') as folder:
    p=Path(folder)
    subprocess.run(['clang',*(['-DHIT_PROBE_NO_CONTEXT_TEST'] if no_context else []),*(['-DHIT_PROBE_MIXED_TEST'] if mixed else []),*([f'-DHIT_PROBE_BOUNDARY_TEST={boundary}'] if boundary else []),'-arch','x86_64','-O2','-Wall','-Wextra','-Werror','-dynamiclib',
@@ -29,6 +29,7 @@ class ClientInterventionTests(unittest.TestCase):
     '-DFATAL_BURST','-DBAD_DAMAGE_ARGUMENT',str(ROOT/'tests/probe/integration_fixture.c'),
     str(ROOT/'tests/probe/hook_fixture.S'),'-o',str(p/'RotMGExalt')]
    if false_positive:args.append('-DFATAL_FALSE_POSITIVE')
+   if map_gap:args.append('-DMAP_GAP')
    args+=list(link)
    if environment:args.append(f'-DFATAL_ENVIRONMENT={environment}')
    if environment in (10,11) and ('armed=0' in settings or 'death=0' in settings):args.append('-DLOCAL_HP_PASS')
@@ -273,6 +274,12 @@ class ClientInterventionTests(unittest.TestCase):
   self.assertIn('guard_death_nexus',self.log)
   self.assertEqual(sum(e['phase']==23 for e in self.events),3)
   self.assertTrue(any(e['phase']==25 and e['flag0']==1 for e in self.events))
+ def test_map_read_gap_does_not_disable_nexus_on_death(self):
+  # A brief loss of the map info on the beach must not turn protection off for the rest of the game.
+  self.run_client('armed=1,potion=50,ceiling=80,nexus=25,death=1',map_gap=True)
+  self.assertIn('guard_map_unknown\tno_map_info',self.log)
+  self.assertIn('nexus_calls=1',self.output)
+  self.assertEqual(self.live['nexus_sent'],'1')
  def test_unarmed_toggle_only_records_dry_decision(self):
   self.run_client('armed=0,potion=0,nexus=100,death=1',denied=True)
   self.assertIn('nexus_calls=0',self.output)

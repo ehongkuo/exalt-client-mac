@@ -377,17 +377,17 @@ static void read_text(void *string, char *out, size_t size) {
     out[n] = 0;
 }
 static void map_unknown(const char *why) {
-    in_nexus = 0;
+    in_nexus = 0; last_map_name = NULL;   /* the next good read recomputes in_nexus */
     if (!map_unknown_logged) { map_unknown_logged = 1; note("guard_map_unknown\t%s\n", why); }
 }
 /* Updates in_nexus. If the map can't be read, assumes it is not the Nexus (the guard keeps
- * protecting) and logs that once. */
+ * protecting) and logs each loss once. */
 static void update_map(uint64_t now) {
     if (!map_ok) { map_unknown("fields_missing"); return; }
     void *quests = realm_quests_handle ? il2cpp_gchandle_get_target(realm_quests_handle) : NULL;
     if (!quests || il2cpp_object_get_class(quests) != realm_quests_class || !native_alive(quests)) {
         release(&realm_quests_handle);
-        if (now < next_map_lookup) { in_nexus = 0; return; }
+        if (now < next_map_lookup) { in_nexus = 0; last_map_name = NULL; return; }
         next_map_lookup = now + 500 * NSEC_PER_MSEC;
         quests = find_object(realm_quests_class);
         if (!quests || il2cpp_object_get_class(quests) != realm_quests_class || !native_alive(quests)) {
@@ -399,7 +399,7 @@ static void update_map(uint64_t now) {
     void *name = info ? read_reference(info, map_name_field) : NULL;
     if (!info || !name) { map_unknown("no_map_info"); return; }
     if (info == last_map_info && name == last_map_name) return;
-    last_map_info = info; last_map_name = name;
+    last_map_info = info; last_map_name = name; map_unknown_logged = 0;   /* a read failure is never permanent */
     char text[64], display[64];
     read_text(name, text, sizeof text);
     read_text(read_reference(info, map_display_field), display, sizeof display);
