@@ -229,12 +229,15 @@ enum JoinStatus: Equatable {
 }
 
 /// When the Join popup for a call goes away: once you are in a dungeon, a few seconds after a
-/// join went through, or after `timeout` with no answer.
+/// join went through, or after `timeout` with no answer. A Test alert popup ignores the game,
+/// so it also works with the game closed or in a dungeon, and goes after `testTimeout`.
 enum JoinPopupRules {
     static let timeout = 90.0
+    static let testTimeout = 8.0
     static let afterJoin = 4.0
     static func shouldClose(shownAt: Double, now: Double, snapshot: GuardSnapshot?, live: Bool,
-                            status: JoinStatus, statusSince: Double) -> Bool {
+                            status: JoinStatus, statusSince: Double, test: Bool = false) -> Bool {
+        if test { return now - shownAt >= testTimeout }
         if now - shownAt >= timeout || !live { return true }
         if let s = snapshot, !WaitingMaps.contains(s) { return true }
         return status == .sent && now - statusSince >= afterJoin

@@ -150,6 +150,9 @@ private func sample() -> LiveData {
         check(!JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: inHub, live: true, status: .sent, statusSince: 3), "shows Join sent briefly")
         check(JoinPopupRules.shouldClose(shownAt: 0, now: 8, snapshot: inHub, live: true, status: .sent, statusSince: 3), "then closes")
         check(!JoinPopupRules.shouldClose(shownAt: 0, now: 30, snapshot: inHub, live: true, status: .failed("x"), statusSince: 3), "an error stays visible")
+        check(!JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: nil, live: false, status: .idle, statusSince: 0, test: true), "a test stays with the game closed")
+        check(!JoinPopupRules.shouldClose(shownAt: 0, now: 5, snapshot: dungeon, live: true, status: .idle, statusSince: 0, test: true), "a test stays in a dungeon")
+        check(JoinPopupRules.shouldClose(shownAt: 0, now: 8, snapshot: inHub, live: true, status: .idle, statusSince: 0, test: true), "a test goes after 8 s")
 
         // Outcome text.
         let texts = [0: "dry run", 1: "sent", -1: "game error, disarmed", -2: "target unavailable", -3: "no potions"]
