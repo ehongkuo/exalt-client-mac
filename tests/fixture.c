@@ -215,7 +215,11 @@ void il2cpp_field_get_value(void *o,void *f,void *v) {
  case 14:*(float*)v=1000;return;
  case 15:assert(o==(void*)60);*(void**)v=&quick_array;return;
  case 16:assert((uintptr_t)o>=90&&(uintptr_t)o<=92);*(int*)v=stacks[(uintptr_t)o-90];return;
- case 17:assert(o==(void*)100);*(void**)v=in_nexus_map(t)?(void*)111:(void*)110;return;
+ case 17:assert(o==(void*)100);
+#ifdef MAP_GAP
+  if(t>=0.6&&t<0.7){*(void**)v=NULL;return;}   /* map info missing briefly before the 0.9 s burst */
+#endif
+  *(void**)v=in_nexus_map(t)?(void*)111:(void*)110;return;
  case 18:*(void**)v=o==(void*)111?&nexus:&beach;return;
  case 19:*(void**)v=o==(void*)111?&nexus_display:&beach_display;return;
  case 20:assert((uintptr_t)o>=90&&(uintptr_t)o<=92);*(uint8_t*)v=0;return;   /* never set in the real game */

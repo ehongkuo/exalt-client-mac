@@ -35,3 +35,26 @@ enum LogExport {
         return sessions.count
     }
 }
+
+/// Deletes session logs and diagnostic recordings not written to for `keepDays`, so one-off
+/// sessions don't pile up. A running game's log is written every second, so it is never old.
+enum LogCleanup {
+    static let keepDays = 14.0
+
+    /// Returns the number of files removed. The live file is never touched.
+    @discardableResult
+    static func removeOld(data: URL, now: Date = Date(), keepDays: Double = keepDays) -> Int {
+        let fm = FileManager.default
+        let logs = GuardPaths.logs(data: data)
+        let cutoff = now.addingTimeInterval(-keepDays * 86400)
+        var removed = 0
+        for name in (try? fm.contentsOfDirectory(atPath: logs.path)) ?? []
+        where (name.hasPrefix("guard-") && name.hasSuffix(".tsv")) || (name.hasPrefix("hit-flight-") && name.hasSuffix(".bin")) {
+            let url = logs.appendingPathComponent(name)
+            guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
+                  modified < cutoff, (try? fm.removeItem(at: url)) != nil else { continue }
+            removed += 1
+        }
+        return removed
+    }
+}
