@@ -302,7 +302,13 @@ static void burst(void *unused) {
  puts("healing_and_fresh_updates_retire_old_burst=1");
 #elif FATAL_ENVIRONMENT==25
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
- for(int i=0;i<10;++i){usleep(200000);update_fixture((void*)70,(void*)33,(void*)0x5678);}
+ /* Absolute deadlines: per-sleep overshoot under load must not push the burst past the 4 s stop,
+  * which would exit before the guard's main-queue tick sees the Nexus. */
+ double ticks_start=elapsed();
+ for(int i=1;i<=10;++i){
+  double wait=ticks_start+0.2*i-elapsed();if(wait>0)usleep((useconds_t)(wait*1e6));
+  update_fixture((void*)70,(void*)33,(void*)0x5678);
+ }
  assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
  assert(!nexus_invocations && assigned_hp==200);
  puts("omitted_hp_ticks_keep_heartbeat_without_retiring_damage=1");
