@@ -73,6 +73,10 @@ Items 1–3 are implemented:
   `request_without_death` or `quiet`, with minimum projected HP and rebase counts. Compare a
   candidate with `--policy probe/fatal_policy.h --policy CANDIDATE.h`. Outcomes are ground truth only
   for passive captures; only probe and sync-capture builds record the needed events.
+
+> **Update, 9 November 2026:** v8 and v9 (`probe/fatal_policy.h`, `probe/fatal_policy_v9.h`) and their
+> tests were removed once v10 shipped; the replay driver now supports v10 only. They remain in git
+> history at `51e2f40`, for example `git show 51e2f40:probe/fatal_policy.h`.
 - `probe/analyze_latency.py` reports `damage_mismatch`: server HP loss minus local damage for
   isolated reports, and non-terminal excess losses.
 

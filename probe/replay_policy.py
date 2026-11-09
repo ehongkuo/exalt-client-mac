@@ -71,7 +71,7 @@ def replay(binary, events):
     owners = [scope for scope, line in lines if line[0] in 'DHR']
     if len(owners) != len(out):
         raise ValueError('driver output out of step with inputs')
-    results = {s: dict(scope=s, hits=0, damage=0, requests=[], rebases=0, max_rebase_retired=0,
+    results = {s: dict(scope=s, hits=0, damage=0, requests=[],
                        min_projected=None, death_ns=deaths.get(s), ended=ends.get(s, 'capture_end'))
                for s in scopes}
     for scope, row in zip(owners, out):
@@ -84,8 +84,6 @@ def replay(binary, events):
                 r['min_projected'] = projected if r['min_projected'] is None else min(r['min_projected'], projected)
             if decision == 1:
                 r['requests'].append(dict(ns=int(cells[1]), reason=REASONS.get(reason, reason), projected=projected))
-        elif cells[0] == 'R' and cells[3] == '1':
-            r['rebases'] += 1;r['max_rebase_retired'] = max(r['max_rebase_retired'], int(cells[4]))
     for r in results.values():
         first = r['requests'][0]['ns'] if r['requests'] else None
         death = r['death_ns']

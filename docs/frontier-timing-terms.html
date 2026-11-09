@@ -697,7 +697,7 @@ addTerms(PTERMS, document.getElementById('terms2'));
 for (const k of Object.keys(PSCEN)) document.getElementById('ps-' + k).addEventListener('click', () => setScen(k));
 setScen('normal');
 
-// Part 3: accounting stepper. Mirrors probe/fatal_policy_v9.h: applied = heal + before - after - drain,
+// Part 3: accounting stepper. Mirrors the retired probe/fatal_policy_v9.h (git 51e2f40): applied = heal + before - after - drain,
 // cleared oldest first, residue <= REGEN only on a hit this update partly cleared, suspend on unexplained.
 const REGEN = 3;
 const aH = (t, dmg) => ({t, k: 'hit', dmg}), aU = (t, hp) => ({t, k: 'upd', hp}), aX = (t, amt) => ({t, k: 'heal', amt});

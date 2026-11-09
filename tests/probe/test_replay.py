@@ -9,7 +9,7 @@ spec = importlib.util.spec_from_file_location('replay', ROOT / 'probe/replay_pol
 replay = importlib.util.module_from_spec(spec); spec.loader.exec_module(replay)
 from analyze import FIELDS, read_events
 
-POLICY = ROOT / 'probe/fatal_policy.h'
+POLICY = ROOT / 'probe/fatal_policy_v10.h'
 
 
 class Capture:
@@ -65,30 +65,22 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(r['outcome'], 'escape_before_death')
         self.assertEqual(r['requests'][0], dict(ns=int(600e6)+1, reason='lethal', projected=-50))
 
-    def test_untracked_loss_is_a_missed_death(self):
-        # Gap B: an unhooked 100 HP loss retires the tracked hit, then the server kills.
-        c = Capture(200)
-        c.tick(0, 200);c.hit(10, 100);c.tick(200, 100);c.hit(300, 60);c.tick(400, 0)
-        r = self.scope(c)
-        self.assertEqual(r['outcome'], 'missed_death')
-        self.assertEqual(r['min_projected'], 40)
-
     def test_v10_keeps_hit_through_untracked_loss(self):
-        # Same as above: v10 clears only by proof, so the 100 HP loss can't retire the hit.
+        # Gap B: an unhooked 100 HP loss, then the server kills. v10 clears only by proof, so the
+        # loss can't retire the tracked hit (v8 did, and missed this death).
         c = Capture(200)
         c.tick(0, 200, 250);c.hit(10, 100);c.tick(200, 100, 260);c.hit(300, 60);c.tick(400, 0, 270)
-        with tempfile.TemporaryDirectory() as out:
-            r = replay.replay(replay.build_driver(ROOT / 'probe/fatal_policy_v10.h', out), read_events(c.text()))[0]
+        r = self.scope(c)
         self.assertEqual(r['outcome'], 'escape_before_death')
         self.assertEqual(r['requests'][0]['projected'], -60)
 
-    def test_quiet_rebase_and_stale_request_without_death(self):
+    def test_quiet_then_stale_request_without_death(self):
         c = Capture(500)
         for ms in range(0, 1400, 200):c.tick(ms, 500 if ms < 400 else 450)
-        c.hit(250, 60)  # 50 visible, 10 left for the quiet rebase
+        c.hit(250, 60)  # never proved: no tick carries a round-trip value
         c.rows.sort(key=lambda row: row['ns'])
         r = self.scope(c)
-        self.assertEqual((r['outcome'], r['rebases']), ('quiet', 1))
+        self.assertEqual(r['outcome'], 'quiet')
         c.hit(3500, 5)
         r = self.scope(c)
         self.assertEqual(r['outcome'], 'request_without_death')

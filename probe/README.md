@@ -44,16 +44,14 @@ requests the normal Nexus function before the fatal hit report, and suppresses t
 path only after confirming the local Nexusing flag. That flag does not establish server acceptance.
 
 ```text
-projected HP = current observed HP - audited damage since the last incoming HP assignment
+projected HP = current observed HP - audited damage not yet proved received by the server
 request Nexus when projected HP <= 0
 ```
 
-Incoming HP assignments update the baseline while retaining unresolved damage. Net decreases
-retire estimates oldest-first; increases do not acknowledge hits. Individual estimates do not expire
-on a timer during combat. Version 8 can clear remaining damage after a healthy quiet interval and a
-new HP-bearing tick, with no intervening input. The user-selected fixed 800 ms settlement allowance is a
-timing assumption, not an acknowledgement or verified maximum latency. Omitted-HP ticks only
-refresh liveness. See [policy details and limitations](../docs/nexus-on-death.md).
+Incoming HP assignments update the baseline only. Policy version 10 clears a hit only when a later
+server tick's round-trip value proves the server received the client's reply sent after that hit,
+plus a 200 ms margin; HP changes and elapsed time never clear one. See
+[policy details and limitations](../docs/nexus-on-death.md).
 A positive update rearms a failed request; an already confirmed escape remains latched.
 
 ## Trace and analysis

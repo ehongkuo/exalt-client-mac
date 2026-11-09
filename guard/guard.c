@@ -969,6 +969,13 @@ __attribute__((constructor)) static void start(void) {
     int n = snprintf(path, sizeof path, "%s/guard-%d.tsv", folder, getpid());
     if (n < 0 || (size_t)n >= sizeof path) { abandon(); return; }
     int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    if (fd < 0 && errno == EEXIST) {
+        /* Process IDs wrap every few days, so an older session can hold this name: keep it aside. */
+        char previous[PATH_MAX];
+        if (snprintf(previous, sizeof previous, "%s/guard-%d-previous.tsv", folder, getpid()) < (int)sizeof previous &&
+            !rename(path, previous))
+            fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    }
     if (fd < 0) { abandon(); return; }
     logfile = fdopen(fd, "w"); if (!logfile) { close(fd); abandon(); return; }
     int parsed = guard_parse(&config, getenv("EXALT_GUARD"));

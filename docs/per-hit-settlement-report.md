@@ -119,17 +119,17 @@ can't anticipate.
 Each step is a separate PR. Steps 1–2 are offline only and change no gameplay behavior.
 
 1. **Candidate policy (v10) with the ordering proof.** Starting from
-   [`fatal_policy.h`](../probe/fatal_policy.h):
+   [`fatal_policy.h`](https://github.com/ehongkuo/exalt-client-mac/blob/51e2f40/probe/fatal_policy.h):
    - Record the reply each hit is paired with, and clear pending hits only when an update's new
      round trip proves that reply (build time ≥ bound + c).
    - Stop debiting HP drops from pending hits, and remove the quiet rebase (`fatal_server_tick`'s
      800 ms rule).
-   - Add fixtures to [`fatal_policy_tests.c`](../tests/probe/fatal_policy_tests.c): the four cases
+   - Add fixtures to [`fatal_policy_tests.c`](https://github.com/ehongkuo/exalt-client-mac/blob/51e2f40/tests/probe/fatal_policy_tests.c): the four cases
      in [`test_proof.py`](../tests/probe/test_proof.py) (proof on the applying update, early clear
      without c, repeated round trip, reply sent before the hit), the 834 ms late hit, the
      server-reduced 93 hit, a stall with no new round trip, and the final burst from the heal
      session.
-   - [`fatal_policy_v9.h`](../probe/fatal_policy_v9.h) (accounting) is superseded and not needed.
+   - [`fatal_policy_v9.h`](https://github.com/ehongkuo/exalt-client-mac/blob/51e2f40/probe/fatal_policy_v9.h) (accounting) is superseded and not needed.
 
    **Status (6 November):** done as [`fatal_policy_v10.h`](../probe/fatal_policy_v10.h). It isn't
    active: the probe still includes v8.
