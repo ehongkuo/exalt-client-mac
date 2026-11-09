@@ -174,6 +174,12 @@ static void burst(void *unused) {
  probe_fixture((void*)70,21,4000000000u,400,7,1,9,(void*)0x5678);
 #ifdef FATAL_BURST
  hp_fixture((void*)40,200,(void*)0x5678);
+#if !defined(FATAL_ENVIRONMENT) || FATAL_ENVIRONMENT<24
+ /* A server tick starts the stale-update clock here, not at map entry, so a burst timer
+  * that fires late under load cannot turn the planned escape into a stall escape.
+  * Environments 24+ test tick timing and stalls themselves. */
+ next_stats_hp=200;update_fixture((void*)70,(void*)33,(void*)0x5678);
+#endif
 #ifdef FATAL_ENVIRONMENT
  fixture_breath=(FATAL_ENVIRONMENT==2 || FATAL_ENVIRONMENT==3 || FATAL_ENVIRONMENT==7 || FATAL_ENVIRONMENT==9)?0:-1;
  fixture_frostbite=(FATAL_ENVIRONMENT==1 || FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==8)?100:FATAL_ENVIRONMENT==4?99:FATAL_ENVIRONMENT==5?101:0;

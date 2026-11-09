@@ -48,12 +48,15 @@ class ClientInterventionTests(unittest.TestCase):
    if toggle:
     tool=p/'control'
     subprocess.run(['clang','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools/live_control.c'),'-o',str(tool)],check=True)
-    deadline=time.monotonic()+5
-    while time.monotonic()<deadline:
+    # Wait on the fixture, not a fixed time: it logs the escape or exits (4 s schedule, or an assert).
+    began=False;deadline=time.monotonic()+10
+    while not began and time.monotonic()<deadline:
+     exited=process.poll() is not None
      logs=list(p.glob('guard-*.tsv'))
-     if logs and any(e['phase']==22 and e['flag0']==1 for e in analyze.read_events(logs[0].read_text())):break
+     began=bool(logs) and any(e['phase']==22 and e['flag0']==1 for e in analyze.read_events(logs[0].read_text()))
+     if exited:break
      time.sleep(0.02)
-    else:self.fail('fixture did not begin Nexus escape')
+    if not began:process.kill();self.fail('fixture did not begin Nexus escape: '+process.communicate()[1])
     subprocess.run([str(tool),str(p/'guard-live.bin'),'1','0','0','0','0','0'],check=True)
    stdout,stderr=process.communicate(timeout=10)
    result=subprocess.CompletedProcess(process.args,process.returncode,stdout,stderr)
