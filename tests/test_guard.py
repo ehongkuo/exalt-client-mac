@@ -202,7 +202,12 @@ class GuardTests(unittest.TestCase):
   self.assertEqual((live['hp'],live['max_hp'],live['slot_count']),('100','1000','3'))
   self.assertEqual((live['slot0'],live['slot1'],live['slot2']),('0/0','1/0','5/0'))
   self.assertEqual(live['next_slot'],'1')
-  self.assertGreater(int(live['ticks']),2500)      # 1 ms checks for 3.5 s
+  # The timer is due every 1 ms for 3.5 s; how many checks ran depends on CPU time the OS gives a
+  # loaded (or background-throttled) test process, so only the schedule is checked against the clock.
+  latency=dict(f.split('=') for f in [l for l in log.splitlines() if l.startswith('guard_latency')][-1].split('\t')[1:])
+  self.assertEqual(int(live['ticks']),int(latency['checks']))
+  self.assertTrue(3450<=int(latency['scheduled'])<4000,latency['scheduled'])   # a 0.5 or 2 ms period fails
+  self.assertLessEqual(int(latency['checks']),int(latency['scheduled']))
   events=[(e[1],e[2],e[3],e[4]) for e in live['event']]
   self.assertEqual(events,[(POTION,'1','1','400')])
  def test_settings_from_app_apply_live(self):

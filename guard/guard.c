@@ -162,18 +162,19 @@ static uint64_t monotonic_ns(void) {
 }
 static LatencyStats latency;
 static uint64_t next_latency_note;
+static uint64_t scheduled;   /* 1 ms periods elapsed, whether or not the OS ran each check */
 static void latency_note(void) {
     /* Fixed-size existing note queue; the background writer performs file I/O. */
     note("guard_latency\tchecks=%llu\tvalid=%llu\tgaps_ge20ms=%llu\tgaps_ge100ms=%llu"
          "\tvalid_gaps_ge100ms=%llu\tmax_gap_us=%llu\tmax_valid_gap_us=%llu\tmax_work_us=%llu"
-         "\tstage_samples=%llu\tlookup_us=%llu\tguard_us=%llu\tservices_us=%llu\tpublication_us=%llu\n",
+         "\tstage_samples=%llu\tlookup_us=%llu\tguard_us=%llu\tservices_us=%llu\tpublication_us=%llu\tscheduled=%llu\n",
          (unsigned long long)latency.checks, (unsigned long long)latency.valid_checks,
          (unsigned long long)latency.gaps_20ms, (unsigned long long)latency.gaps_100ms,
          (unsigned long long)latency.valid_gaps_100ms, (unsigned long long)(latency.max_gap_ns / 1000),
          (unsigned long long)(latency.max_valid_gap_ns / 1000), (unsigned long long)(latency.max_work_ns / 1000),
          (unsigned long long)latency.stage_samples, (unsigned long long)(latency.lookup_ns / 1000),
          (unsigned long long)(latency.guard_ns / 1000), (unsigned long long)(latency.services_ns / 1000),
-         (unsigned long long)(latency.publication_ns / 1000));
+         (unsigned long long)(latency.publication_ns / 1000), (unsigned long long)scheduled);
 }
 static const char *safe(const char *s) { return s ? s : ""; }
 
@@ -813,6 +814,7 @@ static void refuse(int code, const char *detail) {
 static void tick(void *unused) {
     (void)unused;
     uint64_t begin = monotonic_ns();
+    scheduled += dispatch_source_get_data(timer);
     if (SESSION_NS && begin - start_ns >= SESSION_NS) { finish(); return; }
     Record r = {.sequence = ++sequence, .monotonic_ns = begin, .slot = -1,
                 .epoch = start_epoch + (double)(begin - start_ns) / 1e9,
@@ -987,7 +989,8 @@ __attribute__((constructor)) static void start(void) {
     hit_probe_open(folder);
 #endif
     live_data.session_start_epoch = start_epoch;
-    timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    /* STRICT: without it the kernel coalesces a non-foreground process's 1 ms timer to ~30 ms. */
+    timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, DISPATCH_TIMER_STRICT, dispatch_get_main_queue());
     writer_queue = dispatch_queue_create("local.exalt.guard.writer", DISPATCH_QUEUE_SERIAL);
     writer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, writer_queue);
     dispatch_source_set_event_handler_f(timer, tick);
