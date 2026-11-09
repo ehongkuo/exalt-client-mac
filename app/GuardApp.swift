@@ -479,7 +479,7 @@ struct RowDivider: View {
     var body: some View { Divider().padding(.leading, 12) }
 }
 
-/// The window's contents for one snapshot; separate from the timeline so it can be rendered offscreen.
+/// The window's contents for one snapshot.
 struct GuardPanel {
     @ObservedObject var window: WindowState
     @ObservedObject var settings: SettingsController
@@ -952,64 +952,6 @@ struct CompactContent: View {
     }
 }
 
-#if GUARD_UI_TEST
-/// Draws a view through a real offscreen window, so native switches, sliders and buttons appear
-/// (ImageRenderer leaves placeholders for them), then writes it as a PNG and exits.
-@MainActor func writePNG<V: View>(_ view: V, to path: String) -> Never {
-    _ = NSApplication.shared
-    let host = NSHostingView(rootView: view)
-    host.frame.size = host.fittingSize
-    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-    window.appearance = NSAppearance(named: .darkAqua)
-    window.contentView = host
-    host.layoutSubtreeIfNeeded()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
-    host.cacheDisplay(in: host.bounds, to: rep)
-    guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
-    do { try png.write(to: URL(fileURLWithPath: path)) } catch { exit(1) }
-    exit(0)
-}
-
-/// Test mode: render the live file's current state to a PNG and exit (no screen recording needed).
-@MainActor func renderSnapshot(to path: String) {
-    let source = LiveSource(); source.refresh()
-    let settings = SettingsController(); settings.sync(with: source.snapshot, live: source.link.isLive)
-    // GUARD_RENDER_DRAFT="armed,potion,ceiling" shows an edited (possibly invalid) draft.
-    if let edit = ProcessInfo.processInfo.environment["GUARD_RENDER_DRAFT"] {
-        let v = edit.split(separator: ",").compactMap { Int($0) }
-        if v.count == 3 { settings.draft = GuardSettings(armed: v[0] == 1, potion: v[1], ceiling: v[2]) }
-    }
-    if ProcessInfo.processInfo.environment["GUARD_RENDER_COMPACT"] != nil {
-        let calling = ProcessInfo.processInfo.environment["GUARD_RENDER_FLASH"] != nil
-        let compact = CompactContent(snapshot: source.snapshot, link: source.link, expand: {},
-                                     call: calling ? source.snapshot?.lastCall : nil)
-        writePNG(compact, to: path)
-    }
-    if ProcessInfo.processInfo.environment["GUARD_RENDER_POPUP"] != nil {
-        let popup = JoinPopupContent(call: PartyCall(caller: "Lyra", text: "j cit", epoch: 0, count: 1),
-                                     status: .idle, join: {}, dismiss: {})
-        writePNG(popup, to: path)
-    }
-    let launch = LaunchController()
-    if ProcessInfo.processInfo.environment["GUARD_RENDER_LAUNCH"] != nil {
-        launch.start()
-        let deadline = Date().addingTimeInterval(20)
-        while launch.state == .checking && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
-    }
-    let window = WindowState()
-    // GUARD_RENDER_OPEN shows the More rows opened.
-    if ProcessInfo.processInfo.environment["GUARD_RENDER_OPEN"] != nil {
-        window.sessionOpen = true; window.partyOpen = true; window.diagnosticsOpen = true
-    }
-    let view = GuardPanel(window: window, settings: settings, launch: launch, alerts: PartyAlerts(), source: source).content(source.snapshot, source.link, source.rate)
-        .padding(16).frame(width: 460, alignment: .top)
-        .background(Color(white: 0.12))
-        .environment(\.colorScheme, .dark)
-    writePNG(view, to: path)
-}
-#endif
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     var window: NSWindow!
     var compact: NSPanel!
@@ -1122,19 +1064,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 }
             }
         }
-        // Screenshot hook: scroll the full window to the bottom after N seconds (README captures).
-        if let delay = env["GUARD_SCROLL_BOTTOM"].flatMap(Double.init) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                func scrollView(in view: NSView?) -> NSScrollView? {
-                    guard let view else { return nil }
-                    if let scroll = view as? NSScrollView { return scroll }
-                    return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
-                }
-                guard let scroll = scrollView(in: self?.window.contentView), let doc = scroll.documentView else { return }
-                let y = doc.isFlipped ? max(0, doc.bounds.height - scroll.contentView.bounds.height) : 0
-                scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
-            }
-        }
+        // Screenshot hook: open every More row (tools/readme-screenshots.sh).
+        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.diagnosticsOpen = true }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -1176,9 +1107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
 
 @main struct Main {
     static func main() {
-        #if GUARD_UI_TEST
-        if let path = ProcessInfo.processInfo.environment["GUARD_RENDER_PNG"] { MainActor.assumeIsolated { renderSnapshot(to: path) } }
-        #endif
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate; app.setActivationPolicy(.regular); app.run()

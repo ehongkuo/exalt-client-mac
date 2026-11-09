@@ -1,35 +1,22 @@
 # Exalt Client Mac
 
-A local macOS companion for Realm of the Mad God Exalt. It launches the game through DECA's launcher and provides configurable health protection, party-call alerts, and a live status window.
+A local macOS companion for Realm of the Mad God Exalt. It starts the game through DECA's launcher with a small guard library loaded, then drinks potions for you, can escape to the Nexus before a hit that would kill you, and alerts you to party calls with a one-click Join.
+
+<p align="center">
+  <img src="docs/full-view.png" width="440" alt="The Exalt Client Mac window while connected: health at 48% with potions being drunk, the Protection group set to Armed with Nexus on death ready, and the More section">
+</p>
 
 ## Features
 
 | Feature | Behavior |
 | --- | --- |
-| **Nexus on death** | Predicts lethal audited projectile, ground and radius/AOE damage and requests Nexus before reporting the fatal hit. Once the game confirms the local Nexus state, the fatal and subsequent projectile reports are withheld during escape. Optional and off by default. |
-| **Auto-potion** | Starts drinking at the potion trigger and continues until HP exceeds the ceiling. Uses quickslots in order and waits for healing before drinking again. |
-| **Party-call alerts and Join** | Alerts when another party member calls “j” or “join” while you are in a waiting area. Offers a one-click Join button in a popup over the game, also in full screen; the compact strip names the caller. |
-| **Live display** | Shows connection, map, HP, potions, protection status, session totals, and timing measurements. Switch between the full window and an always-on-top compact strip. |
-| **Saved settings and logs** | Apply settings while the game runs, retain them for future launches, and export session logs with your settings. |
+| **Nexus on death** | Predicts lethal audited projectile, ground and radius/AOE damage and requests Nexus before the fatal hit is reported. Once the game confirms the local Nexus state, the fatal and later projectile reports are withheld during the escape. Optional and off by default. |
+| **Auto-potion** | Starts drinking at the potion trigger and keeps going until HP is over the ceiling. Uses quickslots in order and waits for each heal to show before drinking again. |
+| **Party calls and Join** | Alerts when another party member calls "j" or "join" while you wait in the Nexus, Vault, Realm, Guild Hall, Pet Yard or Daily Quest Room. A popup over the game, also in full screen, joins their dungeon in one click. |
+| **Live window** | Shows connection, map, HP, potions, protection status, session totals and timing. Shrinks to an always-on-top strip. |
+| **Saved settings and logs** | Apply settings while the game runs; they are kept for the next launch. Export session logs with your settings. |
 
-**Armed** enables automatic health actions. **Dry Run** records predicted actions without drinking, automatically requesting Nexus, or suppressing damage. Party alerts and the user-clicked Join button remain available.
-
-<p>
-  <img src="docs/join-popup.png" width="380" alt="Party-call popup with a Join button">
-  &nbsp;
-  <img src="docs/compact-strip.png" width="340" alt="Compact strip showing mode, health, and potions">
-</p>
-
-<details>
-<summary>Full window</summary>
-<p>
-  <img src="docs/full-view.png" width="360" alt="Full window with connection status, health, and the Protection and More sections">
-  &nbsp;
-  <img src="docs/full-view-scrolled.png" width="360" alt="The More section opened: session totals, party call settings, and timing measurements">
-</p>
-</details>
-
-These screenshots use synthetic test data.
+**Armed** drinks and Nexuses for you. **Dry run** only records what it would do: no potions, no automatic Nexus, no withheld damage. Party alerts and Join work in both.
 
 ## Build and install
 
@@ -54,36 +41,73 @@ The installed app contains its integration library and supported-game fingerprin
 
 ## Start the game
 
-1. Open **Exalt Client Mac** from `~/Applications` or Launchpad.
-2. Choose your settings and click **Apply**. A fresh installation starts in Dry Run, with Nexus on death off.
-3. Click **Start game**, then **Play** in DECA's launcher.
-4. For Nexus on death, enter Nexus and wait until **Nexus on death** reads **Ready** before leaving.
+<img src="docs/start-view.png" width="380" align="right" alt="The window before the game starts: Game not running, a Start game button, and the Protection settings in Dry run">
+
+1. Open **Exalt Client Mac** from `~/Applications` or Launchpad. It shows **Game not running** and a **Start game** button.
+2. Choose your settings and click **Apply**. A fresh installation starts in **Dry run**, with Nexus on death off.
+3. Click **Start game** (⌘R), then **Play** in DECA's launcher. The window goes live when the game loads.
+4. For Nexus on death, enter the Nexus and wait until **Nexus on death** reads **Ready** before leaving.
 5. Use **Test alert** under **More › Party calls** to check the popup and sound.
+
+<br clear="right">
 
 Always start the game through Exalt Client Mac to load its integration. An already-running game keeps the library it loaded at launch; restart it through the app after installing a new version.
 
-The launcher checks the installed game's fingerprint before starting. DECA's launcher can update the game after that, so the guard checks the fingerprint again when the game loads. A game update requires checking and updating the integration for that build.
+The app checks the installed game's fingerprint before starting. DECA's launcher can update the game after that, so the guard checks the fingerprint again when the game loads. A game update requires checking and updating the integration for that build.
 
 The guard does not let a game run unprotected. If the fingerprint, a method, a field, the chat or join code, or (with Nexus on death on) the death hooks fail their checks, or the game never becomes ready within 2 minutes, the guard closes the game. The app then shows **Game closed: guard checks failed** with the reason, plays a sound and posts a notification, whatever the party alert settings say. A game running without the guard for 20 seconds, for example one started straight from DECA's launcher, gets the same warning.
 
+## The window
+
+From top to bottom:
+
+- **Status line:** connection and map, for example **Connected · Realm of the Mad God**. The pin keeps the window on top (on by default, remembered); the arrows switch to the compact strip.
+- **Health:** current and maximum HP with a bar. The two marks on the bar are the potion trigger and the ceiling. The bar is green, orange at or below the trigger, and red during a Nexus escape. The line under it shows the potions left and the next slot, or what the guard is doing: **Drinking until over 80%**, **Escaping to Nexus**, **Out of potions**.
+- **Protection:** **Mode**, **Nexus on death** with its status, and the two potion sliders. The line under the group says where your edits stand: **Matches the running guard**, **Edited, not applied**, **Applied to the running guard**, or, with no game running, **Apply saves for the next launch**. **Revert** drops your edits.
+- **More:** three rows that open in place.
+  - **This session** (or **Last session** after the game closes): play time, potions and Nexus escapes used (or, in Dry run, that would have been used), and the lowest HP outside the Nexus. **Show log** reveals the session log in Finder.
+  - **Party calls:** turn alerts and the sound on or off, and **Test alert**.
+  - **Diagnostics and logs:** checks per second, timing gaps, check work, data age, and **Export logs…**.
+
+<details>
+<summary>The window with every More row open</summary>
+<p align="center">
+  <img src="docs/full-view-more.png" width="440" alt="The More section opened: session totals, party call settings, and timing measurements with Export logs">
+</p>
+</details>
+
+### Compact strip and Join popup
+
+<p>
+  <img src="docs/compact-strip.png" width="340" alt="Compact strip showing Armed, health 160 of 235 at 68%, and 5 potions">
+  &nbsp;
+  <img src="docs/join-popup.png" width="380" alt="Join popup for a party call from Lyra with a Join button">
+</p>
+
+The **compact strip** floats above the game with the mode, HP and potions; its arrows bring the full window back. When a party call arrives it names the caller with a blue outline.
+
+The **Join popup** appears at the top of the screen, over the game and over full-screen video. **Join** runs the game's own **Join dungeon** and brings the game to the front. The popup closes once you are in a dungeon, 4 seconds after a join goes through, or after 90 seconds. Calls in a dungeon don't alert, and a burst of calls alerts once every 5 seconds.
+
+These screenshots use synthetic test data. `tools/readme-screenshots.sh` regenerates them.
+
 ## Configure health protection
 
-The defaults are a 50% potion trigger and an 80% potion ceiling, with Nexus on death off. Saved potion and death-toggle settings retain your values. Legacy percentage Nexus values are discarded when settings are loaded or sent to the guard.
+The defaults are a 50% potion trigger and an 80% potion ceiling, with Nexus on death off. Saved potion and death-toggle settings keep your values. Legacy percentage Nexus values are discarded when settings are loaded or sent to the guard.
 
 - **Drink potions at** (potion trigger): start drinking at or below this percentage. Off disables automatic potions.
 - **Keep drinking to** (ceiling): continue drinking until HP is above this percentage. Off stops drinking above the trigger. If the trigger is Off, this must also be Off.
-- **Nexus on death:** enable predicted lethal-damage intervention, the only automatic Nexus mode. It acts only in Armed mode with prepared hooks; Dry Run logs what it would do.
+- **Nexus on death:** escape before predicted lethal damage, the only automatic Nexus. It acts only in Armed mode once its hooks are ready; Dry run logs what it would do. Its status reads **Ready**, **Watching only (dry run)**, **Enter Nexus to prepare**, **Escaping to Nexus**, or **Unavailable for this game build**.
 
 To use **only Nexus on death**:
 
 1. Set **Mode** to **Armed** first.
 2. Set **Drink potions at** and **Keep drinking to** to **Off** by moving both sliders fully left.
 3. Turn on **Nexus on death** and click **Apply**.
-4. Wait in Nexus for the readiness message.
+4. Wait in the Nexus until it reads **Ready**.
 
-**Mode** applies immediately. Set it before editing other controls: while connected, switching it can replace pending edits with the current running settings. Other edits take effect when you click Apply.
+**Mode** applies immediately. Set it before editing other controls: while connected, switching it can replace pending edits with the current running settings. Other edits take effect when you click **Apply**.
 
-Nexus on death can also run alongside potions. Once a predicted-death escape starts, further health actions pause and damage suppression stays latched until Nexus arrival or a validated player/map/connection change. Turning the toggle or Armed off does not cancel that escape in progress.
+Nexus on death can also run alongside potions. Once a predicted-death escape starts, further health actions pause and damage suppression stays latched until Nexus arrival or a validated player/map/connection change. Turning the toggle or Armed off does not cancel an escape in progress.
 
 ## How it works
 
@@ -182,8 +206,8 @@ The automated tests use a simulated game/runtime and do not act on the real game
 | `guard/` | IL2CPP bindings, potion decisions, potions, Nexus, party chat/Join, shared-state protocol, logging, and game fingerprint. |
 | `probe/` | Shared production damage hooks and prediction policy, plus standalone diagnostic tools. Its production headers are required by the app build. |
 | `tests/` | Synthetic game fixtures, guard/integration tests, native-hook regressions, shared-memory checks, and UI fixtures. |
-| `tools/` | Command-line utilities for reading live state and sending settings or Join requests. |
-| `docs/` | Architecture notes, intervention notes, and screenshots. |
+| `tools/` | Command-line utilities for reading live state and sending settings or Join requests, and the README screenshot script. |
+| `docs/` | Architecture notes, intervention notes, and screenshots (regenerate with `tools/readme-screenshots.sh`). |
 | `build/`, `module-cache/` | Generated binaries and compiler caches, excluded from Git. |
 
 Settings and session logs live in `~/Library/Application Support/Exalt Client Mac/`. Session logs and diagnostic recordings are deleted when the app starts if they haven't been written to for 14 days. **Export logs…** under **More › Diagnostics and logs** bundles the session logs and saved settings into a zip.
