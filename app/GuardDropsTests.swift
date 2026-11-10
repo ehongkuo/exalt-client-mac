@@ -42,6 +42,14 @@ enum DropTests {
             """
         check(ShinyIndex.ids(inXML: xml) == [0x1f4a], "shiny ids from labels")
 
+        check(BagSprites.mapObjectRects(sheet: "lofiObj4", in: Data([1, 2, 3])).isEmpty, "a broken sprite file reads as empty")
+        // RealmHound's real assets, when installed: every bag has an 8×8 sprite.
+        if FileManager.default.fileExists(atPath: RealmHoundPaths.assets.appendingPathComponent("flatbuffer/spritesheetf").path) {
+            let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
+            check(sprites.count == DropBag.allCases.count && sprites.values.allSatisfy { $0.width == 8 && $0.height == 8 },
+                  "bag sprites from RealmHound's assets")
+        }
+
         // The log: first sight sets the start, later drops come back with their items in slot order.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("drop-tests-\(getpid())")
         let dbFolder = folder.appendingPathComponent("acct/databases")

@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import SQLite3
 
 /// Drop alerts read what RealmHound already logs: it sniffs the game's traffic and writes every
@@ -131,12 +133,87 @@ enum ShinyIndex {
     }
 }
 
+/// Bag sprites, cut at run time from the game art RealmHound extracts. The art is DECA's, so this
+/// repo carries none of it.
+enum BagSprites {
+    /// Each bag's index in the game's lofiObj4 sheet (the <Texture> in ObjectID.list).
+    static func index(_ bag: DropBag) -> Int {
+        switch bag {
+        case .brown: return 0xd0
+        case .pink: return 0xd1
+        case .purple: return 0xd2
+        case .egg: return 0xd3
+        case .gold: return 0xd4
+        case .teal: return 0xd5
+        case .blue: return 0xd6
+        case .orange: return 0xd7
+        case .red: return 0xd8
+        case .white: return 0xd9
+        }
+    }
+
+    /// Reads flatbuffer/spritesheetf and crops sprites/mapObjects.png (about 130 MB decoded, so call it
+    /// off the main thread). Empty when either file is missing.
+    static func load(assets: URL) -> [DropBag: CGImage] {
+        guard let data = try? Data(contentsOf: assets.appendingPathComponent("flatbuffer/spritesheetf")),
+              let source = CGImageSourceCreateWithURL(assets.appendingPathComponent("sprites/mapObjects.png") as CFURL, nil),
+              let atlas = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [:] }
+        let rects = mapObjectRects(sheet: "lofiObj4", in: data)
+        return DropBag.allCases.reduce(into: [:]) { out, bag in
+            guard let rect = rects[index(bag)], let crop = atlas.cropping(to: rect),
+                  let ctx = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return }
+            // Copied out, so the small sprite does not keep the whole atlas in memory.
+            ctx.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+            out[bag] = ctx.makeImage()
+        }
+    }
+
+    /// Sprite rectangles of one sheet in the game's sprite flatbuffer, by sprite index, for sprites in
+    /// the mapObjects atlas (atlas 4). Layout as RealmHound reads it (sprite_atlas.rs): the root's
+    /// field 0 lists sheets (name, -, sprites); a sprite has position {x, y, w, h} as floats (field 0),
+    /// index (field 3) and atlas id (field 7). Every read is bounds-checked: the file is not ours.
+    static func mapObjectRects(sheet: String, in data: Data) -> [Int: CGRect] {
+        let b = [UInt8](data)
+        func int(_ p: Int, _ n: Int) -> Int? {
+            guard p >= 0, p + n <= b.count else { return nil }
+            return (0..<n).reduce(0) { $0 | Int(b[p + $1]) << (8 * $1) }
+        }
+        func field(_ table: Int, _ i: Int) -> Int? {
+            guard let back = int(table, 4) else { return nil }
+            let vtable = table - Int(Int32(truncatingIfNeeded: back))
+            guard let size = int(vtable, 2), 4 + 2 * i < size, let offset = int(vtable + 4 + 2 * i, 2), offset != 0 else { return nil }
+            return table + offset
+        }
+        func ref(_ p: Int?) -> Int? { p.flatMap { p in int(p, 4).map { p + $0 } } }
+        func tables(_ p: Int?) -> [Int] {
+            guard let v = ref(p), let n = int(v, 4), v + 4 + 4 * n <= b.count else { return [] }
+            return (0..<n).compactMap { ref(v + 4 + 4 * $0) }
+        }
+        func name(_ table: Int) -> String? {
+            guard let s = ref(field(table, 0)), let n = int(s, 4), s + 4 + n <= b.count else { return nil }
+            return String(decoding: b[(s + 4)..<(s + 4 + n)], as: UTF8.self)
+        }
+        func float(_ p: Int) -> CGFloat { CGFloat(Float(bitPattern: UInt32(int(p, 4) ?? 0))) }
+        guard let root = int(0, 4), let found = tables(field(root, 0)).first(where: { name($0) == sheet }) else { return [:] }
+        var rects: [Int: CGRect] = [:]
+        for sprite in tables(field(found, 2)) {
+            guard let p = field(sprite, 0), p + 16 <= b.count, (field(sprite, 7).flatMap { int($0, 4) } ?? 1) == 4 else { continue }
+            let index = field(sprite, 3).flatMap { int($0, 4) }.map { Int(Int32(truncatingIfNeeded: $0)) } ?? 0
+            rects[index] = CGRect(x: float(p), y: float(p + 4), width: float(p + 8), height: float(p + 12))
+        }
+        return rects
+    }
+}
+
 /// RealmHound's folders. Each account it has seen keeps databases/loot_history.db.
 enum RealmHoundPaths {
     static let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/RealmHound")
     static var accounts: URL { root.appendingPathComponent("accounts") }
-    static var xml: URL { root.appendingPathComponent("assets/xml") }
+    static var assets: URL { root.appendingPathComponent("assets") }
+    static var xml: URL { assets.appendingPathComponent("xml") }
 }
 
 /// Polls the loot logs for drops newer than the last one seen. A log seen for the first time only

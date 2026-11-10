@@ -276,11 +276,12 @@ final class PartyAlerts: ObservableObject {
 /// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
 /// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
-    @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded() } }
+    @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
     @Published private(set) var popup: DropAlert?
     @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
-    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false
+    @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
+    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
 
@@ -293,6 +294,7 @@ final class DropAlerts: ObservableObject {
         if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { s.shiny = v }
         settings = s
         loadShiniesIfNeeded()
+        loadBagsIfNeeded()
     }
     private func save() {
         defaults.set(settings.enabled, forKey: "dropAlerts")
@@ -309,6 +311,17 @@ final class DropAlerts: ObservableObject {
         DispatchQueue.global(qos: .utility).async {
             let ids = ShinyIndex.load(folder: RealmHoundPaths.xml)
             DispatchQueue.main.async { self.shinies = ids; self.loadingShinies = false }
+        }
+        #endif
+    }
+    /// Bag sprites are cut from a large atlas, so they are read once, off the main thread.
+    private func loadBagsIfNeeded() {
+        #if !GUARD_UI_TEST
+        guard settings.enabled, bagSprites.isEmpty, !loadingBags else { return }
+        loadingBags = true
+        DispatchQueue.global(qos: .utility).async {
+            let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
+            DispatchQueue.main.async { self.bagSprites = sprites; self.loadingBags = false }
         }
         #endif
     }
@@ -341,31 +354,94 @@ struct DropPopupView: View {
     @ObservedObject var drops: DropAlerts
 
     var body: some View {
-        if let drop = drops.popup { DropPopupContent(drop: drop).onTapGesture { drops.dismiss() } }
+        if let drop = drops.popup {
+            DropPopupContent(drop: drop, bagSprite: drop.bag.flatMap { drops.bagSprites[$0] }).onTapGesture { drops.dismiss() }
+        }
     }
 }
 
 struct DropPopupContent: View {
     var drop: DropAlert
+    /// The bag's game sprite; the SF Symbol stands in when RealmHound's assets are missing.
+    var bagSprite: CGImage? = nil
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: drop.shiny ? "sparkles" : "bag.fill").font(.system(size: 15))
-                .foregroundStyle(drop.bag.map(bagColor) ?? .white)
-                .frame(width: 34, height: 34).background(Color.white.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            ZStack(alignment: .topLeading) {
+                Group {
+                    if let bagSprite {
+                        Image(decorative: bagSprite, scale: 1).interpolation(.none).resizable().frame(width: 32, height: 32)
+                    } else {
+                        Image(systemName: "bag.fill").font(.system(size: 17)).foregroundStyle(drop.bag.map(bagColor) ?? .white)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                if drop.shiny {
+                    Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(shinyPink, shinyGold).padding(2)
+                }
+            }
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
-                Text(drop.shiny ? "\(drop.item) (Shiny)" : drop.item).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(drop.shiny ? "\(drop.item) (Shiny)" : drop.item).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
+                }
                 Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .frame(width: 380, height: 64)
         .background(panelBackground.opacity(0.97))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+        .overlay {
+            if drop.shiny {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(
+                    AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink], center: .center),
+                    lineWidth: 2)
+            } else {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .environment(\.colorScheme, .dark)
+    }
+}
+
+private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color(red: 1, green: 0.85, blue: 0.3)
+
+/// The game's rarity mark: one gem per enchantment slot, in the rarity's colour (green, blue,
+/// purple, gold), clustered as on an item's slot.
+struct RarityGems: View {
+    var rarity: DropRarity
+    private let gem: CGFloat = 10
+
+    var body: some View {
+        let color = [Color.clear, Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),
+                     Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)][rarity.rawValue]
+        // Gem centres in gem widths: a pair, a triangle, then a diamond of four.
+        let spots: [(CGFloat, CGFloat)] = [[], [(0, 0)], [(0, 0), (1, 0)], [(0, 0), (1, 0), (0.5, 0.5)],
+                                           [(0.5, 0), (0, 0.5), (1, 0.5), (0.5, 1)]][rarity.rawValue]
+        ZStack(alignment: .topLeading) {
+            ForEach(spots.indices, id: \.self) { i in
+                ZStack {
+                    Diamond().fill(color)
+                    Diamond().fill(.white.opacity(0.55)).frame(width: gem * 0.4, height: gem * 0.4).offset(x: -gem * 0.12, y: -gem * 0.12)
+                    Diamond().stroke(.black, lineWidth: 1)
+                }
+                .frame(width: gem, height: gem).offset(x: spots[i].0 * gem, y: spots[i].1 * gem)
+            }
+        }
+        .frame(width: gem * (spots.map(\.0).max()! + 1), height: gem * (spots.map(\.1).max()! + 1), alignment: .topLeading)
+        .accessibilityLabel(rarity.name)
+    }
+}
+
+private struct Diamond: Shape {
+    func path(in r: CGRect) -> Path {
+        Path { p in p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+            p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath() }
     }
 }
 
