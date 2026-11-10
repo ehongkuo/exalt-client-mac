@@ -330,6 +330,50 @@ static void damage_context_emit(void *player,uint64_t correlation) {
     e.projectile=bits;e.value=breath;e.owner=frostbite;e.flag0=mask;e.flag1=nexusing>0;
     e.correlation=correlation;e.work_ns=monotonic_ns()-now;probe_emit(e);
 }
+/* Phase 31: the effect IDs a hit applies (the notification's List<byte>). correlation = notification,
+ * value = count, projectile = first 8 IDs, byte i at bits 8i. Answers which IDs Armor Broken, Exposed
+ * and Curse use (hardening plan Phase 3 C). */
+static void *hit_effects_class,*hit_effects_items,*hit_effects_size;
+static void hit_effects_emit(void *player,void *list,uint64_t correlation) {
+#ifdef HIT_PROBE_TEST
+    (void)player;(void)list;(void)correlation;
+#else
+    if(!list || !probe_active())return;
+    void *klass=il2cpp_object_get_class(list);
+    if(klass!=hit_effects_class){hit_effects_class=klass;
+        hit_effects_items=typed_field(klass,"_items","System.Byte[]");hit_effects_size=typed_field(klass,"_size","System.Int32");}
+    if(!hit_effects_items || !hit_effects_size)return;
+    int size=0;il2cpp_field_get_value(list,hit_effects_size,&size);
+    void *items=read_reference(list,hit_effects_items);
+    if(size<=0 || !items || (uint32_t)size>il2cpp_array_length(items))return;
+    uint64_t packed=0;memcpy(&packed,(char*)items+0x20,size<8?(size_t)size:8); /* Byte[] elements at +0x20. */
+    ProbeEvent e=probe_snapshot(31,player,NULL);e.correlation=correlation;e.value=size;e.projectile=packed;probe_emit(e);
+#endif
+}
+/* Phase 32: the hitting projectile's damage inputs, to recover base damage (and so DEF) per hit.
+ * correlation = notification, value/owner = projectile ints DBNNDLKNECM/AEAGCPBEHFI (+0x17c/+0x180,
+ * build 2ce88d8b; which one is damage is for the capture to show), flag0/flag1 = properties min/max
+ * damage, flag2 = armor piercing, flag3 = availability mask (1 value, 2 owner, 4 properties). */
+static void *hit_shot_a,*hit_shot_b,*hit_shot_props,*hit_props_class,*hit_props_min,*hit_props_max,*hit_props_ap;
+static void hit_shot_emit(void *player,void *projectile,uint64_t correlation) {
+#ifdef HIT_PROBE_TEST
+    (void)player;(void)projectile;(void)correlation;
+#else
+    if(!projectile || !probe_active() || il2cpp_object_get_class(projectile)!=probe_projectile_class)return;
+    ProbeEvent e=probe_snapshot(32,player,NULL);e.correlation=correlation;
+    if(hit_shot_a){il2cpp_field_get_value(projectile,hit_shot_a,&e.value);e.flag3|=1;}
+    if(hit_shot_b){il2cpp_field_get_value(projectile,hit_shot_b,&e.owner);e.flag3|=2;}
+    void *props=hit_shot_props?read_reference(projectile,hit_shot_props):NULL;
+    if(props){void *klass=il2cpp_object_get_class(props);
+        if(klass!=hit_props_class){hit_props_class=klass;hit_props_min=typed_field(klass,"ProjectileMinDamage","System.Int32");
+            hit_props_max=typed_field(klass,"ProjectileMaxDamage","System.Int32");hit_props_ap=typed_field(klass,"IsArmorPiercing","System.Boolean");}
+        if(hit_props_min && hit_props_max && hit_props_ap){uint8_t ap=0;
+            il2cpp_field_get_value(props,hit_props_min,&e.flag0);il2cpp_field_get_value(props,hit_props_max,&e.flag1);
+            il2cpp_field_get_value(props,hit_props_ap,&ap);e.flag2=ap!=0;e.flag3|=4;}
+    }
+    if(e.flag3)probe_emit(e);
+#endif
+}
 #endif
 #ifdef EXALT_CLIENT_FATAL
 static void fatal_record(void *player,int hp,int result) {
@@ -490,6 +534,8 @@ static void notify_observed(void *self,uint8_t flag0,int value,void *conditions,
         probe_emit(e);
 #ifdef EXALT_HIT_PROBE
         damage_context_emit(self,e.id);
+        hit_effects_emit(self,conditions,e.id);
+        hit_shot_emit(self,projectile,e.id);
 #endif
     }
     notify_original(self,flag0,value,conditions,flag1,projectile,a,b,info);
@@ -712,6 +758,9 @@ static int probe_setup(int install) {
     damage_conditions_field=entity?typed_field(entity,"COHCKAPOLCA","System.Int32[]"):NULL;
     damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
     damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
+    if(probe_projectile_class){hit_shot_a=typed_field(probe_projectile_class,"DBNNDLKNECM","System.Int32");
+        hit_shot_b=typed_field(probe_projectile_class,"AEAGCPBEHFI","System.Int32");
+        hit_shot_props=typed_field(probe_projectile_class,"FOMOIBCKIFP","ProjectileProperties");}
 #endif
     if(!probe_projectile_class)return probe_fail("projectile_class");
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
@@ -774,7 +823,8 @@ static int probe_setup(int install) {
     note("incident_history\tversion=2\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\tautomatic_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
 #endif
 #ifdef EXALT_HIT_PROBE
-    note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
+    note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\tshot=%d%d%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL,
+         hit_shot_a!=NULL,hit_shot_b!=NULL,hit_shot_props!=NULL);
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
 #endif
     return 1;

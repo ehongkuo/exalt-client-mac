@@ -49,6 +49,8 @@ The installed app contains its integration library and supported-game fingerprin
 4. For Nexus on death, enter the Nexus and wait until **Nexus on death** reads **Ready** before leaving.
 5. Use **Test alert** under **More › Party calls** to check the popup and sound.
 
+If [RealmHound](https://github.com/pillarzz/RealmHound) is installed, **Also open RealmHound** next to **Start game** opens it with the game (on by default, remembered). It reads game traffic passively and needs one-time capture access: `brew install --cask wireshark-chmodbpf`.
+
 <br clear="right">
 
 Always start the game through Exalt Client Mac to load its integration. An already-running game keeps the library it loaded at launch; restart it through the app after installing a new version.

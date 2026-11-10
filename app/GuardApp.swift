@@ -104,6 +104,21 @@ private extension ApplyState {
 final class LaunchController: ObservableObject {
     enum State: Equatable { case idle, checking, launched(Date), failed(String) }
     @Published private(set) var state: State = .idle
+    /// Open RealmHound (a separate, passive traffic viewer) beside the game; remembered.
+    @Published var openRealmHound = UserDefaults.standard.object(forKey: "openRealmHound") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(openRealmHound, forKey: "openRealmHound") }
+    }
+    var realmHound: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "io.github.pillarzz.realmhound") }
+
+    private func openRealmHoundIfChosen() {
+        #if !GUARD_UI_TEST
+        guard openRealmHound, let url = realmHound else { return }
+        // Behind the launcher, so Play stays in front; a running copy is left as it is.
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in }
+        #endif
+    }
 
     func start() {
         guard state != .checking else { return }
@@ -141,7 +156,10 @@ final class LaunchController: ObservableObject {
                 do { try GameLauncher.start(launch); next = .launched(Date()) }
                 catch { next = .failed("Could not start DECA's launcher: \(error.localizedDescription)") }
             }
-            DispatchQueue.main.async { self.state = next }
+            DispatchQueue.main.async {
+                self.state = next
+                if case .launched = next { self.openRealmHoundIfChosen() }
+            }
         }
     }
 }
@@ -628,7 +646,12 @@ struct GuardPanel {
                     if case .failed(let message) = launch.state {
                         Text(message).font(.system(size: 12, weight: .semibold)).foregroundStyle(bad)
                     }
-                    Button("Start game") { launch.start() }.keyboardShortcut("r", modifiers: .command)
+                    HStack {
+                        Button("Start game") { launch.start() }.keyboardShortcut("r", modifiers: .command)
+                        if launch.realmHound != nil {
+                            Toggle("Also open RealmHound", isOn: $launch.openRealmHound).toggleStyle(.checkbox)
+                        }
+                    }
                 }
             }
             .font(.system(size: 12))

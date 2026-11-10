@@ -226,6 +226,10 @@ class AnalysisTests(unittest.TestCase):
   e=dict.fromkeys(analysis.FIELDS,0)
   e.update(id=identity,phase=phase,ns=ns,generation=generation,correlation=correlation,hp=hp,max=1000,valid=1,value=value)
   return 'hit_probe_v2\t'+'\t'.join(str(e[key]) for key in analysis.FIELDS)
+ def test_hit_effect_ids_unpack_in_order(self):
+  row=self.event(2,31,20,correlation=1,value=3).split('\t');row[1+analysis.FIELDS.index('projectile')]=str(0x1b3105)
+  self.assertEqual(self.analyze_rows([self.event(1,3,10,value=48),'\t'.join(row)])['hit_effects'],
+   [{'id':2,'notification_id':1,'effect_ids':[5,49,27]}])
  def test_pairing_requires_order_and_same_map_generation(self):
   result=self.analyze_rows([self.event(1,1,10),self.event(2,2,20,correlation=1),
    self.event(3,3,30,generation=2,correlation=1,value=45),self.event(4,3,15,correlation=1,value=45)])
