@@ -21,6 +21,15 @@ from analyze import read_events
 
 TICK_SETTERS = {0x184c115, 0x121f115, 0x91b925}  # Incoming stat handler's HP-setter return, per game build.
 DOT_CONDITIONS = {0x8000: 'bleeding'}  # Condition word 0 bits; poison is not yet decoded.
+# Phase 29 bits: word 0 low, word 1 high. Word 0 bit = 1 << (id - 1), word 1 bit = 1 << (id - 32), as in
+# RealmHound's combat/damage.rs (MIT); Bleeding 0x8000 matched our captures.
+DAMAGE_CONDITIONS = {0x1000000: 'invulnerable', 0x2000000: 'armored', 0x4000000: 'armor_broken',
+                     0x8 << 32: 'petrified', 0x40 << 32: 'cursed', 0x20000 << 32: 'exposed'}
+
+
+def condition_names(bits):
+    """Named damage-relevant conditions set in a phase 29 bitset."""
+    return [name for bit, name in {**DOT_CONDITIONS, **DAMAGE_CONDITIONS}.items() if bits is not None and bits & bit]
 MIN_ROUND_TRIP_MS = 100  # A report cannot be in an update that arrives sooner than this.
 REGEN_TOLERANCE = 5  # HP an update may restore while applying a hit.
 
@@ -106,6 +115,11 @@ def inspect(text, window_ms=None, max_age_ms=1500):
             tags = [name for bit, name in DOT_CONDITIONS.items() if conditions is not None and conditions & bit]
             if any(r[2] != conditions for r in used):
                 tags.append('conditions_changed')  # A buff or debuff arrived between the hit and this update.
+                at_hits = 0
+                for r in used:
+                    at_hits |= r[2] or 0
+                gained = conditions & ~at_hits if conditions is not None else None
+                tags += [name for name in condition_names(gained) if name not in tags]  # Which ones arrived.
             if any(r[1] > loss for r in eligible if r not in used):
                 tags.append('report_larger_than_loss')  # Possibly a hit masked by healing; ambiguous.
             known = context_key(ctx)

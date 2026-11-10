@@ -102,8 +102,10 @@ Results across 5 captures with damage (100 reports, 186 decreases):
   was set three times for 2.4–3.8 s. Each update in those windows lost about 3 HP more than the
   reports explain: 101 HP over 34 decreases, with no report.
 - **A debuff-carrying hit exceeded the local calculation.** At 162.9 s the client calculated 48 and
-  the server applied 95. A word 1 condition bit (`0x20000`) appeared 20 ms after the hit. The 47 HP
-  difference fits Armor Broken applied by the shot before the server computed damage. One sample.
+  the server applied 95. A word 1 condition bit (`0x20000`) appeared 20 ms after the hit. One sample.
+  > **Update, 10 November 2026:** RealmHound's condition map (below) names word 1 `0x20000`
+  > **Exposed**, not Armor Broken. Exposed's −20 DEF accounts for at most 20 of the 47 HP, so this
+  > sample is still unexplained.
 - **One hit landed after 834 ms**, beyond the 800 ms allowance: updates paused for about 470 ms and
   then arrived together, so the hit was in the first of two bunched updates.
 - **Frostbite drains** in the Ice Citadel captures (`guard-42155`, `guard-88966`) account for 1,055 HP
@@ -119,11 +121,15 @@ python3 probe/replay_policy.py --input build --input "$HOME/Library/Application 
 
 ### Condition capture (item 4)
 
-No code change is needed: the diagnostic records the condition-mask words (phase 29, `flag2=1`) at
-each damage notification, each HP assignment, and on any change during polling.
+The diagnostic records the condition-mask words (phase 29, `flag2=1`) at each damage notification,
+each HP assignment, and on any change during polling. Since 10 November it also records, per
+projectile hit, the effect IDs the hit applies (phase 31) and the projectile's damage inputs (phase 32).
+Its startup line `damage_context_ready … shot=111` confirms the three projectile fields were found.
 
 1. `sh probe/build-probe.sh`, then open `build/damage-diagnostic/Start Hit Diagnostic.command`
    (observation only). Use a disposable character; enter Nexus and wait for readiness.
+   `python3 build/damage-diagnostic/enemy_debuffs.py | grep -i <dungeon or enemy>` lists the
+   enemies that inflict each debuff.
 2. For each effect, start at full HP, take one hit from an enemy known to inflict it, step away until
    the condition ends, then take one plain hit for comparison. Note the effect and approximate time.
 3. Cover bullet-carried debuffs (Armor Broken, Exposed, Curse, Sick) and
@@ -132,6 +138,33 @@ each damage notification, each HP assignment, and on any change during polling.
    Killer Bee Queen and Crystallised Crawlers (Exposed), Corrupted Casters and Void Shades (Curse),
    and Parasitic Blobs or Toxic Sewer water (Sick).
 4. Manually Nexus, wait five seconds and quit normally to bundle the session.
+5. Optional, for the dungeon modifier question in the
+   [per-hit settlement report](per-hit-settlement-report.md#open-questions): repeat a few plain hits in
+   a dungeon with Lethal, and against a Ferocious or Glass boss. Note the modifiers.
+
+Run `python3 build/damage-diagnostic/analyze_conditions.py <session folder>`. `effect_ids` maps each
+effect ID to the condition bits that appeared after hits carrying it. `implied_def_on_plain_hits`
+shows, for each projectile field, base minus damage on hits with no conditions: the field that gives
+one constant value per character is the base damage, and that value is the DEF the client used. Add
+`--hits` for the per-hit rows, and run `probe/analyze_untracked.py` on the same folder for the server
+side (excess HP loss after each hit).
+
+Expected bits, from RealmHound's `combat/damage.rs` (MIT; word 0 bit = `1 << (id − 1)`, word 1 bit =
+`1 << (id − 32)`, which also predicts our captured Bleeding `0x8000`):
+
+| Word | Armored | Armor Broken | Invulnerable | Petrified | Curse | Exposed |
+|---|---|---|---|---|---|---|
+| 0 | `0x2000000` | `0x4000000` | `0x1000000` | | | |
+| 1 | | | | `0x8` | `0x40` | `0x20000` |
+
+`probe/analyze_untracked.py` names these bits in its excess report. The diagnostic also records the
+effect IDs each hit applies (phase 31, the notification's `List<byte>`; `hit_effects` in
+`probe/analyze.py`). The game's own code boxes Armored 16, Invulnerable 17, Armor Broken 55, Curse 58
+and Exposed 59 next to the condition names (registration near `0x6b7060`, build `2ce88d8b`), which is
+not the numbering behind the bits above, so the capture has to settle which IDs the hits carry.
+`python3 probe/enemy_debuffs.py` lists every enemy projectile that applies Armor Broken, Exposed or
+Curse, with damage and duration, from the installed game's XML (Zombie Hulk, Crawling Grey Spotted
+Spider, Corrupted Caster and Void Shade among about 400 projectiles on build `2ce88d8b`).
 
 Analysis: map each effect to the mask bit that changes, and compare when the bit changes relative to
 the hit's notification and the next incoming HP assignment. A change at or before the next server
@@ -287,7 +320,12 @@ applies one: the 95/48 sample fits a shot whose Armor Broken applied before its 
 | Sick | Stops all HP recovery | No change. Decreases are exact while Sick, which makes captures useful for validation |
 
 Charge a shot with the effects its projectile definition applies, combined in the game's order
-(defense modifiers, then Curse), until the update that contains it. If an effect's order relative to
+(defense modifiers, then Curse), until the update that contains it. RealmHound's port of the client
+formula fixes that order: DEF 0 for armor piercing or Armor Broken, else DEF × 1.5 while Armored; then
+Exposed −20; then the larger of damage − DEF and a 10% floor; then Invulnerable 0, Petrified × 0.9,
+Curse × 1.25. Where to hook: the damage calculator gets no usable projectile argument, but the
+projectile notification that follows receives the hit's effect list, so the extra charge belongs
+there. It needs either the shot's base damage or the player's DEF, and neither is read yet. If an effect's order relative to
 the server's calculation cannot be confirmed, the charge is still only an overestimate until that
 update. Confirm with the Phase 0 condition capture (item 4): the bit for each listed effect, and
 whether the 95/48 pattern repeats for Armor Broken and appears for Exposed and Curse.

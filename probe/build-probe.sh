@@ -11,6 +11,7 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror "$repo_dir/tests/probe/hook_tests.c
 "$repo_dir/build/probe-tests/hook-tests"
 python3 "$repo_dir/tests/probe/test_probe.py"
 python3 "$repo_dir/tests/probe/test_shadow_ledger.py"
+python3 "$repo_dir/tests/probe/test_conditions.py"
 clang -Wall -Wextra -Werror "$repo_dir/tests/probe/fatal_policy_v10_tests.c" -o "$repo_dir/build/probe-tests/fatal-policy-v10-tests"
 "$repo_dir/build/probe-tests/fatal-policy-v10-tests"
 # Build to a new inode so a previously loaded diagnostic keeps its mapped library.
@@ -20,7 +21,7 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib -DEXALT_HIT_PROBE -DSES
 codesign --force --sign - "$temp"
 codesign --verify --strict "$temp"
 mv "$temp" "$out/ExaltHitProbe.dylib"
-cp "$repo_dir/guard/game-build.sha256" "$repo_dir/probe/Start Hit Diagnostic.command" "$repo_dir/probe/Verify Damage Protection.command" "$repo_dir/probe/analyze.py" "$repo_dir/probe/watch_probe.py" "$repo_dir/probe/recover_flight.py" "$repo_dir/probe/shadow_ledger.py" "$repo_dir/probe/damage_session.py" "$repo_dir/probe/damage_paths.json" "$repo_dir/probe/VALIDATION.md" "$repo_dir/docs/damage-testing.md" "$repo_dir/docs/damage-sources.md" "$repo_dir/docs/damage-status-audit.md" "$repo_dir/docs/performance-audit.md" "$repo_dir/docs/damage-live-validation.md" "$out/"
+cp "$repo_dir/guard/game-build.sha256" "$repo_dir/probe/Start Hit Diagnostic.command" "$repo_dir/probe/Verify Damage Protection.command" "$repo_dir/probe/analyze.py" "$repo_dir/probe/analyze_untracked.py" "$repo_dir/probe/analyze_conditions.py" "$repo_dir/probe/enemy_debuffs.py" "$repo_dir/probe/watch_probe.py" "$repo_dir/probe/recover_flight.py" "$repo_dir/probe/shadow_ledger.py" "$repo_dir/probe/damage_session.py" "$repo_dir/probe/damage_paths.json" "$repo_dir/probe/VALIDATION.md" "$repo_dir/docs/damage-testing.md" "$repo_dir/docs/damage-sources.md" "$repo_dir/docs/damage-status-audit.md" "$repo_dir/docs/performance-audit.md" "$repo_dir/docs/damage-live-validation.md" "$out/"
 sed 's|\.\./docs/|./|g' "$repo_dir/probe/README.md" > "$out/README.md"
 sed 's|\.\./docs/|./|g' "$repo_dir/probe/VALIDATION.md" > "$out/VALIDATION.md"
 chmod +x "$out/Start Hit Diagnostic.command" "$out/Verify Damage Protection.command"

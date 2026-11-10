@@ -168,6 +168,8 @@ def analyze(path,threshold=None):
             'legacy_sprite_key_raw':hex(e['projectile']) if e['flag0']&1 and e['flag2']!=1 else None,
             'breath':e['value'] if e['flag0']&2 else None,'frostbite':e['owner'] if e['flag0']&4 else None,
             'local_nexusing':bool(e['flag1']) if e['flag0']&8 else None} for e in events if e['phase']==29],
+        'hit_effects':[{'id':e['id'],'notification_id':e['correlation'],
+            'effect_ids':list(e['projectile'].to_bytes(8,'little')[:min(e['value'],8)])} for e in events if e['phase']==31],
         'notification_returns':sum(e['phase']==10 for e in events),'death_screen_entries':len(death),
         'nonpositive_hp_observations':[{'id':e['id'],'ns':e['ns'],'source_phase':e['value']} for e in zero],
         'reports_after_first_nonpositive_hp':sum(e['generation']==zero[0]['generation'] and e['ns']>zero[0]['ns'] for e in reports.values()) if zero else None,

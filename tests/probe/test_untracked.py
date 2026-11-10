@@ -62,7 +62,10 @@ class UntrackedTests(unittest.TestCase):
     def test_debuff_carried_by_a_hit_is_excess_with_changed_conditions(self):
         c = Capture(); c.hit(0, 48); c.add(29, 20, projectile=0x2000000000000); c.tick(600, 205)
         found = untracked.inspect(c.text())['excess']
-        self.assertEqual([(x['excess'], x['attributed'], x['context']) for x in found], [(47, [48], 'conditions_changed')])
+        self.assertEqual([(x['excess'], x['attributed'], x['context']) for x in found], [(47, [48], 'conditions_changed+exposed')])
+
+    def test_condition_names_cover_both_words(self):
+        self.assertEqual(untracked.condition_names(0x4008000 | 0x40 << 32), ['bleeding', 'armor_broken', 'cursed'])
 
     def test_hit_masked_by_healing_is_marked_ambiguous(self):
         c = Capture(); c.hit(0, 93); c.tick(400, 298)
