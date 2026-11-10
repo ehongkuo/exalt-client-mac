@@ -198,6 +198,7 @@ diagnostic under `build/damage-diagnostic/`, with isolated session bundles and n
 ```sh
 ./build.sh --test-only   # runs the checks, including a brief synthetic UI test
 ./build.sh --app-only    # builds and installs without running tests
+./build.sh --stage       # tests + "Exalt Client Mac Staging.app" in build/, not installed
 ```
 
 The automated tests use a simulated game/runtime and do not act on the real game. Close the game before running the UI checks. A running client must be closed before installing its replacement; a running game can keep its existing integration until the next launch.
