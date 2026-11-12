@@ -114,6 +114,18 @@ enum DropRules {
     }
 }
 
+/// Which monitor the drop popup goes on: the one holding most of the game window.
+enum PopupScreen {
+    /// The index of the screen that overlaps `window` most, or nil when there is no window or no overlap.
+    /// All rects must use the same coordinates (CGWindowList and CGDisplayBounds both use top-left global ones).
+    static func index(window: CGRect?, screens: [CGRect]) -> Int? {
+        guard let window else { return nil }
+        let areas = screens.map { s -> CGFloat in let i = s.intersection(window); return i.isNull ? 0 : i.width * i.height }
+        guard let best = areas.indices.max(by: { areas[$0] < areas[$1] }), areas[best] > 0 else { return nil }
+        return best
+    }
+}
+
 /// Item ids labelled SHINY in the game XML that RealmHound extracts (assets/xml/*.xml).
 enum ShinyIndex {
     static func ids(inXML text: String) -> Set<Int> {

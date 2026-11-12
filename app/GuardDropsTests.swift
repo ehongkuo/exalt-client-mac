@@ -35,6 +35,12 @@ enum DropTests {
         check(DropAlert(item: "x", bag: .red, rarity: .divine, shiny: false, mob: "Oryx", dungeon: "").detail == "Red bag · Divine · Oryx",
               "popup detail line")
 
+        let left = CGRect(x: 0, y: 0, width: 1920, height: 1080), right = CGRect(x: 1920, y: 0, width: 2560, height: 1440)
+        check(PopupScreen.index(window: CGRect(x: 2000, y: 100, width: 800, height: 600), screens: [left, right]) == 1, "game on the second monitor")
+        check(PopupScreen.index(window: CGRect(x: 1500, y: 0, width: 800, height: 600), screens: [left, right]) == 0, "most of the game wins")
+        check(PopupScreen.index(window: nil, screens: [left, right]) == nil, "no game window")
+        check(PopupScreen.index(window: CGRect(x: -5000, y: 0, width: 10, height: 10), screens: [left]) == nil, "off every screen")
+
         let xml = """
             <Objects>
               <Object type="0xa00" id="Short Sword"><Labels>EQUIPMENT,WEAPON</Labels></Object>
