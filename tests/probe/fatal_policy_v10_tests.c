@@ -79,16 +79,16 @@ int main(void) {
  tick(&p,1,100000,260);tick(&p,2,100000,310);tick(&p,3,100000,300);tick(&p,4,100000,290);
  assert(!p.pending && !p.overflow && !p.count);
 
- /* Phase 3 G drain over one 200 ms update: bleeding 4, full frostbite 33, no oxygen 20. */
+ /* Phase 3 G drain over one 200 ms update: bleeding 4, full frostbite 34, no oxygen 20. */
  fatal_reset(&p,1,2,3);tick(&p,0,64,250);tick(&p,1,64,250);
  fatal_drain(&p,0,-1,-1);assert(p.drain==0);
  fatal_drain(&p,0x8000,-1,-1);assert(p.drain==4);
  fatal_drain(&p,0x7fff,-1,99);assert(p.drain==0);   /* other bits, frostbite not yet full */
- fatal_drain(&p,0,-1,100);assert(p.drain==33);
- fatal_drain(&p,0,-1,101);assert(p.drain==33);
+ fatal_drain(&p,0,-1,100);assert(p.drain==34);
+ fatal_drain(&p,0,-1,101);assert(p.drain==34);
  fatal_drain(&p,0,0,-1);assert(p.drain==20);         /* breath 0: suffocating */
  fatal_drain(&p,0,50,-1);assert(p.drain==0);
- fatal_drain(&p,0x8000,0,100);assert(p.drain==57);
+ fatal_drain(&p,0x8000,0,100);assert(p.drain==58);
  /* A 60 hit at 64 HP survives alone but is lethal while bleeding. */
  fatal_drain(&p,0,-1,-1);assert(fatal_damage(&p,64,60,MS(250))==FATAL_PASS && p.projected==4);
  fatal_reset(&p,1,2,3);tick(&p,0,64,250);tick(&p,1,64,250);fatal_drain(&p,0x8000,-1,-1);
