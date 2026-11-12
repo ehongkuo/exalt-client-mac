@@ -6,11 +6,11 @@ import SQLite3
 /// Drop alerts read what RealmHound already logs: it sniffs the game's traffic and writes every
 /// loot bag you see to a per-account SQLite file. This app only reads that file.
 
-/// Loot bag colours, in the game's order (its Loot Bag 0 to 9), with RealmHound's object ids.
-/// Boosted bags count as their colour.
+/// Loot bag colours from lowest to highest priority (a bag takes the colour of its best item; the
+/// order is RealmHound's rarity_rank), with RealmHound's object ids. Boosted bags count as their colour.
 enum DropBag: String, CaseIterable {
     // Cyan keeps the saved name "teal" (RealmHound's name for it).
-    case brown, pink, purple, egg, cyan = "teal", blue, white, gold, orange, red
+    case brown, pink, purple, egg, cyan = "teal", blue, gold, white, orange, red
 
     init?(id: Int) {
         switch id {
