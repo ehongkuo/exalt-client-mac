@@ -225,3 +225,21 @@ Each step is a separate PR. Steps 1–2 are offline only and change no gameplay 
 - **The round-trip field:** confirmed as the latest single measurement only by its behavior so far.
 - **Server processing order:** assumed to follow arrival order on the connection.
 - **High latency:** all 53 checked hits had round trips of at most 866 ms.
+- **Dungeon modifiers:** does the local calculation already include them? No capture so far was
+  checked against a modified dungeon. The installed build's `mods.xml` (game files of 6 November,
+  inside `resources.assets`) has four kinds that change damage taken:
+  - **Enemy damage multipliers** (Tame, Ferocious, Glass, Elite, Stone, Remnant; boss or minion):
+    ×0.7 to ×1.36. Safe if the multiplier is already in the shot damage the client reads.
+  - **Player DEF and max HP** (Exposed −5 to −20 DEF, Armored +3 to +12, the Armor Broken modifier
+    −30 DEF, Spongy DEF ×0.5 and max HP ×1.25). Safe if they land in the DEF and max HP the client
+    uses.
+  - **Lethal I–IV** (`CurrentHealthDamage` 0.01–0.04; the descriptions say 1.25–5%): every hit adds
+    a share of current HP. If only the server adds it, every hit is undercharged, the same
+    missed-escape direction as C. Until confirmed, charge the larger percentage of the HP baseline
+    per pending hit.
+  - **Anemia and Vigorous** scale healing (×0.7 to ×1.3). This changes auto-potion pacing only;
+    heals never clear hits.
+
+  Test with dry-run captures in a Lethal dungeon and against a Ferocious or Glass boss, and compare
+  `damage_mismatch` in `probe/analyze_latency.py`. Logging the map's modifier tokens (sent in
+  `MapInfo`) would let captures be grouped by modifier.
