@@ -269,6 +269,16 @@ Use the published rate where it is stated (bleeding: 4 HP per 200 ms update) and
 case otherwise. Bleeding cannot kill on its own but still lowers HP before the next hit. Poison is not
 a status effect on players and needs no handling.
 
+**Shipped ([#27](https://github.com/ehongkuo/exalt-client-mac/issues/27)).** Production reads condition
+word 0, the breath meter and the frostbite meter before every hit decision; the probe build already
+read them. `fatal_drain` in `probe/fatal_policy_v10.h` sets the drain to the active rates times the
+measured update interval, rounded up: bleeding (`0x8000`) 20 HP/s, frostbite at 100 or more 165 HP/s
+(33 per update), breath at 0 100 HP/s. At 200 ms that is 4, 33 and 20 HP. The projection subtracts it
+on every hit and update. A missing field drops only its drain, logged in `damage_context_ready`.
+Drain alone, with no hit pending, does not escape: the escape still happens only on a hit. Open:
+- A capture of suffocation in the Ocean Trench must confirm 100 HP/s and that breath 0 means no oxygen.
+- Whether drain alone should escape (suffocation can kill with no hit) is not decided.
+
 ### Damage modifiers (C)
 
 The server computes a hit's damage from the player's conditions when it processes the report. The

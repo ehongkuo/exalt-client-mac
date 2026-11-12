@@ -19,6 +19,7 @@ typedef struct { uint64_t replies; uint32_t bound; } FatalProof;
 typedef struct {
  uintptr_t player,connection,map;
  int64_t pending,projected,overflow;
+ int drain; /* Phase 3 G: damage over time expected before the next update. */
  int attempted,blocking,reason,last_hp,have_hp;
  uint64_t last_update_ns,cadence_anchor_ns,interval_ns,jitter_ns,snapshots;
  uint64_t replies,proved,overflow_reply,proofs,cleared;
@@ -49,7 +50,7 @@ static inline void fatal_server_hp(FatalPolicy *p,int hp,uint64_t now) {
  if(p->last_update_ns && now<p->last_update_ns)return;
  ++p->snapshots;
  if(hp<=0 || p->blocking)fatal_clear_all(p);
- p->last_hp=hp;p->have_hp=1;p->projected=(int64_t)hp-p->pending;
+ p->last_hp=hp;p->have_hp=1;p->projected=(int64_t)hp-p->pending-p->drain;
  if(hp>0 && !p->blocking){p->attempted=0;p->reason=FATAL_REASON_NONE;}
 }
 /* Called when the client sends its reply to the tick built at server_time, in send order. */
@@ -91,8 +92,22 @@ static inline int fatal_server_tick(FatalPolicy *p,uint64_t entry_ns,uint32_t ti
  }
  if(p->overflow && !p->count && p->overflow_reply<p->proved){p->pending-=p->overflow;p->overflow=0;}
  p->cleared+=cleared;
- if(p->have_hp)p->projected=(int64_t)p->last_hp-p->pending;
+ if(p->have_hp)p->projected=(int64_t)p->last_hp-p->pending-p->drain;
  return cleared;
+}
+/* Phase 3 G rates in HP per second: bleeding 4 per 200 ms update, frostbite the 33 per update
+ * worst case measured in the Ice Citadel, suffocation about 100/s (approximate until captured). */
+#define FATAL_BLEED_HP_S 20
+#define FATAL_FROSTBITE_HP_S 165
+#define FATAL_SUFFOCATION_HP_S 100
+#define FATAL_BLEEDING 0x8000u  /* condition word 0 */
+#define FATAL_FROSTBITE_FULL 100
+/* Sets the drain expected over one update interval from the player's condition word 0 and the
+ * breath and frostbite meters (-1 when the map has none). Call before fatal_damage. */
+static inline void fatal_drain(FatalPolicy *p,uint32_t conditions,int breath,int frostbite) {
+ uint64_t rate=(conditions&FATAL_BLEEDING?FATAL_BLEED_HP_S:0)+(frostbite>=FATAL_FROSTBITE_FULL?FATAL_FROSTBITE_HP_S:0)+
+               (breath==0?FATAL_SUFFOCATION_HP_S:0);
+ p->drain=(int)((rate*p->interval_ns+999999999ULL)/1000000000ULL);
 }
 static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {
  if(p->blocking)return FATAL_BLOCK;
@@ -106,7 +121,7 @@ static inline int fatal_damage(FatalPolicy *p,int hp,int damage,uint64_t now) {
    p->hits[(p->head+p->count)%FATAL_HIT_CAPACITY]=(FatalHit){.ns=now,.reply=p->replies,.damage=damage};++p->count;
   } else {p->overflow+=damage;p->overflow_reply=p->replies;}
  }
- p->pending+=damage;p->projected=(int64_t)hp-p->pending;
+ p->pending+=damage;p->projected=(int64_t)hp-p->pending-p->drain;
  uint64_t cadence=2*p->interval_ns+4*p->jitter_ns;
  if(cadence>2000000000ULL)cadence=2000000000ULL;
  uint64_t stale=3*cadence;if(stale<1500000000ULL)stale=1500000000ULL;
