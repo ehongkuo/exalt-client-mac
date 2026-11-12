@@ -6,9 +6,11 @@ import SQLite3
 /// Drop alerts read what RealmHound already logs: it sniffs the game's traffic and writes every
 /// loot bag you see to a per-account SQLite file. This app only reads that file.
 
-/// Loot bag colours, with RealmHound's object ids. Boosted bags count as their colour.
+/// Loot bag colours, in the game's order (its Loot Bag 0 to 9), with RealmHound's object ids.
+/// Boosted bags count as their colour.
 enum DropBag: String, CaseIterable {
-    case brown, pink, purple, egg, teal, blue, gold, white, orange, red
+    // Cyan keeps the saved name "teal" (RealmHound's name for it).
+    case brown, pink, purple, egg, cyan = "teal", blue, white, gold, orange, red
 
     init?(id: Int) {
         switch id {
@@ -16,22 +18,29 @@ enum DropBag: String, CaseIterable {
         case 1286, 1710: self = .pink
         case 1287, 1722: self = .purple
         case 1288, 1723: self = .egg
-        case 1289, 1725: self = .teal
+        case 1289, 1725: self = .cyan
         case 1291, 1726: self = .blue
-        case 1294, 1724: self = .gold
         case 1292, 1296: self = .white
+        case 1294, 1724: self = .gold
         case 1295, 1727: self = .orange
         case 1708, 1728: self = .red
         default: return nil
         }
     }
-    var name: String {
+    var name: String { self == .egg ? "Egg basket" : "\(String(describing: self).capitalized) bag" }
+    /// What the game puts in this bag: each item's <BagType> in the game XML (Nov 2026).
+    var holds: String {
         switch self {
-        case .egg: return "Egg basket"
-        case .teal: return "Teal"
-        case .orange: return "Orange (UT)"
-        case .red: return "Red (ST)"
-        default: return rawValue.capitalized
+        case .brown: return "Minor potions"
+        case .pink: return "Tiers 0–6"
+        case .purple: return "Tiers 7–9, dyes, fragments"
+        case .egg: return "Pet eggs"
+        case .cyan: return "Tiers 10–12, common UTs"
+        case .blue: return "Stat potions, Life and Mana"
+        case .white: return "Untiered (UT), most shinies"
+        case .gold: return "Skins, pet stones, keys, forge materials"
+        case .orange: return "Set items (ST), quest chests"
+        case .red: return "Tiers 13–14, top UTs"
         }
     }
 }
@@ -77,7 +86,7 @@ struct DropAlert: Equatable {
     var dungeon: String
 
     var detail: String {
-        var parts = [bag.map { "\($0.name) bag" } ?? "Bag"]
+        var parts = [bag?.name ?? "Bag"]
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -144,7 +153,7 @@ enum BagSprites {
         case .purple: return 0xd2
         case .egg: return 0xd3
         case .gold: return 0xd4
-        case .teal: return 0xd5
+        case .cyan: return 0xd5
         case .blue: return 0xd6
         case .orange: return 0xd7
         case .red: return 0xd8

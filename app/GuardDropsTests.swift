@@ -9,6 +9,8 @@ enum DropTests {
     static func run() {
         check(DropBag(id: 1708) == .red && DropBag(id: 1728) == .red && DropBag(id: 1296) == .white, "boosted bags count as their colour")
         check(DropBag(id: 1283) == nil, "soulbound is not a choosable bag")
+        check(DropBag(id: 1289) == .cyan && DropBag(rawValue: "teal") == .cyan, "cyan keeps its saved name")
+        check(DropBag.egg.name == "Egg basket" && DropBag.cyan.name == "Cyan bag", "bag names")
         check(DropRarity(enchants: 0) == .common && DropRarity(enchants: 3) == .legendary && DropRarity(enchants: 7) == .divine,
               "rarity from enchantment slots")
 
@@ -30,7 +32,7 @@ enum DropTests {
         check(DropRules.alert(for: drop(1291, [shiny]), settings: s, shiny: [200], nowMs: now) == nil, "shiny alerts can be off")
         s.enabled = false
         check(DropRules.alert(for: drop(1708, [LootItem(id: 1, name: "x", enchants: 4)]), settings: s, shiny: [], nowMs: now) == nil, "off")
-        check(DropAlert(item: "x", bag: .red, rarity: .divine, shiny: false, mob: "Oryx", dungeon: "").detail == "Red (ST) bag · Divine · Oryx",
+        check(DropAlert(item: "x", bag: .red, rarity: .divine, shiny: false, mob: "Oryx", dungeon: "").detail == "Red bag · Divine · Oryx",
               "popup detail line")
 
         let xml = """

@@ -381,14 +381,7 @@ struct DropPopupContent: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
-                Group {
-                    if let bagSprite {
-                        Image(decorative: bagSprite, scale: 1).interpolation(.none).resizable().frame(width: 32, height: 32)
-                    } else {
-                        Image(systemName: "bag.fill").font(.system(size: 17)).foregroundStyle(drop.bag.map(bagColor) ?? .white)
-                    }
-                }
-                .frame(width: 40, height: 40)
+                BagIcon(bag: drop.bag, sprite: bagSprite, size: 32).frame(width: 40, height: 40)
                 if drop.shiny {
                     Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
                         .foregroundStyle(shinyPink, shinyGold).padding(2)
@@ -458,13 +451,29 @@ private struct Diamond: Shape {
     }
 }
 
+/// A bag's game sprite, or a bag symbol in its colour when RealmHound's assets are missing.
+struct BagIcon: View {
+    var bag: DropBag?
+    var sprite: CGImage?
+    var size: CGFloat
+
+    var body: some View {
+        if let sprite {
+            Image(decorative: sprite, scale: 1).interpolation(.none).resizable().frame(width: size, height: size)
+        } else {
+            Image(systemName: "bag.fill").font(.system(size: size * 0.53)).foregroundStyle(bag.map(bagColor) ?? .white)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
 func bagColor(_ bag: DropBag) -> Color {
     switch bag {
     case .brown: return Color(red: 0.6, green: 0.4, blue: 0.2)
     case .pink: return .pink
     case .purple: return .purple
     case .egg: return Color(red: 0.95, green: 0.85, blue: 0.6)
-    case .teal: return .teal
+    case .cyan: return .cyan
     case .blue: return .blue
     case .gold: return .yellow
     case .white: return .white
@@ -1072,11 +1081,15 @@ struct GuardPanel {
                         drops.show(DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""))
                     }
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2), alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     ForEach(DropBag.allCases, id: \.self) { bag in
                         Toggle(isOn: Binding(get: { drops.settings.bags.contains(bag) },
                                              set: { on in if on { drops.settings.bags.insert(bag) } else { drops.settings.bags.remove(bag) } })) {
-                            HStack(spacing: 4) { Circle().fill(bagColor(bag)).frame(width: 7, height: 7); Text(bag.name) }
+                            HStack(spacing: 6) {
+                                BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 16)
+                                Text(bag.name).frame(width: 78, alignment: .leading)
+                                Text(bag.holds).foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                         .toggleStyle(.checkbox)
                     }
