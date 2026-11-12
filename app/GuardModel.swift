@@ -2,9 +2,11 @@ import Darwin
 import Foundation
 
 /// Where things live. The guard and the build check ship inside the app, so the app can be
-/// moved anywhere; settings and logs go to ~/Library/Application Support/Exalt Client Mac.
+/// moved anywhere; settings and logs go to ~/Library/Application Support/<app name>, so a staging
+/// build ("Exalt Client Mac Staging", from ./build.sh --stage) never touches the installed app's.
 enum GuardPaths {
-    static func dataFolder(home: URL) -> URL { home.appendingPathComponent("Library/Application Support/Exalt Client Mac") }
+    static let prodName = "Exalt Client Mac"
+    static func dataFolder(home: URL, name: String = prodName) -> URL { home.appendingPathComponent("Library/Application Support/\(name)") }
     static func logs(data: URL) -> URL { data.appendingPathComponent("logs") }
     static func liveFile(data: URL) -> URL { logs(data: data).appendingPathComponent("guard-live.bin") }
     static func settingsFile(data: URL) -> URL { data.appendingPathComponent("guard-settings.conf") }
@@ -51,6 +53,15 @@ struct GuardSettings: Equatable {
 }
 
 enum SettingsFile {
+    /// First run of a staging build: start from prod's settings so the thresholds match.
+    /// True when it copied them (the staging folder had none).
+    @discardableResult static func seed(staging: URL, from prod: URL) -> Bool {
+        let target = GuardPaths.settingsFile(data: staging), source = GuardPaths.settingsFile(data: prod)
+        let files = FileManager.default
+        guard !files.fileExists(atPath: target.path), files.fileExists(atPath: source.path) else { return false }
+        try? files.createDirectory(at: staging, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return (try? files.copyItem(at: source, to: target)) != nil
+    }
     static func load(_ url: URL) -> GuardSettings? {
         (try? String(contentsOf: url, encoding: .utf8)).flatMap(GuardSettings.init(text:))
     }
