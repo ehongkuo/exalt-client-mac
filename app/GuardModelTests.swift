@@ -222,5 +222,6 @@ private func sample() -> LiveData {
         print("Guard model tests passed")
         SettingsTests.run()
         LaunchTests.run()
+        DropTests.run()
     }
 }

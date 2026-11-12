@@ -286,6 +286,202 @@ final class PartyAlerts: ObservableObject {
     }
 }
 
+/// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
+/// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+final class DropAlerts: ObservableObject {
+    @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
+    @Published private(set) var popup: DropAlert?
+    @Published private(set) var logs = 0
+    @Published private(set) var shinies: Set<Int> = []
+    @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
+    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
+    private let log = LootLog(accounts: RealmHoundPaths.accounts)
+    private let defaults = UserDefaults.standard
+
+    init() {
+        var s = DropAlertSettings()
+        if let v = defaults.object(forKey: "dropAlerts") as? Bool { s.enabled = v }
+        if let v = defaults.object(forKey: "dropAlertSound") as? Bool { s.sound = v }
+        if let v = defaults.stringArray(forKey: "dropAlertBags") { s.bags = Set(v.compactMap(DropBag.init(rawValue:))) }
+        if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { s.minRarity = r }
+        if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { s.shiny = v }
+        settings = s
+        loadShiniesIfNeeded()
+        loadBagsIfNeeded()
+    }
+    private func save() {
+        defaults.set(settings.enabled, forKey: "dropAlerts")
+        defaults.set(settings.sound, forKey: "dropAlertSound")
+        defaults.set(settings.bags.map(\.rawValue).sorted(), forKey: "dropAlertBags")
+        defaults.set(settings.minRarity.rawValue, forKey: "dropAlertRarity")
+        defaults.set(settings.shiny, forKey: "dropAlertShiny")
+    }
+    /// The shiny list comes from about 60 MB of XML, so it is read once, off the main thread.
+    private func loadShiniesIfNeeded() {
+        #if !GUARD_UI_TEST
+        guard settings.enabled, settings.shiny, shinies.isEmpty, !loadingShinies else { return }
+        loadingShinies = true
+        DispatchQueue.global(qos: .utility).async {
+            let ids = ShinyIndex.load(folder: RealmHoundPaths.xml)
+            DispatchQueue.main.async { self.shinies = ids; self.loadingShinies = false }
+        }
+        #endif
+    }
+    /// Bag sprites are cut from a large atlas, so they are read once, off the main thread.
+    private func loadBagsIfNeeded() {
+        #if !GUARD_UI_TEST
+        guard settings.enabled, bagSprites.isEmpty, !loadingBags else { return }
+        loadingBags = true
+        DispatchQueue.global(qos: .utility).async {
+            let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
+            DispatchQueue.main.async { self.bagSprites = sprites; self.loadingBags = false }
+        }
+        #endif
+    }
+    private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
+    func check() {
+        if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
+        guard now - lastPoll >= 1 else { return }
+        lastPoll = now
+        #if !GUARD_UI_TEST
+        // The log is polled with alerts off too, so turning them on never replays old drops.
+        let drops = log.poll()
+        if log.logs != logs { logs = log.logs }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, nowMs: nowMs) }).last {
+            show(alert)
+        }
+        #endif
+    }
+    func show(_ alert: DropAlert) {
+        popup = alert; shownAt = now
+        #if !GUARD_UI_TEST
+        if settings.sound { NSSound(named: "Hero")?.play() }
+        #endif
+    }
+    func dismiss() { popup = nil }
+}
+
+/// The drop popup: like the Join popup, but nothing to press; a click dismisses it.
+struct DropPopupView: View {
+    @ObservedObject var drops: DropAlerts
+
+    var body: some View {
+        if let drop = drops.popup {
+            DropPopupContent(drop: drop, bagSprite: drop.bag.flatMap { drops.bagSprites[$0] }).onTapGesture { drops.dismiss() }
+        }
+    }
+}
+
+struct DropPopupContent: View {
+    var drop: DropAlert
+    /// The bag's game sprite; the SF Symbol stands in when RealmHound's assets are missing.
+    var bagSprite: CGImage? = nil
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                BagIcon(bag: drop.bag, sprite: bagSprite, size: 32).frame(width: 40, height: 40)
+                if drop.shiny {
+                    Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(shinyPink, shinyGold).padding(2)
+                }
+            }
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(drop.shiny ? "\(drop.item) (Shiny)" : drop.item).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
+                }
+                Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(width: 380, height: 64)
+        .background(panelBackground.opacity(0.97))
+        .overlay {
+            if drop.shiny {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(
+                    AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink], center: .center),
+                    lineWidth: 2)
+            } else {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color(red: 1, green: 0.85, blue: 0.3)
+
+/// The game's rarity mark: one gem per enchantment slot, in the rarity's colour (green, blue,
+/// purple, gold), clustered as on an item's slot.
+struct RarityGems: View {
+    var rarity: DropRarity
+    private let gem: CGFloat = 10
+
+    var body: some View {
+        let color = [Color.clear, Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),
+                     Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)][rarity.rawValue]
+        // Gem centres in gem widths: a pair, a triangle, then a diamond of four.
+        let spots: [(CGFloat, CGFloat)] = [[], [(0, 0)], [(0, 0), (1, 0)], [(0, 0), (1, 0), (0.5, 0.5)],
+                                           [(0.5, 0), (0, 0.5), (1, 0.5), (0.5, 1)]][rarity.rawValue]
+        ZStack(alignment: .topLeading) {
+            ForEach(spots.indices, id: \.self) { i in
+                ZStack {
+                    Diamond().fill(color)
+                    Diamond().fill(.white.opacity(0.55)).frame(width: gem * 0.4, height: gem * 0.4).offset(x: -gem * 0.12, y: -gem * 0.12)
+                    Diamond().stroke(.black, lineWidth: 1)
+                }
+                .frame(width: gem, height: gem).offset(x: spots[i].0 * gem, y: spots[i].1 * gem)
+            }
+        }
+        .frame(width: gem * (spots.map(\.0).max()! + 1), height: gem * (spots.map(\.1).max()! + 1), alignment: .topLeading)
+        .accessibilityLabel(rarity.name)
+    }
+}
+
+private struct Diamond: Shape {
+    func path(in r: CGRect) -> Path {
+        Path { p in p.move(to: CGPoint(x: r.midX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+            p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.midY)); p.closeSubpath() }
+    }
+}
+
+/// A bag's game sprite, or a bag symbol in its colour when RealmHound's assets are missing.
+struct BagIcon: View {
+    var bag: DropBag?
+    var sprite: CGImage?
+    var size: CGFloat
+
+    var body: some View {
+        if let sprite {
+            Image(decorative: sprite, scale: 1).interpolation(.none).resizable().frame(width: size, height: size)
+        } else {
+            Image(systemName: "bag.fill").font(.system(size: size * 0.53)).foregroundStyle(bag.map(bagColor) ?? .white)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+func bagColor(_ bag: DropBag) -> Color {
+    switch bag {
+    case .brown: return Color(red: 0.6, green: 0.4, blue: 0.2)
+    case .pink: return .pink
+    case .purple: return .purple
+    case .egg: return Color(red: 0.95, green: 0.85, blue: 0.6)
+    case .cyan: return .cyan
+    case .blue: return .blue
+    case .gold: return .yellow
+    case .white: return .white
+    case .orange: return .orange
+    case .red: return .red
+    }
+}
+
 /// Brings the game to the front, also from a full-screen video in another space.
 enum GameFocus {
     static func bringForward(pid: Int32) {
@@ -361,6 +557,7 @@ final class WindowState: ObservableObject {
     /// Which rows of the More section are open.
     @Published var sessionOpen = false
     @Published var partyOpen = false
+    @Published var dropsOpen = false
     @Published var diagnosticsOpen = false
     func setFloating(_ value: Bool) {
         floating = value; window?.level = value ? .floating : .normal
@@ -427,13 +624,14 @@ struct GuardView: View {
     @ObservedObject var settings: SettingsController
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
+    @ObservedObject var drops: DropAlerts
 
     var body: some View {
         #if !GUARD_SYNC_CAPTURE
         let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
         #endif
         MainLayout {
-            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, source: source).content(source.snapshot, source.link, source.rate)
+            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, source: source).content(source.snapshot, source.link, source.rate)
         }
         .frame(minWidth: 420, minHeight: 360)
         .preferredColorScheme(.dark)
@@ -516,6 +714,7 @@ struct GuardPanel {
     @ObservedObject var settings: SettingsController
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
+    @ObservedObject var drops: DropAlerts
     let source: LiveSource
 
     @ViewBuilder func content(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -774,6 +973,8 @@ struct GuardPanel {
             }
             disclosure($window.partyOpen, "Party calls", value: partyValue(running)) { partyDetail(running) }
             RowDivider()
+            disclosure($window.dropsOpen, "Drop alerts", value: drops.settings.enabled ? "On" : "Off") { dropDetail() }
+            RowDivider()
             disclosure($window.diagnosticsOpen, "Diagnostics and logs", value: "") { diagnostics(running, link, rate) }
         }
         .padding(.bottom, 4)
@@ -864,6 +1065,46 @@ struct GuardPanel {
                 Text("\(text) · \(s.partyCalls) this session").foregroundStyle(problem ? bad : Color.secondary)
             }
             Text("Counts \"j\", \"jjjj\", \"j cit\" and \"join\" from other players while you wait in the Nexus, Vault, Realm, Guild Hall, Pet Yard or Daily Quest Room. Quiet in dungeons. A burst alerts once every 5 s.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 11))
+    }
+
+    private func dropDetail() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch).controlSize(.small)
+            Group {
+                HStack {
+                    Toggle("Play a sound", isOn: $drops.settings.sound).toggleStyle(.checkbox)
+                    Spacer()
+                    Button("Test alert") {
+                        drops.show(DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""))
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(DropBag.allCases, id: \.self) { bag in
+                        Toggle(isOn: Binding(get: { drops.settings.bags.contains(bag) },
+                                             set: { on in if on { drops.settings.bags.insert(bag) } else { drops.settings.bags.remove(bag) } })) {
+                            HStack(spacing: 6) {
+                                BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 16)
+                                Text(bag.name).frame(width: 78, alignment: .leading)
+                                Text(bag.holds).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                Picker("Lowest rarity", selection: $drops.settings.minRarity) {
+                    ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                }
+                .fixedSize()
+                Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+            }
+            .disabled(!drops.settings.enabled)
+            Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
+                 : "Reading RealmHound's loot log" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
+                .foregroundStyle(drops.logs == 0 ? bad : Color.secondary)
+            Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))
@@ -997,8 +1238,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let settings = SettingsController()
     let launch = LaunchController()
     let alerts = PartyAlerts()
+    let drops = DropAlerts()
     var joinPopup: NSPanel!
+    var dropPopup: NSPanel!
     private var popupWatch: AnyCancellable?
+    private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
     private var activity: NSObjectProtocol?
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1011,6 +1255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             self.source.refresh(detailed: self.state.diagnosticsOpen)
             #if !GUARD_SYNC_CAPTURE
             self.alerts.check(self.source)
+            self.drops.check()
             #endif
         }
         RunLoop.main.add(alertTimer!, forMode: .common)
@@ -1037,7 +1282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.title = appName
         #endif
         window.delegate = self
-        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts))
+        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
         state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
@@ -1075,6 +1320,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
             panel.orderFrontRegardless()
         }
+        // Drop popup: the same place, or just below the Join popup while that is up.
+        dropPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 64),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        dropPopup.level = .statusBar
+        dropPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        dropPopup.backgroundColor = .clear; dropPopup.isOpaque = false; dropPopup.hasShadow = true
+        dropPopup.hidesOnDeactivate = false
+        let dropHost = NSHostingView(rootView: DropPopupView(drops: drops))
+        dropHost.sizingOptions = []
+        dropPopup.contentView = dropHost
+        dropWatch = drops.$popup.receive(on: DispatchQueue.main).sink { [weak self] drop in
+            guard let self, let panel = self.dropPopup else { return }
+            if drop == nil { panel.orderOut(nil); return }
+            if let screen = NSScreen.main {
+                var top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top) - 12
+                if self.joinPopup.isVisible { top = self.joinPopup.frame.minY - 8 }
+                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top))
+            }
+            panel.orderFrontRegardless()
+        }
         #if GUARD_UI_TEST
         // Test hook: drive compact and full screen automatically and report what is visible.
         let env = ProcessInfo.processInfo.environment
@@ -1102,7 +1367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
         }
         // Screenshot hook: open every More row (tools/readme-screenshots.sh).
-        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.diagnosticsOpen = true }
+        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.dropsOpen = true; state.diagnosticsOpen = true }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }

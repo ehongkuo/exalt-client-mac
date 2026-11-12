@@ -11,7 +11,7 @@ mkdir -p "${app:h}"
 clang -O2 "$src/tests/ui_fixture.c" -o "$work/ui-fixture"
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$src/module-cache" -D GUARD_UI_TEST \
     -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" \
-    "$src/app/GuardExport.swift" "$src/app/GuardApp.swift" -o "$app"
+    "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardApp.swift" -o "$app"
 # Lists a process's on-screen windows as "id width height".
 cat > "$work/winid.swift" <<'EOF'
 import CoreGraphics
