@@ -2,6 +2,8 @@
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
 # Usage: ./build.sh               (tests + build + install; the game must be closed)
+#        ./build.sh --stage       (tests + build "Exalt Client Mac Staging.app" into build/, never
+#                                  installs: live-test a PR with its own data folder and settings)
 #        ./build.sh --app-only --sync-capture (temporary observation-only app)
 #        ./build.sh --test-only
 #        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
@@ -9,10 +11,12 @@
 #                                  UI check takes focus from the game. Run them with the game closed.
 set -eu
 sync_capture=0
+stage=0
 build_mode=""
 for option in "$@"; do
     case "$option" in
         --sync-capture) sync_capture=1 ;;
+        --stage) stage=1 ;;
         --app-only|--test-only) build_mode="$option" ;;
         *) print "Unknown option: $option"; exit 1 ;;
     esac
@@ -20,7 +24,11 @@ done
 src="${0:A:h}"
 out="$src/build"
 cache="$src/module-cache"
-app="$out/Exalt Client Mac.app"
+# The staged app gets its own name, bundle id (so its own defaults) and data folder (the app
+# names its Application Support folder after CFBundleName).
+if (( stage )); then app_name='Exalt Client Mac Staging'; bundle_id=local.exalt.clientmac.staging
+else app_name='Exalt Client Mac'; bundle_id=local.exalt.clientmac; fi
+app="$out/$app_name.app"
 installed="$HOME/Applications/Exalt Client Mac.app"
 data="$HOME/Library/Application Support/Exalt Client Mac"
 tests="$out/tests"   # test binaries
@@ -110,8 +118,11 @@ fi
 # A running game has the installed guard loaded. Replacing the app bundle is still safe: the
 # old files are unlinked, not overwritten, so the game keeps its mapped copy. --app-only allows
 # that; the new guard then takes effect the next time the game starts.
-if pgrep -x ExaltClientMac >/dev/null; then
-    print 'Quit Exalt Client Mac first, then run this again.'
+# The staged and installed apps share the executable name: tell them apart by path, so either
+# can stay open while the other is built.
+running_app() { ps -axo comm= | grep -Fxq "$1/Contents/MacOS/ExaltClientMac" }
+if running_app "$app" || { (( ! stage )) && running_app "$installed" }; then
+    print "Quit $app_name first, then run this again."
     exit 1
 fi
 if [[ "${build_mode}" != --app-only ]] && { pgrep -x RotMGExalt >/dev/null || pgrep -xf '.*RotMG Exalt Launcher' >/dev/null; }; then
@@ -134,7 +145,7 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "${guard_flags[@]}" "$s
 cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resources/"
 cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" "$app/Contents/Resources/compatibility-profile.json"
 
-print '== Build Exalt Client Mac.app (Apple silicon)'
+print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
     -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
@@ -149,16 +160,20 @@ else
     xcrun swiftc -module-cache-path "$cache" "$src/app/make_icon.swift" -o "$icons/make-icon"
     "$icons/make-icon" "$icons/AppIcon.iconset"
 fi
+if (( stage )); then
+    xcrun swiftc -O -module-cache-path "$cache" "$src/app/tint_icon.swift" -o "$icons/tint-icon"
+    "$icons/tint-icon" "$icons/AppIcon.iconset"
+fi
 iconutil -c icns "$icons/AppIcon.iconset" -o "$app/Contents/Resources/AppIcon.icns"
 rm -rf "$icons"
-cat > "$app/Contents/Info.plist" <<'PLIST'
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key><string>ExaltClientMac</string>
-	<key>CFBundleIdentifier</key><string>local.exalt.clientmac</string>
-	<key>CFBundleName</key><string>Exalt Client Mac</string>
+	<key>CFBundleIdentifier</key><string>$bundle_id</string>
+	<key>CFBundleName</key><string>$app_name</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundleShortVersionString</key><string>0.3</string>
@@ -176,6 +191,11 @@ codesign --force --sign - "$app/Contents/Resources/ExaltGuard.dylib"   # sign th
 codesign --force --sign - "$app"
 codesign --verify --strict "$out/ExaltGuard.dylib" "$app/Contents/Resources/ExaltGuard.dylib" "$app"
 [[ -s "$app/Contents/Resources/game-build.sha256" ]] || { print 'ERROR: game-build.sha256 is missing.'; exit 1; }
+if (( stage )); then
+    print "Staged $app (not installed; ~/Applications is unchanged)."
+    print "Quit the installed app, then: open '$app'"
+    exit 0
+fi
 print '== Install to ~/Applications'
 mkdir -p "$HOME/Applications" "$data/logs"
 chmod 700 "$data" "$data/logs"

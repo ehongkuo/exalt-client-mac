@@ -8,12 +8,25 @@ import UserNotifications
 private let ok = Color.green, warn = Color.orange, bad = Color.red
 private let panelBackground = Color(white: 0.15)
 
+/// "Exalt Client Mac Staging" for ./build.sh --stage: its own data folder and defaults, marked in the UI.
+private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? GuardPaths.prodName
+private let isStaging = appName != GuardPaths.prodName
+
 #if GUARD_UI_TEST
 private let liveURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_LIVE_FILE"] ?? "/dev/null")
 private let settingsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_SETTINGS_FILE"] ?? "/dev/null")
 private let dataURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_DATA_DIR"] ?? "/nonexistent")
 #else
-private let dataURL = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
+private let dataURL: URL = {
+    let home = FileManager.default.homeDirectoryForCurrentUser, prod = GuardPaths.dataFolder(home: home)
+    guard isStaging else { return prod }
+    let staging = GuardPaths.dataFolder(home: home, name: appName)
+    // Drop and party alert settings live in the defaults: copy them along with the guard's.
+    if SettingsFile.seed(staging: staging, from: prod), let defaults = UserDefaults.standard.persistentDomain(forName: "local.exalt.clientmac") {
+        for (key, value) in defaults { UserDefaults.standard.set(value, forKey: key) }
+    }
+    return staging
+}()
 private let liveURL = GuardPaths.liveFile(data: dataURL)
 private let settingsURL = GuardPaths.settingsFile(data: dataURL)
 #endif
@@ -757,6 +770,7 @@ struct GuardPanel {
         return HStack(spacing: 8) {
             Circle().fill(dot).frame(width: 7, height: 7)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            if isStaging { Pill(text: "STAGING", color: .blue) }
             Spacer()
             Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
                 .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
@@ -1246,13 +1260,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
-        let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit Exalt Client Mac", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; NSApp.mainMenu = menu
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 760), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         #if GUARD_SYNC_CAPTURE
         window.title = "Exalt Client Mac — Sync observation"
         #else
-        window.title = "Exalt Client Mac"
+        window.title = appName
         #endif
         window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops))
@@ -1383,6 +1397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
 @main struct Main {
     static func main() {
         let app = NSApplication.shared
+        _ = dataURL   // a first staging run copies prod's defaults before any controller reads them
         let delegate = AppDelegate()
         app.delegate = delegate; app.setActivationPolicy(.regular); app.run()
         withExtendedLifetime(delegate) {}
