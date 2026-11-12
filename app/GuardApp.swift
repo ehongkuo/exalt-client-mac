@@ -1239,7 +1239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let launch = LaunchController()
     let alerts = PartyAlerts()
     let drops = DropAlerts()
-    var joinPopup: NSPanel!
+    var joinPopups: [NSPanel] = []
     var dropPopup: NSPanel!
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
@@ -1299,43 +1299,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
-        // Join popup: top centre of the screen, above everything including full-screen video.
-        joinPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 76),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        joinPopup.level = .statusBar
-        joinPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        joinPopup.backgroundColor = .clear; joinPopup.isOpaque = false; joinPopup.hasShadow = true
-        joinPopup.hidesOnDeactivate = false
-        let popupHost = NSHostingView(rootView: JoinPopupView(alerts: alerts, source: source))
-        // Fixed size: otherwise the empty view shrinks the panel to zero and the next popup grows upward off screen.
-        popupHost.sizingOptions = []
-        joinPopup.contentView = popupHost
+        // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
-            guard let self, let panel = self.joinPopup else { return }
-            if call == nil { panel.orderOut(nil); return }
-            if let screen = NSScreen.main {
-                // In full screen the visible frame reaches into the camera notch; stay below both.
-                let top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
-                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top - 12))
+            guard let self else { return }
+            if call == nil { self.joinPopups.forEach { $0.orderOut(nil) }; return }
+            let screens = NSScreen.screens
+            while self.joinPopups.count < screens.count {
+                self.joinPopups.append(self.popupPanel(height: 76, JoinPopupView(alerts: self.alerts, source: self.source)))
             }
-            panel.orderFrontRegardless()
+            for (i, panel) in self.joinPopups.enumerated() {
+                guard i < screens.count else { panel.orderOut(nil); continue }
+                panel.setFrameTopLeftPoint(NSPoint(x: screens[i].frame.midX - 190, y: self.popupTop(screens[i])))
+                panel.orderFrontRegardless()
+            }
         }
-        // Drop popup: the same place, or just below the Join popup while that is up.
-        dropPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 64),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        dropPopup.level = .statusBar
-        dropPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        dropPopup.backgroundColor = .clear; dropPopup.isOpaque = false; dropPopup.hasShadow = true
-        dropPopup.hidesOnDeactivate = false
-        let dropHost = NSHostingView(rootView: DropPopupView(drops: drops))
-        dropHost.sizingOptions = []
-        dropPopup.contentView = dropHost
+        // Drop popup: on the game's monitor, just below that monitor's Join popup while one is up.
+        dropPopup = popupPanel(height: 64, DropPopupView(drops: drops))
         dropWatch = drops.$popup.receive(on: DispatchQueue.main).sink { [weak self] drop in
             guard let self, let panel = self.dropPopup else { return }
             if drop == nil { panel.orderOut(nil); return }
-            if let screen = NSScreen.main {
-                var top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top) - 12
-                if self.joinPopup.isVisible { top = self.joinPopup.frame.minY - 8 }
+            if let screen = self.gameScreen() ?? NSScreen.main {
+                var top = self.popupTop(screen)
+                if let join = self.joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+                    top = join.frame.minY - 8
+                }
                 panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top))
             }
             panel.orderFrontRegardless()
@@ -1374,6 +1361,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var compactMode = false
     private var compactAfterFullScreen = false
     /// Show the strip before hiding the main window: hiding the last regular window counts as
+    /// A popup card above everything, including full-screen video, that never takes focus.
+    private func popupPanel<V: View>(height: CGFloat, _ view: V) -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: height),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        let host = NSHostingView(rootView: view)
+        // Fixed size: otherwise the empty view shrinks the panel to zero and the next popup grows upward off screen.
+        host.sizingOptions = []
+        panel.contentView = host
+        return panel
+    }
+    /// Where a popup's top edge goes. In full screen the visible frame reaches into the camera notch; stay below both.
+    private func popupTop(_ screen: NSScreen) -> CGFloat {
+        min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top) - 12
+    }
+    /// The screen holding most of the game window, or nil when the game has no window.
+    private func gameScreen() -> NSScreen? {
+        let guarded = source.link.isLive ? source.snapshot?.pid : nil
+        guard let pid = guarded ?? NSWorkspace.shared.runningApplications
+                .first(where: { $0.executableURL?.lastPathComponent == "RotMGExalt" })?.processIdentifier,
+              let info = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        // Bounds and owner need no screen recording permission; only window titles do.
+        let window = info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+            .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
+            .max { $0.width * $0.height < $1.width * $1.height }
+        let screens = NSScreen.screens
+        let bounds = screens.map { CGDisplayBounds(($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) }
+        return PopupScreen.index(window: window, screens: bounds).map { screens[$0] }
+    }
     /// "last window closed", which would otherwise quit the app. A full-screen window has to
     /// leave full screen first, or hiding it leaves an empty full-screen space behind.
     func showCompact() {
