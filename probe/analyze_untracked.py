@@ -209,6 +209,37 @@ def drain(text, max_age_ms=1500):
             out.setdefault('+'.join(active), []).append(sample)
         else:
             unattributed.append(sample)
+    return summarize_drain(out, unattributed, regen_hp, regen_ms)
+
+
+def drain_samples(text, max_age_ms=1500):
+    """The same report from the normal guard's drain_sample lines (one per server update while an
+    effect or its meter is present). Consecutive ticks only, the same effects at both ends, and no hit
+    reported in the max_age_ms before. The normal guard records no heal text, so a heal in the same
+    update hides part of the drain: use the highest clean rate, not the median."""
+    out, unattributed, regen_hp, regen_ms, previous = {}, [], 0, 0, None
+    lines = [dict(field.split('=', 1) for field in line.split('\t')[1:])
+             for line in text.splitlines() if line.startswith('drain_sample\t')]
+    for row in lines:
+        s = {k: int(v, 0) for k, v in row.items()}
+        s['effects'] = effects_of(dict(flag0=7, projectile=s['conditions'], owner=s['frostbite'], value=s['breath']))
+        prev, previous = previous, s
+        if not prev or s['tick'] != prev['tick'] + 1 or s['max'] != prev['max'] or s['effects'] != prev['effects']:
+            continue
+        gap = (s['server_time'] - prev['server_time']) & 0xffffffff
+        if not 0 < gap <= 1000 or 0 <= s['hit_age_ms'] <= max_age_ms:
+            continue
+        change, active = s['hp'] - prev['hp'], s['effects']
+        if change > 0 and not active and s['hp'] < s['max'] and change <= 10:
+            regen_hp += change; regen_ms += gap
+        if change >= 0:
+            continue
+        sample = dict(seconds=s['ms'] / 1000, loss=-change, gap_ms=gap, hp_s=-change * 1000 / gap)
+        (out.setdefault('+'.join(active), []) if active else unattributed).append(sample)
+    return summarize_drain(out, unattributed, regen_hp, regen_ms)
+
+
+def summarize_drain(out, unattributed, regen_hp, regen_ms):
     effects = {}
     for name, samples in out.items():
         losses, rates = sorted(s['loss'] for s in samples), sorted(s['hp_s'] for s in samples)
@@ -227,7 +258,7 @@ def drain_markdown(paths, max_age_ms=1500):
              '| Capture | Effect | Updates | Loss min / median / max | HP/s median / max | Outliers | Small rises HP/s |',
              '|---|---|---:|---|---|---|---:|']
     for file, text in latest_copies(paths):
-        result = drain(text, max_age_ms)
+        result = (drain_samples if '\ndrain_sample\t' in text else drain)(text, max_age_ms)
         rows = list(result['effects'].items())
         if result['unattributed']:
             losses = sorted(s['loss'] for s in result['unattributed'])

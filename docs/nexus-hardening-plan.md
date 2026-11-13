@@ -298,6 +298,14 @@ pets and warmth, noting each character's DEF and VIT: suffocation (3–5 s at br
 defense reduces the drain. Then set each rate to the highest clean rate, rounded up to a whole HP
 per update.
 
+**Samples from normal play.** The normal guard (Nexus on death on) writes a `drain_sample` line on each
+server update while bleeding, on a map with a breath meter or with frostbite above 0, and on the
+update after: session time, tick, server build time, HP, max HP, condition words, both meters and the
+time since the last hit. `--drain` reads them when a log has them: consecutive ticks only, the same
+effects at both ends, no hit in the previous 1.5 s, rate over the build-time gap. There is no heal
+text in this build, so heals in the same update go unexcluded: read the highest clean rate, not the
+median.
+
 Open:
 - A capture of suffocation in the Ocean Trench must confirm the rate and that breath 0 means no oxygen.
 - Where the 33–34 HP frostbite updates come from.

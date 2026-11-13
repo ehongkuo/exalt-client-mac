@@ -347,8 +347,27 @@ static void fatal_record(void *player,int hp,int result) {
          hp,(long long)fatal_policy.pending,fatal_policy.drain,(long long)fatal_policy.projected,result,fatal_policy.reason,
          fatal_policy.count,(unsigned long long)fatal_policy.proved,(unsigned long long)fatal_policy.replies);
 }
+/* Phase 3 G measurement in normal play: one line per server update while bleeding, on a map with a
+ * breath meter or with frostbite above 0, plus the update after, for analyze_untracked.py --drain.
+ * The note queue is fixed-size; the background writer does the file I/O. */
+static uint64_t drain_hit_ns;
+static int drain_sampling;
+static void drain_sample(void *player,int hp,int tick,uint32_t server_time) {
+    uint64_t bits;int breath,frostbite;damage_context_read(player,&bits,&breath,&frostbite);
+    int active=(bits&FATAL_BLEEDING) || breath>=0 || frostbite>0;
+    if(!active && !drain_sampling)return;
+    drain_sampling=active;
+    int max=0;il2cpp_field_get_value(player,max_field,&max);
+    uint64_t now=monotonic_ns();
+    long long age=drain_hit_ns?(long long)((now-drain_hit_ns)/1000000ULL):-1;
+    note("drain_sample\tms=%llu\ttick=%d\tserver_time=%u\thp=%d\tmax=%d\tconditions=%#llx\tbreath=%d\tfrostbite=%d\thit_age_ms=%lld\n",
+         (unsigned long long)((now-start_ns)/1000000ULL),tick,server_time,hp,max,(unsigned long long)bits,breath,frostbite,age);
+}
 #endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
+#ifdef EXALT_CLIENT_FATAL
+    if(damage>0)drain_hit_ns=monotonic_ns();
+#endif
     if(!fatal_sync(player))return damage;
     int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
     int prediction_hp=hp;
@@ -630,6 +649,9 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
         il2cpp_field_get_value(self,probe_tick_field,&sequence);
         il2cpp_field_get_value(self,probe_time_field,&server_time);
         int cleared=fatal_server_tick(&fatal_policy,tick_entry_ns,(uint32_t)sequence,server_time,rtt);
+#ifdef EXALT_CLIENT_FATAL
+        drain_sample(player,hp,sequence,server_time);
+#endif
         if(cleared){
             note("guard_proof_clear\thp=%d\tcleared=%d\tpending=%lld\tprojected=%lld\ttick=%d\tserver_value=%u\trtt=%u\tproved_replies=%llu\n",
                  hp,cleared,(long long)fatal_policy.pending,(long long)fatal_policy.projected,sequence,server_time,rtt,
@@ -691,7 +713,7 @@ static int probe_setup(int install) {
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
     /* Fixture objects: tick messages 33 (class 3), replies 55 (class 5). */
     fatal_tick_class=(void*)3;fatal_rtt_field=(void*)994;fatal_reply_class=(void*)5;fatal_reply_time_field=(void*)995;
-#if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
+#ifndef HIT_PROBE_NO_CONTEXT_TEST
     damage_breath_field=(void*)1002;damage_frostbite_field=(void*)1003;
     damage_conditions_field=(void*)1001;
 #endif
