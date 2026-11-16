@@ -11,8 +11,10 @@ Data checked on 2026-11-16 from RealmHound's files, opened read-only on a copy
 
 - **Bosses: yes.** RealmHound already records every boss fight, whether it died, your damage and
   whether you were still there. Its drops link to those fights reliably.
-- **Regular mobs: no source today.** Nothing RealmHound stores, and nothing the guard reads, sees a
-  normal mob die. Getting it means new reverse engineering in the guard.
+- **Regular mobs: no source today, but the guard can add one.** Nothing RealmHound stores, and
+  nothing the guard reads yet, sees a normal mob die. The game has one method that every hit on an
+  object goes through, with a kill flag; hooking it counts every death you see (section 4).
+  Regular mobs matter: most set-item (ST) bags come from them.
 - **RealmHound logs only the bags its own filters pass.** A kill with no logged bag can mean "dropped
   nothing" or "dropped only bags RealmHound skips". Rates are only valid for items it always logs.
 
@@ -43,9 +45,8 @@ sample: 16 boss types, against 37 mob names in the loot log.
 
 `probe/` reads only your own damage, HP and death paths; nothing there touches enemies.
 
-The guard route for ordinary mobs is open research: a timer-polled object list sees an enemy vanish,
-but vanishing also happens when it leaves view range, so a death needs HP reaching 0 first. That
-would need its own investigation.
+Polling the object list would not work: an enemy also vanishes when it leaves view range. Section 4
+has the hook that does work.
 
 ## 2. Linking drops to kills
 
@@ -110,13 +111,54 @@ expanding to one row per item: `drops / kills = rate`, e.g. `3 / 31 · 9.7 %`. S
 | `DropRarity` | Optional rarity column (enchant slots) |
 | `GuardPaths.dataFolder` / settings file | Store `dropRatesSince` |
 
+## 4. Ordinary mob kills from the guard
+
+STs come mostly from ordinary mobs. Orange bags in the sample:
+
+| Source of the orange bag | Mobs | Bags | Items |
+|---|---|---|---|
+| Bosses | Void Entity, Marble Colossus | 10 | Epic quest chests only |
+| Ordinary mobs (Abyss of Demons, Lost Halls) | 9 | 15 | Ring of the Inferno, Molten Mantle, Golem Garments, … |
+
+RealmHound logs orange bags, so only the kill count is missing.
+
+Found in the game build the current profile covers (`2ce88d8b…`, checked against the 2026-11-06 dump
+and the installed binary):
+
+| What | Where | Evidence |
+|---|---|---|
+| Server "Damage" message, sent for other players' hits | class `MMDLNDNCGMA`: target id `+0x10`, damage `+0x20`, kill flag `+0x24` | The dump names its flag enum `DAMAGE_FLAG_KILL = 1` |
+| Its handler | `HJMBOMEHGDJ.DJCPAGLIIBO` at `0x926410` | Calls `target->vtable[0x628]` with the kill flag in the 5th argument (`r8`) |
+| Per-object damage method | `LKHPPBEGNOM.FNEBPDEDIJP` (base) at `0x11291F0`, slot 79 | Same method the guard's `notify` hook overrides for the local player; your own projectile hits reach it through the existing `hit_handler` callsites. Only players override it, so every enemy uses the base. |
+| Mob identity | `LKHPPBEGNOM` `+0x1C8` → `ObjectProperties` (`id` string at `+0x38`; numeric type in `BaseProperties`) | Field types in the dump |
+
+So one hook on the base method, acting only when the kill flag is set, sees every enemy death in view:
+yours (client-predicted) and other players' (from the server). Dedupe by object, since a death can be
+reported more than once.
+
+What this needs and doesn't cover:
+
+- **A profile change.** A new hooked method (`0x11291F0`, entry bytes) in the reviewed profile, which
+  then needs your audit. The hook adds work on every hit in the game, so it must stay tiny: check
+  the flag, push the object type into a ring buffer, return.
+- **Kill flag trust.** Your own kills are the client's prediction; a rare mismatch with the server is
+  possible. Not live-tested yet.
+- **"You hit it."** To count only kills you could get loot from, the guard also notes objects your
+  projectiles hit (same hook, local hits). Abilities and pets that damage without a projectile would
+  be missed by that check.
+- **Link to drops.** RealmHound's `mob_type` should equal the object type; to be confirmed live.
+
 ## Proposed split
 
-1. **Boss drop rates from RealmHound** (this issue): the query, the start time and Reset, the
-   view, and a note on which bags are counted. Small, read-only, testable with a fixture DB.
-2. **Ordinary mob kills from the guard** (separate issue, research first): find whether the game's
-   enemy objects can show deaths reliably. Large, needs live testing and a profile change, and only
-   useful once part 1 exists.
+Decision (2026-11-16): bosses and ordinary mobs together in #38.
+
+1. **Boss drop rates from RealmHound:** the query, the start time and Reset, the view, and a note on
+   which bags are counted. Read-only, testable with a fixture DB.
+2. **Ordinary mob kills from the guard:** the hook above, a kill log in the app's data folder, and
+   the same view. Needs the profile change and live testing.
+
+With guard kills, the app keeps its own kill log, so the "start time only" storage above holds for
+boss kills; mob kills are stored by the app.
 
 ## Open questions
 
@@ -124,6 +166,7 @@ expanding to one row per item: `drops / kills = rate`, e.g. `3 / 31 · 9.7 %`. S
 - Show only items whose bag RealmHound always logs, or show all with a warning?
 - Does RealmHound ever prune or rewrite old fights? If yes, switch to our own stored counts.
 - Treat quest chests, Event Chests and Treasure Pots (no kill, opened instead) as out of scope?
-- Is part 2 (ordinary mobs) wanted, and at what priority?
+- Approve adding the damage-method hook to the profile (your audit decision)?
+- Count guard-seen boss kills too, or keep RealmHound's boss fights (they have damage share)?
 - RealmHound's `track_soulbound` setting is off; what it filters is unclear and may matter for
   part 1.
