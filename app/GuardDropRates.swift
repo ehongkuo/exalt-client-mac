@@ -323,7 +323,10 @@ enum LootImport {
 /// Rates and the counting rules (a kill's top bag class) come with the rates view.
 struct DropDay: Equatable {
     struct Mob: Hashable { var type: Int, map: String, kills: Int, bags: [DropBag: Int] }
-    struct Notable: Hashable { var time: Double, bag: DropBag, mob: Int?, items: [Int] }
+    struct Notable: Hashable {
+        var time: Double, bag: DropBag, mob: Int?, items: [Int]
+        var enchants: [Int?] = []   // per item; nil where the bag's enchantment text is missing or cut short
+    }
     var kills = 0, bags = 0, linked = 0, lost = 0
     var refused: String?
     var mobs: [Mob] = []
@@ -368,16 +371,40 @@ struct DropDay: Equatable {
             day.mobs[i].bags[bag, default: 0] += Int(sqlite3_column_int64($0, 3))
         }
         store.run("""
-            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.item_type) FROM bags b
+            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.slot || ':' || i.item_type),
+                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bags b
             LEFT JOIN kills k ON k.id = b.kill LEFT JOIN bag_items i ON i.bag = b.id
             WHERE b.time >= ? GROUP BY b.id ORDER BY b.time DESC
             """, [since]) {
             guard day.notable.count < 10, let bag = DropBag(id: Int(sqlite3_column_int64($0, 1))), notableBags.contains(bag) else { return }
-            let items = sqlite3_column_text($0, 3).map { String(cString: $0).split(separator: ",").compactMap { Int($0) } } ?? []
+            let slots = (sqlite3_column_text($0, 3).map { String(cString: $0) } ?? "").split(separator: ",")
+                .compactMap { pair -> (Int, Int)? in
+                    let p = pair.split(separator: ":").compactMap { Int($0) }
+                    return p.count == 2 ? (p[0], p[1]) : nil
+                }.sorted { $0.0 < $1.0 }
+            let enchants = Enchantments.counts(sqlite3_column_text($0, 4).map { String(cString: $0) } ?? "")
             day.notable.append(Notable(time: sqlite3_column_double($0, 0), bag: bag,
-                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)), items: items))
+                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)),
+                                       items: slots.map(\.1), enchants: slots.map { $0.0 < enchants.count ? enchants[$0.0] : nil }))
         }
         return day
+    }
+}
+
+/// Enchantments on the items of a bag, from its stat 80: one comma-separated part per slot, each base64url of
+/// `00 02 n`, n 16-bit enchantment ids (fffd: an empty slot), then `05 00`. The counts match RealmHound's
+/// enchant_count on staging run 1. A slot's count is nil where its part is empty or cut short (run 1's guard
+/// kept only 64 characters).
+enum Enchantments {
+    static func counts(_ stat: String) -> [Int?] {
+        stat.split(separator: ",", omittingEmptySubsequences: false).map { part -> Int? in
+            var text = part.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            while text.count % 4 != 0 { text += "=" }
+            guard let data = Data(base64Encoded: text), data.count >= 3 else { return nil }
+            let b = [UInt8](data), n = Int(b[2])
+            guard b.count >= 3 + 2 * n else { return nil }
+            return (0..<n).filter { Int16(bitPattern: UInt16(b[3 + 2 * $0]) | UInt16(b[4 + 2 * $0]) << 8) >= 0 }.count
+        }
     }
 }
 

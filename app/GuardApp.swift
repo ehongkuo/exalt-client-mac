@@ -444,7 +444,7 @@ private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color
 /// purple, gold), clustered as on an item's slot.
 struct RarityGems: View {
     var rarity: DropRarity
-    private let gem: CGFloat = 10
+    var gem: CGFloat = 10
 
     var body: some View {
         let color = [Color.clear, Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),

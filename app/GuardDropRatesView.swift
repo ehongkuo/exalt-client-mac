@@ -112,8 +112,11 @@ struct DropRatesView: View {
                         ForEach(day.notable, id: \.self) { drop in
                             row {
                                 BagIcon(bag: drop.bag, sprite: drops.bagSprites[drop.bag], size: 14)
-                                ForEach(Array(drop.items.enumerated()), id: \.offset) { _, item in
-                                    Button { model.show(item: item) } label: { itemLabel(item) }.buttonStyle(.plain)
+                                ForEach(Array(drop.items.enumerated()), id: \.offset) { i, item in
+                                    Button { model.show(item: item) } label: {
+                                        itemLabel(item, enchants: i < drop.enchants.count ? drop.enchants[i] : nil, size: 24)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                                 Spacer()
                                 Text(drop.mob.map(report.name) ?? "No kill").foregroundStyle(.secondary).lineLimit(1)
@@ -335,8 +338,15 @@ struct DropRatesView: View {
             if report.bosses.contains(type) { bossTag }
         }
     }
-    private func itemLabel(_ type: Int) -> some View {
-        HStack(spacing: 6) { SpriteIcon(image: model.sprites[type], size: 20); Text(report.name(type)).lineLimit(1) }
+    /// An item's sprite and name; a dropped copy's enchantments show as the game's rarity gems on the sprite.
+    private func itemLabel(_ type: Int, enchants: Int? = nil, size: CGFloat = 20) -> some View {
+        HStack(spacing: 6) {
+            SpriteIcon(image: model.sprites[type], size: size)
+                .overlay(alignment: .bottomTrailing) {
+                    if let enchants, enchants > 0 { RarityGems(rarity: DropRarity(enchants: enchants), gem: 6).offset(x: 2, y: 2) }
+                }
+            Text(report.name(type)).lineLimit(1)
+        }
     }
     private func bagLabel(_ bag: DropBag) -> some View {
         HStack(spacing: 6) { BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 16); Text(bag.name) }
