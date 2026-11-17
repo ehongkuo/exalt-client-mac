@@ -84,11 +84,24 @@ game hit ─▶ guard hook ─▶ shared event ring ─▶ app poller (4 Hz) ─
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
 thread calls this method (the guard already asserts that for its other hooks).
 
-**Bags.** A bag appears as a new object at the spot where its mob died. The guard pushes a `bag`
-event with the bag's object type, id, position and item slots. If slots fill a tick or two after
-the object appears, the guard re-reads each new bag's slots for up to 2 s and pushes `bag_items`
-when they change. How to see a new bag cheaply (a hook on object creation or a diff on the guard's
-1 ms timer tick) is the one open spike (see open questions).
+**Hook B: new object (`HJMBOMEHGDJ.AODEIADKBCC`, `0x936110`).** The server's `Update` message
+(`PBMGGHIHACM`: new objects at `+0x28`, removed ids at `+0x30`) is handled by `CMKDLFEBNKD`
+(`0x935C10`), which calls this method once per new object with its `ObjectData` (`KBGIJJLLFFD`).
+The method then applies the object's first status straight away (it calls the status method
+`DBCEHNAEDCH`, `0x919FF0`), so **a bag's contents arrive in the same message as the bag**.
+
+The hook reads the message, not the game object:
+
+| Field | Where |
+|---|---|
+| Object type | `ObjectData +0x10` (ushort) |
+| Status | `ObjectData +0x18` → `ObjectStatus` (`BOEANEODCOA`): id `+0x10`, position `+0x18` (x `+0x1C`, y `+0x20`), stats `+0x20` |
+| Each stat | `List<StatData>` (`CGOECEPGBBG`): stat type `+0x10` (byte), int value `+0x14`, string `+0x18` |
+
+On each call: if the object type is in the bag-type set (20 ids), push a `bag` event with its id,
+position and the item ids from its inventory stats; otherwise return. Cost is one set lookup per
+new object; an `Update` arrives about 5 times a second. Later contents changes (players looting a
+public bag) come through `DBCEHNAEDCH` and aren't needed: a drop is what the bag held at first.
 
 **Events** (fixed 64-byte records, single producer, single consumer, in a new shared file next to
 the live state):
@@ -97,7 +110,7 @@ the live state):
 |---|---|
 | `kill` | time, map instance, object id, object type, x, y, by-you, damage handler (yours / server) |
 | `bag` | time, map instance, object id, bag type, x, y, up to 8 item ids |
-| `bag_items` | time, bag object id, up to 8 item ids |
+| `bag_stat` | bag object id, stat type, int value, first 40 bytes of the string value (one per non-item stat, so enchant data is kept raw for later) |
 | `map` | time, map instance, map name (on every map change) |
 | `boost` | reserved for the boost issue: time, packed boost state, only when it changes |
 
@@ -125,7 +138,8 @@ mode, opened only by the app.
 | `maps` | id, session, instance, name, entered | One row per map visit; gives the dungeon |
 | `kills` | id, map, time, object id, mob type, by_you, by_server, boost | One row per death you saw; `boost` null until the boost issue lands |
 | `bags` | id, map, time, object id, bag type, kill (nullable), x, y | Every bag, every colour |
-| `bag_items` | bag, slot, item type | Final contents |
+| `bag_items` | bag, slot, item type | Contents when the bag appeared |
+| `bag_stats` | bag, stat type, value, text | Every other stat the bag arrived with, raw (enchants are decoded later) |
 | `capture_gaps` | session, from, to, lost events, reason | Ring overflow, app not running, map unknown |
 
 Indexes: `kills(mob_type)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
@@ -179,14 +193,17 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
 
 ## Open questions
 
-- **Bag detection spike:** hook object creation, or diff the object list on the guard tick? Do a
-  bag's slots arrive with it or a tick later? (A few hours with the dump and one staging run.)
-- **Enchants on dropped items:** RealmHound records an enchant count per item; is it worth capturing
-  in v1?
+- **Bag detection (spike done on 2026-11-16, from the dump and the binary):** hook B, contents
+  included. Still to confirm in staging, by logging every stat of the first few bags:
+  - which stat types hold the 8 item slots (classic protocol: 8–15);
+  - where enchants live (likely a string stat; kept raw in `bag_stats` either way);
+  - whether the kill's object position (`+0x68`, a float3) matches the bag's x/y directly or needs
+    an axis swap.
+- **Mob type field:** the object's type is either `KJMONHENJEN +0x30` or inside its properties
+  (`+0x18`); confirm in the same run.
 - **Kill flag trust:** your own kills are the client's prediction. Live test against RealmHound's
   boss kills.
 - **Mob type id:** confirm the object type the guard reads equals RealmHound's `mob_type`.
 - **Abilities and pets:** hits without a projectile may not mark "hit by you". Check whether they
   reach hook A through another caller.
-- **Profile:** approve adding hook A (and any bag hook) to the reviewed profile. Auditing it is your
-  decision.
+- **Profile:** approve adding hooks A and B to the reviewed profile. Auditing it is your decision.
