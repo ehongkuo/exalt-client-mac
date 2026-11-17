@@ -23,7 +23,7 @@ current compatibility profile covers).
 | Kill and drop counts | True counts, incrementing forever from rollout; never weighted or altered |
 | Grouping | Mob type is a bucket; mob class = bosses or minions of a dungeon (boss list from RealmHound's fights first, the game's own data later). Bag colour is the drop class; boosted bag variants count as their colour. |
 | Default view | Orange and white bags (all colours captured) |
-| Start | Counting starts when capture first runs; older RealmHound data is not imported |
+| Start | Counting starts when capture first runs; older RealmHound data is not imported. One exception: staging run 1 captured bags but no kills, so its boss kills come from RealmHound (`tools/drop_backfill.py`, kills with `landed_by = 'realmhound'`, bags linked as RealmHound credits them). Its minion kills stay missing. |
 | RealmHound | Optional cross-check only |
 
 ## 1. Why not RealmHound
