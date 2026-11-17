@@ -116,14 +116,20 @@ final class DropRateStore {
     }
     deinit { sqlite3_close(db) }
 
-    @discardableResult func exec(_ sql: String) -> Bool { sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK }
+    /// Set when any statement fails, so an import can roll back instead of skipping rows.
+    var failed = false
+    @discardableResult func exec(_ sql: String) -> Bool {
+        let ok = sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        if !ok { failed = true }
+        return ok
+    }
 
     /// Runs one statement; calls `row` for each result row. Values are Int, Int64, Double, String or nil.
     @discardableResult
     func run(_ sql: String, _ values: [Any?] = [], row: ((OpaquePointer) -> Void)? = nil) -> Bool {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return false }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { failed = true; return false }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         for (i, value) in values.enumerated() {
             let index = Int32(i + 1)
@@ -139,7 +145,7 @@ final class DropRateStore {
             switch sqlite3_step(statement) {
             case SQLITE_ROW: row?(statement)
             case SQLITE_DONE: return true
-            default: return false
+            default: failed = true; return false
             }
         }
     }
@@ -193,7 +199,18 @@ enum LootImport {
                 maps[generation] = id
                 return id
             }
-            store.exec("BEGIN")
+            func link(_ mapID: Int64, _ b: LootBag) -> Int64? {
+                var kills: [(id: Int64, time: Double, x: Double, y: Double, z: Double)] = []
+                store.run("SELECT id, time, x, y, z FROM kills WHERE map = ? AND time BETWEEN ? AND ?",
+                          [mapID, b.time - 2, b.time + 0.25]) {
+                    kills.append((sqlite3_column_int64($0, 0), sqlite3_column_double($0, 1), sqlite3_column_double($0, 2),
+                                  sqlite3_column_double($0, 3), sqlite3_column_double($0, 4)))
+                }
+                return LootLink.nearest(b, among: kills)
+            }
+            guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return 0 }
+            store.failed = false
+            var firstKill = Double.infinity
             let text = String(decoding: data.prefix(complete), as: UTF8.self)
             for raw in text.split(separator: "\n") {
                 guard let line = LootLine(raw) else { continue }
@@ -210,18 +227,11 @@ enum LootImport {
                             damage_ability, max_hp, landed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, [map(k.generation, k.time), k.time, k.object, k.type, k.x, k.y, k.z,
                               k.projectile, k.projectileAlt, k.ability, k.maxHP, k.landedBy])
-                    last = k.time
+                    last = k.time; firstKill = min(firstKill, k.time)
                 case let .bag(b):
                     let mapID = map(b.generation, b.time)
-                    var kills: [(id: Int64, time: Double, x: Double, y: Double, z: Double)] = []
-                    store.run("SELECT id, time, x, y, z FROM kills WHERE map = ? AND time BETWEEN ? AND ?",
-                              [mapID, b.time - 2, b.time + 0.25]) {
-                        kills.append((sqlite3_column_int64($0, 0), sqlite3_column_double($0, 1), sqlite3_column_double($0, 2),
-                                      sqlite3_column_double($0, 3), sqlite3_column_double($0, 4)))
-                    }
-                    let kill = LootLink.nearest(b, among: kills)
                     store.run("INSERT INTO bags(map, time, object_id, bag_type, x, y, kill) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                              [mapID, b.time, b.object, b.type, b.x, b.y, kill])
+                              [mapID, b.time, b.object, b.type, b.x, b.y, link(mapID, b)])
                     let bag = store.lastID
                     bags["\(b.generation)/\(b.object)"] = bag
                     for (slot, item) in b.items.enumerated() where item >= 0 {
@@ -247,9 +257,20 @@ enum LootImport {
                     store.run("UPDATE sessions SET summary = ? WHERE id = ?", [text, session])
                 }
             }
+            // A kill can land just after its bag, and in the next import: give recent loose bags another try.
+            if firstKill.isFinite {
+                var loose: [(id: Int64, map: Int64, bag: LootBag)] = []
+                store.run("SELECT id, map, time, x, y FROM bags WHERE kill IS NULL AND time >= ?", [firstKill - 0.25]) {
+                    loose.append((sqlite3_column_int64($0, 0), sqlite3_column_int64($0, 1),
+                                  LootBag(time: sqlite3_column_double($0, 2), generation: 0, object: 0, type: 0,
+                                          x: sqlite3_column_double($0, 3), y: sqlite3_column_double($0, 4), items: [])))
+                }
+                for l in loose { if let kill = link(l.map, l.bag) { store.run("UPDATE bags SET kill = ? WHERE id = ?", [kill, l.id]) } }
+            }
             store.run("UPDATE sessions SET imported_bytes = ?, ended = max(coalesce(ended, 0), ?) WHERE id = ?",
                       [offset + complete, last ?? 0, session])
-            guard store.exec("COMMIT") else { store.exec("ROLLBACK"); return 0 }
+            // Any failed write rolls the whole file back, so the next run retries it from the same place.
+            guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return 0 }
         }
         // A file is done when its game has ended: every whole line is in, and a cut-off last line never completes.
         if status == "complete" || !alive(pid) {

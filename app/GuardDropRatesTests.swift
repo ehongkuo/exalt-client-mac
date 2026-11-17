@@ -41,12 +41,13 @@ enum DropRateTests {
             bag_stat\t1763300020.400\t2\t600\t80\t0\tAQID
             bag\t1763300020.400\t2\t601\t1287\t50.00\t50.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
             gap\t1763300021.000\t3\tring_full
+            bag\t1763300021.900\t2\t602\t1287\t1.00\t1.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
             kill\t1763300022
             """
         try! first.write(to: file, atomically: false, encoding: .utf8)
         let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
         var running = true
-        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 9, "whole lines only")
+        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 10, "whole lines only")
         func int(_ sql: String) -> Int64 { var v: Int64 = -1; store.run(sql) { v = sqlite3_column_int64($0, 0) }; return v }
         check(int("SELECT count(*) FROM kills") == 2 && int("SELECT count(*) FROM maps") == 2, "kills and maps")
         check(int("SELECT b.kill = k.id FROM bags b JOIN kills k ON k.object_id = 500 WHERE b.object_id = 600") == 1, "bag linked to its kill")
@@ -63,6 +64,8 @@ enum DropRateTests {
         try! handle.close()
         check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 2, "the cut line completes")
         check(int("SELECT count(*) FROM kills") == 3 && int("SELECT count(*) FROM sessions") == 1, "resumed, not re-read")
+        check(int("SELECT k.object_id FROM bags b JOIN kills k ON k.id = b.kill WHERE b.object_id = 602") == 502,
+              "a kill imported after its bag still links")
         running = false
         check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 0, "nothing new")
         check(!FileManager.default.fileExists(atPath: file.path), "an ended game's file is removed")
@@ -70,11 +73,24 @@ enum DropRateTests {
 
         // Today's summary, as the Drop data panel shows it.
         let day = DropDay.load(store, since: 0)
-        check(day.kills == 3 && day.bags == 2 && day.linked == 1 && day.lost == 3, "day totals")
-        check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1]), "kills by mob, with bag colours")
+        check(day.kills == 3 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals")
+        check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
         check(day.notable == [DropDay.Notable(time: 1763300020.4, bag: .orange, mob: 3340, items: [2856, 2856])], "notable bags only")
         let xml = "<Object type=\"0x090a\" id=\"Archdemon Malphas\">\n<Group>Demons</Group></Object>" +
             "<Object type=\"0xb05\" id=\"Robe of the Grand Sorcerer\" x=\"1\"></Object><Objects type=\"0x1\" id=\"no\">"
+        // A failed write rolls the file back and the next run retries it from the same place.
+        let broken = folder.appendingPathComponent("broken")
+        try! FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try! "kill\t5.000\t1\t9\t1\t0\t0\t0\t1\t0\t0\t10\tprojectile\nbag\t5.100\t1\t10\t1295\t0\t0\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\nbag_stat\t5.100\t1\t10\t80\t0\tx\n"
+            .write(to: broken.appendingPathComponent("loot-5-77.tsv"), atomically: false, encoding: .utf8)
+        let other = DropRateStore(path: broken.appendingPathComponent("d.db").path)!
+        other.exec("DROP TABLE bag_stats")
+        check(LootImport.run(logs: broken, store: other, appVersion: "t", alive: { _ in true }) == 0, "a failed write stores nothing")
+        func otherInt(_ sql: String) -> Int64 { var v: Int64 = -1; other.run(sql) { v = sqlite3_column_int64($0, 0) }; return v }
+        check(otherInt("SELECT count(*) FROM kills") == 0 && otherInt("SELECT imported_bytes FROM sessions") == 0, "rolled back")
+        check(other.exec(DropRateStore.schema), "table restored")
+        check(LootImport.run(logs: broken, store: other, appVersion: "t", alive: { _ in true }) == 3, "retried")
+        check(otherInt("SELECT count(*) FROM kills") == 1 && otherInt("SELECT count(*) FROM bag_stats") == 1, "stored on retry")
         check(GameNames.names(inXML: xml) == [0x090a: "Archdemon Malphas", 0xb05: "Robe of the Grand Sorcerer"], "names from XML")
     }
 }

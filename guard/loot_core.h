@@ -13,6 +13,15 @@ enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP };
 /* Who dealt a hit. The first three are you; only they put a mob in the damage table. */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN };
 static const char *const loot_source_names[] = {"projectile", "projectile_alt", "ability", "other", "unknown"};
+/* Who dealt a hit into the damage method, from where it was called (an offset in the game) and, for a
+ * Damage message, the shooter the server named. A pet is its own object, so its hits are "other". */
+static inline int loot_source(uintptr_t caller, uintptr_t projectile, uintptr_t projectile_alt, uintptr_t message,
+                              int32_t shooter, int32_t self) {
+    if (caller == projectile) return LOOT_PROJECTILE;
+    if (caller == projectile_alt) return LOOT_PROJECTILE_ALT;
+    if (caller == message) return self && shooter == self ? LOOT_ABILITY : LOOT_OTHER;
+    return LOOT_UNKNOWN;
+}
 
 typedef struct {
     uint64_t ns;

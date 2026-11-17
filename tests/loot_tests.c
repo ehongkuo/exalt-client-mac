@@ -35,6 +35,16 @@ static void test_hits(void) {
     assert(!loot_hit_kill(&t, 11, dealt));
 }
 
+static void test_source(void) {
+    enum { HIT = 0x100, ALT = 0x200, MESSAGE = 0x300 };
+    assert(loot_source(HIT, HIT, ALT, MESSAGE, 0, 5) == LOOT_PROJECTILE);
+    assert(loot_source(ALT, HIT, ALT, MESSAGE, 0, 5) == LOOT_PROJECTILE_ALT);
+    assert(loot_source(MESSAGE, HIT, ALT, MESSAGE, 5, 5) == LOOT_ABILITY);     /* the server says you shot */
+    assert(loot_source(MESSAGE, HIT, ALT, MESSAGE, 6, 5) == LOOT_OTHER);       /* another player, or your pet */
+    assert(loot_source(MESSAGE, HIT, ALT, MESSAGE, 0, 0) == LOOT_OTHER);       /* your id not known yet */
+    assert(loot_source(0x999, HIT, ALT, MESSAGE, 5, 5) == LOOT_UNKNOWN);
+}
+
 static void test_types(void) {
     static LootType t[LOOT_TYPES];
     loot_type_set(t, 42, 0x0d13);
@@ -71,6 +81,7 @@ static void test_format(void) {
 int main(void) {
     test_ring();
     test_hits();
+    test_source();
     test_types();
     test_format();
     puts("Loot capture tests passed");

@@ -26,7 +26,7 @@ static const void *loot_methods[3];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
             *loot_pos_field, *loot_stats_field, *loot_x_field, *loot_y_field,
             *loot_stat_type_field, *loot_stat_int_field, *loot_stat_text_field;
-static void *loot_list_class, *loot_list_items_field, *loot_list_size_field;
+static ListFields loot_stat_list;
 static uintptr_t loot_base;
 static int loot_prepared, loot_attempted, loot_installed;
 static int32_t loot_self_id, loot_shooter;
@@ -82,9 +82,7 @@ static void loot_prepare(const void *game) {
 static void loot_new_map(void) { ++loot_map; loot_hits_clear(&loot_hits); }
 
 static void loot_hit(void *self, int damage, int kill, uintptr_t caller) {
-    int source = caller == NOTIFY_CALLER ? LOOT_PROJECTILE : caller == NOTIFY_CALLER_ALT ? LOOT_PROJECTILE_ALT
-               : caller == LOOT_DAMAGE_CALLER ? (loot_self_id && loot_shooter == loot_self_id ? LOOT_ABILITY : LOOT_OTHER)
-               : LOOT_UNKNOWN;
+    int source = loot_source(caller, NOTIFY_CALLER, NOTIFY_CALLER_ALT, LOOT_DAMAGE_CALLER, loot_shooter, loot_self_id);
     if (source >= LOOT_YOURS && !kill) return;   /* the common case: someone else's hit */
     int32_t id = 0, dealt[LOOT_YOURS];
     il2cpp_field_get_value(self, loot_id_field, &id);
@@ -113,23 +111,6 @@ static void loot_message_observed(void *self, void *message, void **target, cons
     loot_message_original(self, message, target, info);
 }
 
-static int32_t loot_list(void *list, void *const **items) {
-    if (!list) return 0;
-    void *klass = il2cpp_object_get_class(list);
-    if (klass != loot_list_class) {
-        loot_list_class = klass;
-        loot_list_items_field = typed_field(klass, "_items", "CGOECEPGBBG[]");
-        loot_list_size_field = typed_field(klass, "_size", "System.Int32");
-    }
-    if (!loot_list_items_field || !loot_list_size_field) return 0;
-    void *array = read_reference(list, loot_list_items_field);
-    int32_t size = 0;
-    il2cpp_field_get_value(list, loot_list_size_field, &size);
-    if (!array || size <= 0) return 0;
-    if ((uint32_t)size > il2cpp_array_length(array)) size = (int32_t)il2cpp_array_length(array);
-    *items = (void *const *)((char *)array + 0x20);
-    return size;
-}
 /* Reads the message, not the game object: a bag's first status (its contents) is in it. */
 static void loot_object(void *connection, void *data) {
     if (connection != loot_connection) { loot_connection = connection; loot_new_map(); }
@@ -148,7 +129,7 @@ static void loot_object(void *connection, void *data) {
     LootEvent extra[16];
     int extras = 0;
     void *const *stats = NULL;
-    int32_t n = loot_list(read_reference(status, loot_stats_field), &stats);
+    int32_t n = list_items(read_reference(status, loot_stats_field), "CGOECEPGBBG[]", &loot_stat_list, &stats);
     for (int32_t i = 0; i < n; ++i) {
         if (!stats[i]) continue;
         uint8_t stat = 0; int32_t value = 0;

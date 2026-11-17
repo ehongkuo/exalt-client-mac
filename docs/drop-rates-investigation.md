@@ -273,8 +273,9 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    those kills left each bag colour, the latest white, orange and red bags, and capture health
    (bags linked, records lost, capture refused). It is how the staging run is checked.
 2. **Game catalog:** the tables above, so views can name and group mobs and items.
-3. **Drop rates window:** a larger window with Today, Mobs, Items and Dungeons tabs and a time range
-   (today, 7 days, all). Each shows rates with "1 in N" and the 95 % range.
+3. **Drop rates window:** a larger window with Today, Mobs, Items and Dungeons tabs. Today shows
+   today's kills; every other tab uses all the data kept. Each shows rates with "1 in N" and the 95 %
+   range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
 4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
    unit) and base rates without boosts once loot factors are captured.
 

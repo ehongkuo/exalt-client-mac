@@ -94,7 +94,8 @@ static uint64_t next_map_lookup, next_equipment_lookup;
 #define CHAT_SEEN 256
 static void *chat_class, *chat_handle, *chat_slots_field, *chat_slot_class, *chat_slot_model_field;
 static void *chat_message_class, *chat_sender_field, *chat_channel_field, *chat_text_field, *own_name_field;
-static void *chat_list_class, *chat_items_field, *chat_size_field;
+typedef struct { void *klass, *items, *size; } ListFields;   /* a List<T>'s fields, looked up once per list class */
+static ListFields chat_list;
 static void *chat_object;   /* compared only, never read: it may have been collected */
 static int chat_primed;
 static struct { void *object; uint64_t hash; } chat_seen[CHAT_SEEN];
@@ -463,18 +464,18 @@ static int chat_changed(void *object, uint64_t hash) {
     return 1;
 }
 /* Reads the chat slot list's backing array; returns the element count (0 if unreadable). */
-static int32_t chat_slot_items(void *list, void *const **items) {
+static int32_t list_items(void *list, const char *array_type, ListFields *f, void *const **items) {
     if (!list) return 0;
     void *klass = il2cpp_object_get_class(list);
-    if (klass != chat_list_class) {
-        chat_list_class = klass;
-        chat_items_field = typed_field(klass, "_items", "DecaGames.RotMG.Chat.UI.ChatSlotController[]");
-        chat_size_field = typed_field(klass, "_size", "System.Int32");
+    if (klass != f->klass) {
+        f->klass = klass;
+        f->items = typed_field(klass, "_items", array_type);
+        f->size = typed_field(klass, "_size", "System.Int32");
     }
-    if (!chat_items_field || !chat_size_field) return 0;
-    void *array = read_reference(list, chat_items_field);
+    if (!f->items || !f->size) return 0;
+    void *array = read_reference(list, f->items);
     int32_t size = 0;
-    il2cpp_field_get_value(list, chat_size_field, &size);
+    il2cpp_field_get_value(list, f->size, &size);
     if (!array || size <= 0) return 0;
     if ((uint32_t)size > il2cpp_array_length(array)) size = (int32_t)il2cpp_array_length(array);
     *items = (void *const *)((char *)array + 0x20);
@@ -522,7 +523,7 @@ static void poll_chat(uint64_t now, double epoch, void *player) {
         live_data.chat_status = CHAT_READING;
     }
     void *const *slots = NULL;
-    int32_t count = chat_slot_items(read_reference(chat, chat_slots_field), &slots);
+    int32_t count = list_items(read_reference(chat, chat_slots_field), "DecaGames.RotMG.Chat.UI.ChatSlotController[]", &chat_list, &slots);
     int priming = !chat_primed;
     chat_primed = 1;
     for (int32_t i = 0; i < count; ++i) {
