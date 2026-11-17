@@ -288,6 +288,29 @@ final class PartyAlerts: ObservableObject {
 
 /// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
 /// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Drop data (issue #38): today's capture, refreshed after each import.
+final class DropData: ObservableObject {
+    @Published private(set) var day = DropDay()
+    @Published private(set) var names: [Int: String] = [:]
+    private var loadingNames = false
+    func update(_ day: DropDay) { if day != self.day { self.day = day } }
+    /// Names come from about 60 MB of XML, so they are read once, off the main thread, when first shown.
+    func loadNamesIfNeeded() {
+        #if !GUARD_UI_TEST
+        guard names.isEmpty, !loadingNames else { return }
+        loadingNames = true
+        DispatchQueue.global(qos: .utility).async {
+            let names = GameNames.load(folder: RealmHoundPaths.xml)
+            DispatchQueue.main.async { self.names = names }
+        }
+        #endif
+    }
+    func name(_ type: Int?) -> String {
+        guard let type else { return "No kill" }
+        return names[type] ?? String(format: "#0x%04x", type)
+    }
+}
+
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
     @Published private(set) var popup: DropAlert?
@@ -330,7 +353,7 @@ final class DropAlerts: ObservableObject {
     /// Bag sprites are cut from a large atlas, so they are read once, off the main thread.
     private func loadBagsIfNeeded() {
         #if !GUARD_UI_TEST
-        guard settings.enabled, bagSprites.isEmpty, !loadingBags else { return }
+        guard bagSprites.isEmpty, !loadingBags else { return }   // also with alerts off: the drop panels show them
         loadingBags = true
         DispatchQueue.global(qos: .utility).async {
             let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
@@ -421,7 +444,7 @@ private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color
 /// purple, gold), clustered as on an item's slot.
 struct RarityGems: View {
     var rarity: DropRarity
-    private let gem: CGFloat = 10
+    var gem: CGFloat = 10
 
     var body: some View {
         let color = [Color.clear, Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),
@@ -554,10 +577,12 @@ final class WindowState: ObservableObject {
     @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
+    var showRates: () -> Void = {}
     /// Which rows of the More section are open.
     @Published var sessionOpen = false
     @Published var partyOpen = false
     @Published var dropsOpen = false
+    @Published var dropDataOpen = false
     @Published var diagnosticsOpen = false
     func setFloating(_ value: Bool) {
         floating = value; window?.level = value ? .floating : .normal
@@ -625,13 +650,14 @@ struct GuardView: View {
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
     @ObservedObject var drops: DropAlerts
+    @ObservedObject var dropData: DropData
 
     var body: some View {
         #if !GUARD_SYNC_CAPTURE
         let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
         #endif
         MainLayout {
-            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, source: source).content(source.snapshot, source.link, source.rate)
+            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, dropData: dropData, source: source).content(source.snapshot, source.link, source.rate)
         }
         .frame(minWidth: 420, minHeight: 360)
         .preferredColorScheme(.dark)
@@ -715,6 +741,7 @@ struct GuardPanel {
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
     @ObservedObject var drops: DropAlerts
+    @ObservedObject var dropData: DropData
     let source: LiveSource
 
     @ViewBuilder func content(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -975,6 +1002,8 @@ struct GuardPanel {
             RowDivider()
             disclosure($window.dropsOpen, "Drop alerts", value: drops.settings.enabled ? "On" : "Off") { dropDetail() }
             RowDivider()
+            disclosure($window.dropDataOpen, "Drop data", value: "\(dropData.day.kills) kills today") { dropDataDetail() }
+            RowDivider()
             disclosure($window.diagnosticsOpen, "Diagnostics and logs", value: "") { diagnostics(running, link, rate) }
         }
         .padding(.bottom, 4)
@@ -1068,6 +1097,49 @@ struct GuardPanel {
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))
+    }
+
+    /// Today's captured kills and bags (issue #38): the check that capture works, until the rates view.
+    private func dropDataDetail() -> some View {
+        let day = dropData.day
+        let priority = { (bag: DropBag) in DropBag.allCases.firstIndex(of: bag) ?? 0 }
+        return VStack(alignment: .leading, spacing: 8) {
+            Button("Open Drop rates") { window.showRates() }.controlSize(.small)
+            if let refused = day.refused { Text("Capture is off: \(refused)").foregroundStyle(warn) }
+            Text("\(day.kills) kills · \(day.bags) bags, \(day.linked) linked to a kill" + (day.lost > 0 ? " · \(day.lost) records lost" : ""))
+                .foregroundStyle(.secondary)
+            if day.mobs.isEmpty {
+                Text("Kills of mobs you hit show here a few seconds after they happen.").foregroundStyle(.secondary)
+            }
+            ForEach(day.mobs, id: \.self) { mob in
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(dropData.name(mob.type)).lineLimit(1)
+                        if !mob.map.isEmpty { Text(mob.map).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                    Spacer()
+                    ForEach(mob.bags.keys.sorted { priority($0) > priority($1) }, id: \.self) { bag in
+                        BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 12)
+                        Text("\(mob.bags[bag] ?? 0)").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Text("\(mob.kills)").monospacedDigit().frame(minWidth: 36, alignment: .trailing)
+                }
+            }
+            if !day.notable.isEmpty {
+                Text("Latest white, orange and red bags").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+                ForEach(day.notable, id: \.self) { drop in
+                    HStack(spacing: 6) {
+                        BagIcon(bag: drop.bag, sprite: drops.bagSprites[drop.bag], size: 12)
+                        Text(drop.items.map(dropData.name).joined(separator: ", ")).lineLimit(1)
+                        Spacer()
+                        Text(dropData.name(drop.mob)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(Date(timeIntervalSince1970: drop.time).formatted(date: .omitted, time: .shortened))
+                            .monospacedDigit().foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .onAppear { dropData.loadNamesIfNeeded() }
     }
 
     private func dropDetail() -> some View {
@@ -1239,12 +1311,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let launch = LaunchController()
     let alerts = PartyAlerts()
     let drops = DropAlerts()
+    let dropData = DropData()
+    let rates = DropRatesModel()
+    var ratesWindow: NSWindow?
+    private var ratesLoaded = -Double.infinity
     var joinPopups: [NSPanel] = []
     var dropPopup: NSPanel!
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var lootTimer: Timer?
+    private var lootBusy = false
+    private var lootDay = 0.0   // the day whose numbers the Drop data panel shows
+    private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
+    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    private func importLoot() {
+        let logs = GuardPaths.logs(data: dataURL)
+        let today = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        // With no loot file and today's numbers already shown, there is nothing to do.
+        let pending = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).contains { $0.hasPrefix("loot-") }
+        guard !lootBusy, pending || lootDay != today else { return }
+        lootBusy = true
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        lootQueue.async {
+            var day: DropDay?
+            if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
+                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                LootImport.run(logs: logs, store: store, appVersion: version)
+                day = DropDay.load(store, since: today)
+            }
+            DispatchQueue.main.async {
+                if let day { self.dropData.update(day); self.lootDay = today }
+                self.lootBusy = false
+                // All-time queries are heavier, so an open Drop rates window refreshes at most every 30 s.
+                if self.ratesWindow?.isVisible == true, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
+            }
+        }
+    }
+    /// The Drop rates window (issue #41): one window, filled off the main thread.
+    func showRates() {
+        if ratesWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  backing: .buffered, defer: false)
+            window.title = "Drop rates"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: DropRatesView(model: rates, drops: drops))
+            window.center(); window.setFrameAutosaveName("ExaltClientMacDropRates")
+            ratesWindow = window
+        }
+        ratesWindow?.makeKeyAndOrderFront(nil)
+        loadRates()
+    }
+    private func loadRates() {
+        ratesLoaded = Date().timeIntervalSince1970
+        let today = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        lootQueue.async {
+            guard let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) else { return }
+            let report = DropReport.load(store), day = DropDay.load(store, since: today, mobLimit: 500)
+            DispatchQueue.main.async { self.rates.update(report, day: day) }
+        }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
@@ -1271,6 +1398,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #if !GUARD_UI_TEST
         LogCleanup.removeOld(data: dataURL)
         #endif
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        importLoot()
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
+        #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -1282,7 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.title = appName
         #endif
         window.delegate = self
-        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops))
+        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops, dropData: dropData))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
         state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
@@ -1299,6 +1430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
+        state.showRates = { [weak self] in self?.showRates() }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
             guard let self else { return }
@@ -1354,7 +1486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
         }
         // Screenshot hook: open every More row (tools/readme-screenshots.sh).
-        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.dropsOpen = true; state.diagnosticsOpen = true }
+        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.dropsOpen = true; state.dropDataOpen = true; state.diagnosticsOpen = true }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }

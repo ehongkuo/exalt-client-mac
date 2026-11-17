@@ -173,29 +173,52 @@ enum BagSprites {
         }
     }
 
-    /// Reads flatbuffer/spritesheetf and crops sprites/mapObjects.png (about 130 MB decoded, so call it
-    /// off the main thread). Empty when either file is missing.
     static func load(assets: URL) -> [DropBag: CGImage] {
-        guard let data = try? Data(contentsOf: assets.appendingPathComponent("flatbuffer/spritesheetf")),
-              let source = CGImageSourceCreateWithURL(assets.appendingPathComponent("sprites/mapObjects.png") as CFURL, nil),
-              let atlas = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [:] }
-        let rects = mapObjectRects(sheet: "lofiObj4", in: data)
-        return DropBag.allCases.reduce(into: [:]) { out, bag in
-            guard let rect = rects[index(bag)], let crop = atlas.cropping(to: rect),
-                  let ctx = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return }
-            // Copied out, so the small sprite does not keep the whole atlas in memory.
-            ctx.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
-            out[bag] = ctx.makeImage()
+        GameSprites.load(assets: assets, Dictionary(uniqueKeysWithValues: DropBag.allCases.map { ($0, GameTexture(file: "lofiObj4", index: index($0))) }))
+    }
+}
+
+/// A game object's sprite: its `<Texture>` (or `<AnimatedTexture>`) sheet and index in the game XML.
+struct GameTexture: Hashable { var file: String, index: Int }
+
+/// Mob and item sprites, cut at run time from the game art RealmHound extracts, like the bag sprites.
+enum GameSprites {
+    struct Sprite: Equatable { var atlas: Int, rect: CGRect }
+    /// The atlas PNG of each atlas id in the sprite flatbuffer.
+    static let atlases = [1: "groundTiles.png", 2: "characters.png", 4: "mapObjects.png"]
+
+    /// Crops each texture from its atlas (each about 130 MB decoded, so call it off the main thread). Textures
+    /// the flatbuffer lacks are left out; empty when RealmHound's assets are missing.
+    static func load<Key: Hashable>(assets: URL, _ textures: [Key: GameTexture]) -> [Key: CGImage] {
+        guard let data = try? Data(contentsOf: assets.appendingPathComponent("flatbuffer/spritesheetf")) else { return [:] }
+        let sheets = rects(in: data)
+        let wanted = textures.compactMapValues { sheets[$0.file]?[$0.index] }
+        var out: [Key: CGImage] = [:]
+        for (atlas, file) in atlases {
+            let mine = wanted.filter { $0.value.atlas == atlas }
+            guard !mine.isEmpty, let source = CGImageSourceCreateWithURL(assets.appendingPathComponent("sprites/\(file)") as CFURL, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { continue }
+            for (key, sprite) in mine {
+                guard let crop = image.cropping(to: sprite.rect),
+                      let ctx = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                else { continue }
+                // Copied out, so the small sprite does not keep the whole atlas in memory.
+                ctx.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+                out[key] = ctx.makeImage()
+            }
         }
+        return out
     }
 
-    /// Sprite rectangles of one sheet in the game's sprite flatbuffer, by sprite index, for sprites in
-    /// the mapObjects atlas (atlas 4). Layout as RealmHound reads it (sprite_atlas.rs): the root's
-    /// field 0 lists sheets (name, -, sprites); a sprite has position {x, y, w, h} as floats (field 0),
-    /// index (field 3) and atlas id (field 7). Every read is bounds-checked: the file is not ours.
-    static func mapObjectRects(sheet: String, in data: Data) -> [Int: CGRect] {
+    /// Sprite rectangles in the game's sprite flatbuffer, by sheet name and index, with the atlas each sits in.
+    /// Layout as RealmHound reads it (sprite_atlas.rs): the root's field 0 lists sheets (name, -, sprites); a
+    /// sprite has position {x, y, w, h} as floats (field 0), index (field 3) and atlas id (field 7). The root's
+    /// field 1 lists animation frames (sheet name, index (1), action (4), sprite (5)); a mob's first standing
+    /// frame (action 0) stands for it. Every read is bounds-checked: the file is not ours.
+    // shortcut: an animated sheet that shares a name with a static one (only Rookie_16x16 and Rookie_24x24 in
+    // Nov 2026) loses to it; keep <AnimatedTexture> apart in the catalog if those mobs show the wrong sprite.
+    static func rects(in data: Data) -> [String: [Int: Sprite]] {
         let b = [UInt8](data)
         func int(_ p: Int, _ n: Int) -> Int? {
             guard p >= 0, p + n <= b.count else { return nil }
@@ -216,15 +239,23 @@ enum BagSprites {
             guard let s = ref(field(table, 0)), let n = int(s, 4), s + 4 + n <= b.count else { return nil }
             return String(decoding: b[(s + 4)..<(s + 4 + n)], as: UTF8.self)
         }
+        func number(_ table: Int, _ i: Int) -> Int { field(table, i).flatMap { int($0, 4) }.map { Int(Int32(truncatingIfNeeded: $0)) } ?? 0 }
         func float(_ p: Int) -> CGFloat { CGFloat(Float(bitPattern: UInt32(int(p, 4) ?? 0))) }
-        guard let root = int(0, 4), let found = tables(field(root, 0)).first(where: { name($0) == sheet }) else { return [:] }
-        var rects: [Int: CGRect] = [:]
-        for sprite in tables(field(found, 2)) {
-            guard let p = field(sprite, 0), p + 16 <= b.count, (field(sprite, 7).flatMap { int($0, 4) } ?? 1) == 4 else { continue }
-            let index = field(sprite, 3).flatMap { int($0, 4) }.map { Int(Int32(truncatingIfNeeded: $0)) } ?? 0
-            rects[index] = CGRect(x: float(p), y: float(p + 4), width: float(p + 8), height: float(p + 12))
+        func sprite(_ table: Int) -> Sprite? {
+            guard let p = field(table, 0), p + 16 <= b.count else { return nil }
+            return Sprite(atlas: number(table, 7), rect: CGRect(x: float(p), y: float(p + 4), width: float(p + 8), height: float(p + 12)))
         }
-        return rects
+        guard let root = int(0, 4) else { return [:] }
+        var out: [String: [Int: Sprite]] = [:]
+        for sheet in tables(field(root, 0)) {
+            guard let name = name(sheet) else { continue }
+            for table in tables(field(sheet, 2)) { out[name, default: [:]][number(table, 3)] = sprite(table) }
+        }
+        for frame in tables(field(root, 1)) where number(frame, 4) == 0 {
+            guard let name = name(frame), out[name]?[number(frame, 1)] == nil, let sprite = ref(field(frame, 5)).flatMap(sprite) else { continue }
+            out[name, default: [:]][number(frame, 1)] = sprite
+        }
+        return out
     }
 }
 

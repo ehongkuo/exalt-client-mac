@@ -201,6 +201,100 @@
       "offset": "0x925c50",
       "id": "zero_hp_context",
       "entry_prefix": "554889e5"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "FNEBPDEDIJP",
+      "parameters": [
+        "bool",
+        "int",
+        "List<byte>",
+        "bool",
+        "HBEAKBIHANL",
+        "bool",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x11291f0",
+      "id": "enemydamage",
+      "entry_prefix": "554889e54157415641554154534883ec68",
+      "hook": "enemydamage",
+      "constant": "ENEMY_DAMAGE_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "DJCPAGLIIBO",
+      "parameters": [
+        "MMDLNDNCGMA",
+        "out LKHPPBEGNOM"
+      ],
+      "returns": "void",
+      "offset": "0x926410",
+      "id": "damagemessage",
+      "entry_prefix": "554889e541574156415541545350",
+      "hook": "damagemessage",
+      "constant": "DAMAGE_MESSAGE_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "AODEIADKBCC",
+      "parameters": [
+        "KBGIJJLLFFD"
+      ],
+      "returns": "void",
+      "offset": "0x936110",
+      "id": "newobject",
+      "entry_prefix": "554889e541574156415541545350",
+      "hook": "newobject",
+      "constant": "NEW_OBJECT_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CGOAIMCNNON",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x923440",
+      "id": "removeobject",
+      "entry_prefix": "554889e54157415653504189f64889fb",
+      "hook": "removeobject",
+      "constant": "REMOVE_OBJECT_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "DBCEHNAEDCH",
+      "parameters": [
+        "BOEANEODCOA",
+        "int",
+        "int",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x919ff0",
+      "id": "statusapply",
+      "entry_prefix": "554889e54157415641554154534883ec68",
+      "hook": "statusapply",
+      "constant": "STATUS_APPLY_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "LDKKFMBNOCN",
+      "parameters": [
+        "OODFCLBKDJJ"
+      ],
+      "returns": "void",
+      "offset": "0x936da0",
+      "id": "newtick",
+      "entry_prefix": "554889e54157415641554154534883ec28",
+      "hook": "newtick",
+      "constant": "NEW_TICK_OFFSET"
     }
   ],
   "fields": [
@@ -434,6 +528,190 @@
       "name": "m_CachedPtr",
       "type": "IntPtr",
       "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x34",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "MMDLNDNCGMA",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x2c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KBGIJJLLFFD",
+      "name": "JHIKGCPGEDB",
+      "type": "ushort",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KBGIJJLLFFD",
+      "name": "ANBOELDHAIK",
+      "type": "BOEANEODCOA",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "BMKMLEPFEJK",
+      "type": "FFLIAABAAFP",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "PLAMMIIHNHB",
+      "type": "List<CGOECEPGBBG>",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FFLIAABAAFP",
+      "name": "<CHOGDNLDCMD>k__BackingField",
+      "type": "float",
+      "offset": "0x1c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FFLIAABAAFP",
+      "name": "<HDJDHDGIBON>k__BackingField",
+      "type": "float",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "MPOLBNPCMKP",
+      "type": "byte",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "GNAMBLMALLL",
+      "type": "int",
+      "offset": "0x14",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "HKLKENHBFLH",
+      "type": "string",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CMAEBFGEKFC",
+      "type": "int",
+      "offset": "0x120",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CBIKBMMKKGC",
+      "type": "int",
+      "offset": "0x10c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "HOHDMDGBEBK",
+      "type": "int",
+      "offset": "0x110",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "PMEKDGIJFDF",
+      "type": "string",
+      "offset": "0x28",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "FIJHPAMHMKN",
+      "type": "int",
+      "offset": "0x30",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "FLMJIMDEFOP",
+      "type": "int",
+      "offset": "0x34",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "IGHPIBHBBOE",
+      "type": "int",
+      "offset": "0x38",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "NDFKPKPKPCP",
+      "type": "string",
+      "offset": "0x48",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "NBODPGADKHF",
+      "type": "int",
+      "offset": "0x50",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "BJLGEEKOKLM",
+      "type": "int",
+      "offset": "0x54",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "DGGDBIMMDHE",
+      "type": "string[]",
+      "offset": "0x58",
       "is_static": false
     }
   ],

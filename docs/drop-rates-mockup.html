@@ -1,0 +1,341 @@
+<title>Drop Rates Window</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a mock macOS app window; a tab rail on the left (top on phones), the selected view on the right. Dark only, like the app. */
+:root {
+  color-scheme: dark;
+  --bg: #17181b;          /* page around the window */
+  --win: #1f1f21;         /* the app's 0.12 white */
+  --panel: #2a2a2d;       /* white 5% over the window */
+  --line: #3a3a3e;
+  --fg: #ececee;
+  --muted: #9a9aa1;
+  --faint: #6c6c73;
+  --accent: #4f8cf7;      /* system blue, the app's control tint */
+  --good: #3fbf6a;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bag-brown: #8a5a2b; --bag-pink: #e48bc0; --bag-purple: #9b59d0; --bag-egg: #e8dcc0; --bag-cyan: #36c9d6;
+  --bag-blue: #3d7be0; --bag-gold: #e0b13d; --bag-orange: #f08a24; --bag-red: #e04848; --bag-white: #f4f4f4;
+  --r-common: #8d8d94; --r-uncommon: #5cc06e; --r-rare: #4f8cf7; --r-legendary: #f0a830; --r-divine: #e45fd0;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 13px/1.45 var(--font); margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px; }
+.note { max-width: 1040px; margin: 0 auto 12px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pill { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; }
+.pill.sample { background: rgba(240,168,48,.15); color: var(--r-legendary); }
+.window { max-width: 1040px; margin: 0 auto; background: var(--win); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+.titlebar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; display: block; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.titlebar h1 { font-size: 13px; font-weight: 600; margin: 0; flex: 1; text-align: center; min-width: 120px; }
+.seg { display: inline-flex; background: rgba(0,0,0,.3); border-radius: 7px; padding: 2px; gap: 2px; }
+.seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 5px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: #48484d; color: var(--fg); }
+.body { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 560px; }
+nav { border-right: 1px solid var(--line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+nav button { text-align: left; background: none; border: 0; color: var(--fg); font: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; }
+nav button span { color: var(--faint); font-size: 11px; }
+nav button[aria-current="page"] { background: var(--accent); color: #fff; }
+nav button[aria-current="page"] span { color: rgba(255,255,255,.75); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+main { padding: 18px 20px 24px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+h2 { font-size: 17px; margin: 0; font-weight: 600; text-wrap: balance; }
+h3 { font-size: 11px; font-weight: 500; color: var(--muted); margin: 0 0 6px 4px; letter-spacing: .02em; }
+.sub { color: var(--muted); margin: 2px 0 0; }
+.panel { background: var(--panel); border: 1px solid rgba(255,255,255,.06); border-radius: 8px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1px; background: var(--line); border-radius: 8px; overflow: hidden; }
+.stats div { background: var(--panel); padding: 10px 12px; }
+.stats b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats small { color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 11px; padding: 8px 12px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr.click { cursor: pointer; } tr.click:hover td { background: rgba(255,255,255,.035); }
+tr.sel td { background: rgba(79,140,247,.16); }
+.group td { color: var(--muted); font-size: 11px; font-weight: 600; padding-top: 12px; background: transparent; }
+.bag { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.35); }
+.bags { display: inline-flex; gap: 9px; flex-wrap: wrap; color: var(--muted); }
+.bags span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.role { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+.role.boss { color: var(--r-legendary); border-color: rgba(240,168,48,.4); }
+.rate { display: grid; gap: 3px; min-width: 150px; }
+.rate b { font-weight: 600; }
+.rate small { color: var(--faint); font-size: 11px; }
+.rate .rough { color: var(--r-legendary); }
+.bar { position: relative; height: 6px; background: rgba(255,255,255,.07); border-radius: 3px; }
+.bar i { position: absolute; top: 0; bottom: 0; background: rgba(79,140,247,.45); border-radius: 3px; }
+.bar em { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--fg); border-radius: 1px; }
+.rar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; min-width: 80px; background: rgba(255,255,255,.07); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+.split { display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 16px; align-items: start; }
+.hero { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; padding: 14px 16px; }
+.hero .big { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hero .detail { color: var(--muted); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button { background: var(--panel); border: 1px solid var(--line); color: var(--fg); font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 99px; cursor: pointer; text-align: left; }
+.chips button[aria-pressed="true"] { border-color: var(--accent); background: rgba(79,140,247,.16); }
+.builder { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; padding: 12px; }
+.builder label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+select, input[type=search] { background: #3a3a3e; color: var(--fg); border: 1px solid #4a4a50; border-radius: 6px; font: inherit; font-size: 13px; padding: 5px 8px; width: 100%; }
+.how { color: var(--muted); padding: 0 16px 14px; margin: 0; max-width: 72ch; }
+.feed td:first-child { width: 22px; }
+.time { color: var(--faint); font-variant-numeric: tabular-nums; }
+.foot { max-width: 1040px; margin: 14px auto 0; color: var(--faint); font-size: 12px; }
+@media (max-width: 760px) {
+  .body { grid-template-columns: 1fr; }
+  nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav button { flex: none; gap: 8px; }
+  .split { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .builder { grid-template-columns: 1fr 1fr; }
+  main { padding: 14px 12px 20px; }
+}
+@media (prefers-reduced-motion: no-preference) { tr.click td, nav button, .chips button { transition: background .12s; } }
+</style>
+
+<div class="note"><span class="pill sample">Sample data</span> A clickable mock of the Drop rates window. Every number here is made up to show the layout. Today shows today's kills; every other tab uses all the data kept since capture started.</div>
+
+<div class="window" role="application" aria-label="Drop rates window mockup">
+  <div class="titlebar">
+    <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+    <h1>Drop rates</h1>
+    <span style="color:var(--faint);font-size:12px">All data since capture started</span>
+  </div>
+  <div class="body">
+    <nav id="tabs" aria-label="Views">
+      <button data-tab="today" aria-current="page">Today <span></span></button>
+      <button data-tab="mobs">Mobs <span></span></button>
+      <button data-tab="items">Items <span></span></button>
+      <button data-tab="dungeons">Dungeons <span></span></button>
+      <button data-tab="ask">Ask a question <span></span></button>
+    </nav>
+    <main id="view"></main>
+  </div>
+</div>
+<p class="foot">Rates show "1 in N", the percentage, and a 95% range. The bar is on a log scale from 1 in 10,000 (left) to every time (right). A tick is the observed rate, the band is the range. Fewer than 10 drops is marked rough.</p>
+
+<script>
+const BAGS = ["white","red","orange","gold","blue","cyan","egg","purple","pink","brown"]; // highest priority first
+const BAGNAME = {white:"White",red:"Red",orange:"Orange",gold:"Gold",blue:"Blue",cyan:"Cyan",egg:"Egg",purple:"Purple",pink:"Pink",brown:"Brown"};
+const RAR = ["common","uncommon","rare","legendary","divine"];
+// items: [name, bag, kind, tags, rarity counts [common..divine]]
+const MOBS = [
+  {name:"Archdemon Malphas", dungeon:"Abyss of Demons", role:"boss", hp:20000, kills:186,
+   bags:{white:9, red:14, orange:22, blue:140, cyan:61, purple:30},
+   items:[["Demon Blade","white","sword",["UT"],[2,1,1,0,0]],["Sword of Illumination","white","sword",["UT"],[1,1,1,0,0]],
+          ["Volcanic Sheath","white","sheath",["UT"],[0,1,0,1,0]],["Adamantine Helm","white","helm",["UT"],[1,0,0,0,0]],
+          ["Robe of the Mad Scientist","orange","robe",["ST"],[9,6,4,2,0]],["Potion of Vitality","blue","potion",[],[152,0,0,0,0]]]},
+  {name:"Demon Warrior", dungeon:"Abyss of Demons", role:"minion", hp:3400, kills:2310,
+   bags:{white:1, orange:7, cyan:58, purple:404, pink:701, brown:880},
+   items:[["Robe of the Mad Scientist","orange","robe",["ST"],[3,2,1,1,0]],["Demon Blade","white","sword",["UT"],[1,0,0,0,0]],["Staff of the Cosmic Whole","cyan","staff",["T12"],[30,18,9,1,0]]]},
+  {name:"Demon Mage", dungeon:"Abyss of Demons", role:"minion", hp:2600, kills:1904,
+   bags:{orange:5, cyan:41, purple:322, pink:610, brown:702},
+   items:[["Robe of the Mad Scientist","orange","robe",["ST"],[2,1,1,0,0]],["Robe of the Grand Sorcerer","cyan","robe",["T12"],[19,9,6,1,0]]]},
+  {name:"Marble Colossus", dungeon:"Lost Halls", role:"boss", hp:150000, kills:58,
+   bags:{white:12, red:21, orange:9, blue:58, gold:14},
+   items:[["Sword of the Colossus","white","sword",["UT"],[3,2,1,0,0]],["Marble Seal","white","seal",["UT"],[2,1,0,1,0]],
+          ["Breastplate of New Life","white","armor",["UT"],[1,1,0,0,0]],["Magical Lodestone","white","ring",["UT"],[1,0,0,0,0]],["Potion of Life","blue","potion",[],[61,0,0,0,0]]]},
+  {name:"Cultist of the Halls", dungeon:"Lost Halls", role:"minion", hp:9000, kills:740,
+   bags:{white:2, orange:6, cyan:44, purple:180, pink:260},
+   items:[["Marble Seal","white","seal",["UT"],[1,0,0,0,0]],["Robe of the Elder Warlock","orange","robe",["ST"],[3,1,1,1,0]]]},
+  {name:"Void Entity", dungeon:"The Void", role:"boss", hp:200000, kills:41,
+   bags:{white:11, red:16, orange:6, blue:41, gold:8},
+   items:[["Bow of the Void","white","bow",["UT"],[1,1,0,0,0]],["Quiver of the Shadows","white","quiver",["UT"],[1,1,1,0,0]],
+          ["Armor of Nil","white","armor",["UT"],[1,0,0,0,0]],["Sourcestone","white","ring",["UT"],[0,1,0,1,0]],["Omnipotence Ring","white","ring",["UT"],[0,0,1,0,0]]]},
+  {name:"Ent God", dungeon:"Realm", role:"minion", hp:7000, kills:880,
+   bags:{blue:31, cyan:22, purple:96, pink:210, brown:300},
+   items:[["Potion of Defense","blue","potion",[],[31,0,0,0,0]]]},
+];
+const RUNS = {"Abyss of Demons":190, "Lost Halls":61, "The Void":41, "Realm":0};
+const FEED = [["14:52","white","Bow of the Void","rare","Void Entity"],["14:51","red","Leaf Bow, Dirk of Cronus","common","Void Entity"],
+  ["14:20","orange","Robe of the Mad Scientist","legendary","Demon Warrior"],["13:58","white","Marble Seal","uncommon","Marble Colossus"],
+  ["13:57","red","Doku No Ken","common","Marble Colossus"],["13:31","orange","Robe of the Mad Scientist","common","Archdemon Malphas"]];
+const TODAY = .045;   // today's share of the sample
+
+let state = {tab:"today", mob:"Void Entity", item:"Bow of the Void", dungeon:"The Void", preset:0,
+  ask:{item:"Robe of the Mad Scientist", rarity:"legendary", from:"Abyss of Demons", role:"any", per:"kill"}};
+try { const saved = JSON.parse(localStorage.getItem("dropRatesMock") || "{}"); if (saved.tab) state.tab = saved.tab; } catch (e) {}
+
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const sum = a => a.reduce((x, y) => x + y, 0);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const bag = b => `<i class="bag" style="background:var(--bag-${b})" title="${BAGNAME[b]} bag"></i>`;
+
+// All data, or today's share of it (whole numbers, like real counts).
+function data(f = 1) {
+  const r = n => Math.round(n * f);
+  return MOBS.map(m => ({...m, kills: Math.max(r(m.kills), m.role === "boss" ? 1 : 0),
+    bags: Object.fromEntries(Object.entries(m.bags).map(([k, v]) => [k, r(v)])),
+    items: m.items.map(([name, b, kind, tags, rar]) => ({name, bag: b, kind, tags, rar: rar.map(r)})).filter(i => sum(i.rar) > 0)}));
+}
+function runs(d) { return RUNS[d] || 0; }
+
+// Wilson 95% interval for x of n.
+function wilson(x, n) {
+  if (!n) return [0, 0];
+  const z = 1.96, p = Math.min(x / n, 1), d = 1 + z*z/n, c = (p + z*z/(2*n)) / d, h = z * Math.sqrt(p*(1-p)/n + z*z/(4*n*n)) / d;
+  return [Math.max(0, c - h), Math.min(1, c + h)];
+}
+const oneIn = p => p <= 0 ? "none yet" : p >= 1 ? "every time" : "1 in " + fmt(1 / p);
+const pos = p => p <= 0 ? 0 : Math.max(0, Math.min(100, (Math.log10(p) + 4) / 4 * 100));
+function rate(x, n, unit = "kills") {
+  if (!n) return `<div class="rate"><small>no ${unit} yet</small></div>`;
+  const p = x / n, [lo, hi] = wilson(x, n);
+  const rough = x < 10 ? ` <span class="rough">rough</span>` : "";
+  return `<div class="rate"><b>${oneIn(p)}</b>
+    <div class="bar" title="95% range ${(lo*100).toFixed(2)}% to ${(hi*100).toFixed(2)}%"><i style="left:${pos(lo)}%;width:${Math.max(pos(hi)-pos(lo),1)}%"></i>${x ? `<em style="left:${pos(p)}%"></em>` : ""}</div>
+    <small>${fmt(x)} in ${fmt(n)} ${unit} · ${(p*100).toFixed(p < .01 ? 2 : 1)}% · 95%: ${oneIn(hi)} to ${oneIn(lo)}${rough}</small></div>`;
+}
+function rarBar(rar) {
+  const t = sum(rar) || 1;
+  return `<div class="rar" title="${RAR.map((r,i)=>`${r} ${rar[i]}`).join(", ")}">${rar.map((c,i)=>c?`<i style="width:${c/t*100}%;background:var(--r-${RAR[i]})"></i>`:"").join("")}</div>`;
+}
+const rarLegend = () => `<div class="legend">${RAR.map(r=>`<span><i class="bag" style="background:var(--r-${r})"></i>${r[0].toUpperCase()+r.slice(1)}</span>`).join("")}</div>`;
+const roleTag = r => `<span class="role ${r}">${r}</span>`;
+const dungeons = d => [...new Set(d.map(m => m.dungeon))];
+const rangeName = () => "since capture started";
+
+const VIEWS = {
+  today() {
+    const d = data(TODAY), kills = sum(d.map(m => m.kills)), bagsN = sum(d.map(m => sum(Object.values(m.bags))));
+    const white = sum(d.map(m => m.bags.white || 0));
+    let rows = "";
+    for (const g of dungeons(d)) {
+      const ms = d.filter(m => m.dungeon === g && m.kills);
+      if (!ms.length) continue;
+      rows += `<tr class="group"><td colspan="4">${esc(g)}</td></tr>`;
+      for (const m of ms) rows += `<tr class="click" data-mob="${esc(m.name)}"><td>${esc(m.name)}${roleTag(m.role)}</td>
+        <td><span class="bags">${BAGS.filter(b => m.bags[b]).slice(0,5).map(b => `<span>${bag(b)}${fmt(m.bags[b])}</span>`).join("")}</span></td>
+        <td class="num">${fmt(m.kills)}</td></tr>`;
+    }
+    return `<div><h2>Today</h2><p class="sub">Kills of mobs you damaged since midnight, and the bags they left. Click a mob for its all-time rates.</p></div>
+      <div class="stats"><div><b>${fmt(kills)}</b><small>kills</small></div><div><b>${fmt(bagsN)}</b><small>bags</small></div>
+        <div><b>${fmt(white)}</b><small>white bags</small></div><div><b>2 h 40 m</b><small>captured</small></div></div>
+      <section><h3>KILLS BY MOB · bag colours are kills whose best bag was that colour</h3>
+        <div class="panel scroll"><table><thead><tr><th>Mob</th><th>Best bag per kill</th><th class="num">Kills</th></tr></thead><tbody>${rows}</tbody></table></div></section>
+      <section><h3>LATEST WHITE, ORANGE AND RED BAGS</h3>
+        <div class="panel scroll"><table class="feed"><tbody>${FEED.map(([t,b,items,r,mob]) => `<tr><td>${bag(b)}</td><td>${esc(items)}</td>
+          <td><span style="color:var(--r-${r})">${r[0].toUpperCase()+r.slice(1)}</span></td><td style="color:var(--muted)">${esc(mob)}</td><td class="num time">${t}</td></tr>`).join("")}</tbody></table></div></section>`;
+  },
+  mobs() {
+    const d = data(), m = d.find(x => x.name === state.mob) || d[0];
+    let list = "";
+    for (const g of dungeons(d)) {
+      list += `<tr class="group"><td colspan="2">${esc(g)}</td></tr>`;
+      for (const x of d.filter(y => y.dungeon === g)) list += `<tr class="click ${x.name === m.name ? "sel" : ""}" data-mob="${esc(x.name)}"><td>${esc(x.name)}</td><td class="num">${fmt(x.kills)}</td></tr>`;
+    }
+    const bagRows = BAGS.filter(b => m.bags[b] !== undefined).map(b => `<tr><td>${bag(b)} ${BAGNAME[b]}</td><td>${rate(m.bags[b], m.kills)}</td></tr>`).join("");
+    const itemRows = m.items.slice().sort((a,b) => sum(b.rar) - sum(a.rar)).map(i => `<tr class="click" data-item="${esc(i.name)}"><td>${bag(i.bag)} ${esc(i.name)}</td>
+      <td>${rate(sum(i.rar), m.kills)}</td><td>${rarBar(i.rar)}</td></tr>`).join("");
+    return `<div class="split"><div class="panel scroll"><table><thead><tr><th>Mob</th><th class="num">Kills</th></tr></thead><tbody>${list}</tbody></table></div>
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <div><h2>${esc(m.name)}${roleTag(m.role)}</h2><p class="sub">${esc(m.dungeon)} · ${fmt(m.kills)} kills ${rangeName()} · ${fmt(m.hp)} HP</p></div>
+        <section><h3>BEST BAG PER KILL</h3><div class="panel scroll"><table><tbody>${bagRows}</tbody></table></div></section>
+        <section><h3>ITEMS · copies per kill; a double drop counts twice</h3><div class="panel scroll"><table><thead><tr><th>Item</th><th>Rate</th><th>Rarity</th></tr></thead><tbody>${itemRows}</tbody></table></div>
+          <div style="margin:8px 4px 0">${rarLegend()}</div></section>
+      </div></div>`;
+  },
+  items() {
+    const d = data(), names = [...new Set(MOBS.flatMap(m => m.items.map(i => i[0])))].sort();
+    const sources = d.flatMap(m => m.items.filter(i => i.name === state.item).map(i => ({m, i})));
+    const total = sources.reduce((a, s) => a.map((v, k) => v + s.i.rar[k]), [0,0,0,0,0]);
+    const dun = [...new Set(sources.map(s => s.m.dungeon))];
+    const rows = sources.map(({m, i}) => `<tr class="click" data-mob="${esc(m.name)}"><td>${esc(m.name)}${roleTag(m.role)}<div class="sub" style="font-size:11px">${esc(m.dungeon)}</div></td><td>${rate(sum(i.rar), m.kills)}</td></tr>`).join("");
+    const runRows = dun.filter(g => RUNS[g]).map(g => { const c = sum(sources.filter(s => s.m.dungeon === g).map(s => sum(s.i.rar))); return `<tr><td>${esc(g)}</td><td>${rate(c, runs(g), "runs")}</td></tr>`; }).join("");
+    const meta = sources[0]?.i;
+    return `<label style="max-width:360px;display:grid;gap:4px;color:var(--muted);font-size:11px">Item
+        <input type="search" id="itemSearch" list="itemNames" value="${esc(state.item)}" placeholder="Search an item"></label>
+      <datalist id="itemNames">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+      ${meta ? `<div><h2>${bag(meta.bag)} ${esc(state.item)}</h2><p class="sub">${meta.tags.join(", ") || "Consumable"} · ${meta.kind} · ${fmt(sum(total))} dropped ${rangeName()}</p></div>
+      <section><h3>PER KILL, BY MOB</h3><div class="panel scroll"><table><tbody>${rows}</tbody></table></div></section>
+      ${runRows ? `<section><h3>PER RUN · a run is one visit where the boss died</h3><div class="panel scroll"><table><tbody>${runRows}</tbody></table></div></section>` : ""}
+      <section><h3>RARITY OF THE COPIES YOU GOT</h3><div class="panel" style="padding:12px;display:grid;gap:8px">${rarBar(total)}
+        <div class="legend">${RAR.map((r,k) => `<span><i class="bag" style="background:var(--r-${r})"></i>${r[0].toUpperCase()+r.slice(1)} ${fmt(total[k])}</span>`).join("")}</div></div></section>`
+      : `<p class="sub">No drops of this item ${rangeName()}.</p>`}`;
+  },
+  dungeons() {
+    const d = data(), list = Object.keys(RUNS).filter(g => RUNS[g]);
+    const g = state.dungeon, ms = d.filter(m => m.dungeon === g), n = runs(g);
+    const items = {};
+    for (const m of ms) for (const i of m.items) if (i.bag === "white" || i.bag === "orange" || i.bag === "red") items[i.name] = {bag: i.bag, c: (items[i.name]?.c || 0) + sum(i.rar)};
+    const boss = ms.find(m => m.role === "boss");
+    const itemRows = Object.entries(items).sort((a,b) => b[1].c - a[1].c).map(([name, v]) => `<tr class="click" data-item="${esc(name)}"><td>${bag(v.bag)} ${esc(name)}</td><td>${rate(v.c, n, "runs")}</td></tr>`).join("");
+    const bagRows = boss ? ["white","red","orange"].filter(b => boss.bags[b] !== undefined).map(b => `<tr><td>${bag(b)} ${BAGNAME[b]} bag from ${esc(boss.name)}</td><td>${rate(boss.bags[b], n, "runs")}</td></tr>`).join("") : "";
+    return `<div class="seg" role="group" aria-label="Dungeon" style="align-self:flex-start;flex-wrap:wrap">${list.map(x => `<button data-dungeon="${esc(x)}" aria-pressed="${x === g}">${esc(x)}</button>`).join("")}</div>
+      <div><h2>${esc(g)}</h2><p class="sub">${fmt(n)} runs ${rangeName()} · ${fmt(sum(ms.map(m => m.kills)))} kills across ${ms.length} mob types</p></div>
+      <section><h3>CHANCE PER RUN</h3><div class="panel scroll"><table><tbody>${bagRows}${itemRows}</tbody></table></div></section>`;
+  },
+  ask() {
+    const d = data(), a = state.ask, items = [...new Set(MOBS.flatMap(m => m.items.map(i => i[0])))].sort();
+    const kinds = {"Any ST robe": i => i.tags.includes("ST") && i.kind === "robe", "Any white bag item": i => i.bag === "white", "Any UT": i => i.tags.includes("UT")};
+    const match = kinds[a.item] || (i => i.name === a.item);
+    const rIdx = RAR.indexOf(a.rarity);
+    const src = d.filter(m => (a.from === "Anywhere" || m.dungeon === a.from) && (a.role === "any" || m.role === a.role));
+    const copies = i => a.rarity === "any" ? sum(i.rar) : i.rar[rIdx];
+    const x = sum(src.flatMap(m => m.items.filter(match).map(copies)));
+    let n, unit;
+    if (a.per === "kill") { n = sum(src.map(m => m.kills)); unit = "kills"; }
+    else if (a.per === "run") { n = sum([...new Set(src.map(m => m.dungeon))].map(runs)); unit = "runs"; }
+    else { n = sum(src.map(m => m.bags.white || 0)); unit = "white bags"; }
+    const sel = (id, label, value, opts) => `<label for="${id}">${label}<select id="${id}">${opts.map(o => `<option ${o === value ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>`;
+    const sentence = `${a.rarity === "any" ? "" : a.rarity + " "}${a.item === "Any white bag item" ? "white bag items" : a.item.replace(/^Any /, "")} from ${a.role === "any" ? "any mob" : a.role + "es".slice(a.role === "boss" ? 0 : 1)} in ${a.from}, per ${a.per === "white" ? "white bag" : a.per}`;
+    const PRESETS = [
+      ["Chance of a Bow of the Void per Void run", {item:"Bow of the Void", rarity:"any", from:"The Void", role:"any", per:"run"}],
+      ["Chance a white bag is legendary", {item:"Any white bag item", rarity:"legendary", from:"Anywhere", role:"any", per:"white"}],
+      ["Legendary ST robe from an Abyss mob", {item:"Any ST robe", rarity:"legendary", from:"Abyss of Demons", role:"any", per:"kill"}],
+      ["Any UT from Lost Halls bosses", {item:"Any UT", rarity:"any", from:"Lost Halls", role:"boss", per:"kill"}],
+    ];
+    return `<div><h2>Ask a question</h2><p class="sub">Pick what dropped, from what, and per what. Every answer is a count divided by a count.</p></div>
+      <div class="chips">${PRESETS.map(([t, q], k) => `<button data-preset="${k}" aria-pressed="${JSON.stringify(q) === JSON.stringify(a)}">${esc(t)}</button>`).join("")}</div>
+      <div class="panel builder">
+        ${sel("qItem", "What dropped", a.item, ["Any ST robe", "Any white bag item", "Any UT", ...items])}
+        ${sel("qRarity", "Rarity", a.rarity, ["any", ...RAR])}
+        ${sel("qFrom", "From", a.from, ["Anywhere", ...Object.keys(RUNS)])}
+        ${sel("qRole", "Which mobs", a.role, ["any", "boss", "minion"])}
+        ${sel("qPer", "Per", a.per, ["kill", "run", "white"])}
+      </div>
+      <div class="panel"><div class="hero"><div class="big">${n ? oneIn(x / n) : "No data"}</div><div class="detail">${esc(sentence)}</div></div>
+        <div style="padding:0 16px 12px">${rate(x, n, unit)}</div>
+        <p class="how">Counted: ${fmt(x)} matching item${x === 1 ? "" : "s"} in bags linked to those kills. Divided by: ${fmt(n)} ${unit} ${rangeName()}.
+        ${a.per === "run" ? "A run is one map visit where the boss died." : a.per === "white" ? "White bags are kills whose best bag was white; an overflow second bag counts once." : "Kills are of mobs you damaged; pet kills don't count."}</p></div>`;
+  },
+};
+
+function render() {
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
+  const d = data(), counts = {today: fmt(sum(data(TODAY).map(m => m.kills))), mobs: d.length, items: new Set(d.flatMap(m => m.items.map(i => i.name))).size, dungeons: Object.values(RUNS).filter(Boolean).length};
+  document.querySelectorAll("#tabs button").forEach(b => { b.querySelector("span").textContent = counts[b.dataset.tab] ?? ""; });
+  document.getElementById("view").innerHTML = VIEWS[state.tab]();
+  try { localStorage.setItem("dropRatesMock", JSON.stringify({tab: state.tab})); } catch (e) {}
+}
+
+document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { state.tab = b.dataset.tab; render(); } });
+const view = document.getElementById("view");
+view.addEventListener("click", e => {
+  const t = e.target.closest("[data-mob],[data-item],[data-dungeon],[data-preset]");
+  if (!t) return;
+  if (t.dataset.mob) { state.mob = t.dataset.mob; state.tab = "mobs"; }
+  else if (t.dataset.item) { state.item = t.dataset.item; state.tab = "items"; }
+  else if (t.dataset.dungeon) state.dungeon = t.dataset.dungeon;
+  else if (t.dataset.preset) state.ask = [
+    {item:"Bow of the Void", rarity:"any", from:"The Void", role:"any", per:"run"},
+    {item:"Any white bag item", rarity:"legendary", from:"Anywhere", role:"any", per:"white"},
+    {item:"Any ST robe", rarity:"legendary", from:"Abyss of Demons", role:"any", per:"kill"},
+    {item:"Any UT", rarity:"any", from:"Lost Halls", role:"boss", per:"kill"}][+t.dataset.preset];
+  render();
+});
+view.addEventListener("change", e => {
+  const map = {qItem: "item", qRarity: "rarity", qFrom: "from", qRole: "role", qPer: "per"};
+  if (map[e.target.id]) { state.ask = {...state.ask, [map[e.target.id]]: e.target.value}; render(); }
+  if (e.target.id === "itemSearch" && e.target.value) { state.item = e.target.value; render(); }
+});
+render();
+</script>
