@@ -258,3 +258,78 @@ enum LootImport {
         return stored
     }
 }
+
+/// Today's capture at a glance: what the Drop data panel shows, and how a staging run is checked.
+/// Rates and the counting rules (a kill's top bag class) come with the rates view.
+struct DropDay: Equatable {
+    struct Mob: Hashable { var type: Int, map: String, kills: Int, bags: [DropBag: Int] }
+    struct Notable: Hashable { var time: Double, bag: DropBag, mob: Int?, items: [Int] }
+    var kills = 0, bags = 0, linked = 0, lost = 0
+    var refused: String?
+    var mobs: [Mob] = []
+    var notable: [Notable] = []
+
+    static let notableBags: Set<DropBag> = [.white, .orange, .red]
+
+    static func load(_ store: DropRateStore, since: Double, mobLimit: Int = 20) -> DropDay {
+        var day = DropDay()
+        store.run("SELECT count(*) FROM kills WHERE time >= ?", [since]) { day.kills = Int(sqlite3_column_int64($0, 0)) }
+        store.run("SELECT count(*), count(kill) FROM bags WHERE time >= ?", [since]) {
+            day.bags = Int(sqlite3_column_int64($0, 0)); day.linked = Int(sqlite3_column_int64($0, 1))
+        }
+        store.run("SELECT coalesce(sum(lost), 0) FROM capture_gaps WHERE time >= ?", [since]) { day.lost = Int(sqlite3_column_int64($0, 0)) }
+        store.run("SELECT status FROM sessions WHERE started >= ? AND status LIKE 'refused%' ORDER BY id DESC LIMIT 1", [since - 86400]) {
+            day.refused = String(cString: sqlite3_column_text($0, 0))
+        }
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), count(*) FROM kills k JOIN maps m ON m.id = k.map
+            WHERE k.time >= ? GROUP BY k.mob_type, m.name ORDER BY count(*) DESC LIMIT ?
+            """, [since, mobLimit]) {
+            day.mobs.append(Mob(type: Int(sqlite3_column_int64($0, 0)), map: String(cString: sqlite3_column_text($0, 1)),
+                                kills: Int(sqlite3_column_int64($0, 2)), bags: [:]))
+        }
+        // Kills that left a bag of each colour (an overflow second bag of the same colour counts once).
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), b.bag_type, count(DISTINCT k.id) FROM bags b
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE k.time >= ? GROUP BY 1, 2, 3
+            """, [since]) {
+            let type = Int(sqlite3_column_int64($0, 0)), map = String(cString: sqlite3_column_text($0, 1))
+            guard let bag = DropBag(id: Int(sqlite3_column_int64($0, 2))),
+                  let i = day.mobs.firstIndex(where: { $0.type == type && $0.map == map }) else { return }
+            day.mobs[i].bags[bag, default: 0] += Int(sqlite3_column_int64($0, 3))
+        }
+        store.run("""
+            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.item_type) FROM bags b
+            LEFT JOIN kills k ON k.id = b.kill LEFT JOIN bag_items i ON i.bag = b.id
+            WHERE b.time >= ? GROUP BY b.id ORDER BY b.time DESC
+            """, [since]) {
+            guard day.notable.count < 10, let bag = DropBag(id: Int(sqlite3_column_int64($0, 1))), notableBags.contains(bag) else { return }
+            let items = sqlite3_column_text($0, 3).map { String(cString: $0).split(separator: ",").compactMap { Int($0) } } ?? []
+            day.notable.append(Notable(time: sqlite3_column_double($0, 0), bag: bag,
+                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)), items: items))
+        }
+        return day
+    }
+}
+
+/// Object and item names by type id, from the game XML RealmHound extracts.
+enum GameNames {
+    static func names(inXML text: String) -> [Int: String] {
+        var names: [Int: String] = [:]
+        for chunk in text.components(separatedBy: "<Object type=\"0x").dropFirst() {
+            let tag = chunk.prefix { $0 != ">" }
+            guard let end = tag.firstIndex(of: "\""), let type = Int(tag[..<end], radix: 16),
+                  let a = tag.range(of: " id=\""), let b = tag[a.upperBound...].firstIndex(of: "\"") else { continue }
+            names[type] = String(tag[a.upperBound..<b])
+        }
+        return names
+    }
+    static func load(folder: URL) -> [Int: String] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "xml" }.reduce(into: [:]) { names, file in
+            if let data = try? Data(contentsOf: file) {
+                names.merge(Self.names(inXML: String(decoding: data, as: UTF8.self))) { _, new in new }
+            }
+        }
+    }
+}

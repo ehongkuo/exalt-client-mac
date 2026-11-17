@@ -231,6 +231,53 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
 | + unboosted kill, ring | 80,001 | 401 | 267.67 | 0.334579 % |
 | + kill at ×2.25, ring | 80,001 | 401 | 267.11 | 0.333885 % |
 
+## 5. Viewing the data
+
+### Questions and how each is answered
+
+Each question is a count divided by a count: which items (item filter), from which kills or runs
+(source filter), per what (unit: per kill, per run, or per bag of a colour). The view shows the
+rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
+
+| Question | Counted | Divided by |
+|---|---|---|
+| How many mobs did I kill today, of what kinds? | kills since midnight, by mob | - |
+| Drop rate of an item from a mob | copies of the item in bags linked to its kills | its kills |
+| Chance of a bag colour from a mob class (Abyss minions, Lost Halls bosses) | kills of the class whose top bag is that colour | kills of the class |
+| Chance of a Bow of the Void per Void run | runs with at least one Bow | runs (map visits where the boss died) |
+| Chance a white bag is legendary | white-top kills whose white item is legendary | white-top kills |
+| Chance of a legendary ST robe from an Abyss mob | legendary ST robes in bags from Abyss kills | Abyss kills |
+
+- **Mob class:** the dungeon is the captured map name; the role comes from the game XML (`<Quest/>`
+  or the `BOSSFIGHT` label is a boss; `MINION_WEAK`, `MINION_MID`, `MINION_STRONG` grade minions).
+- **Item filter:** name, `BagType`, `SlotType`, `Tier` and labels (`UT`, `TAB_ST`, `ROBE`, ...)
+  from the same XML. RealmHound already extracts it to `assets/xml`.
+- **Rarity:** enchantment slots on the dropped item, from its raw bag stat. Decoded once a staging
+  run shows which stat holds it.
+
+### Storage for fast questions
+
+- Raw rows stay the truth; nothing is overwritten or pre-counted.
+- A **game catalog** in `drop_rates.db`, rebuilt when RealmHound's XML changes:
+  `objects(type, name, boss, minion_class, group)` and `items(type, name, bag_type, slot_type, tier, labels)`.
+  Filters like "bosses" or "ST robes" become joins instead of code.
+- **Views:** `drops` (one row per item copy: kill, time, map, mob, bag, item) and `runs` (map visits
+  with a boss kill). Every question above is one `GROUP BY` over them.
+- **Indexes:** add `kills(time)` and `maps(name)` to the ones there. A year is about 1 M kills and
+  a grouped count over it takes well under a second; add daily rollup tables only if a real query
+  passes one second.
+
+### What gets built, in order
+
+1. **#38 (this PR): Drop data panel** in the main window: kills today by mob and map, how many of
+   those kills left each bag colour, the latest white, orange and red bags, and capture health
+   (bags linked, records lost, capture refused). It is how the staging run is checked.
+2. **Game catalog:** the tables above, so views can name and group mobs and items.
+3. **Drop rates window:** a larger window with Today, Mobs, Items and Dungeons tabs and a time range
+   (today, 7 days, all). Each shows rates with "1 in N" and the 95 % range.
+4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
+   unit) and base rates without boosts once loot factors are captured.
+
 ## Phases
 
 1. **#38: capture and store** (this design): hooks A, B and C, loot factors, the event ring, the app
@@ -240,7 +287,7 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
      C, the ring and loot file, the importer and store, bag-to-kill linking. Mob type comes from the
      object's type in hook B (kept per id), so the `+0x30` question below is moot.
    - Still to do: loot factors, character id and class, dungeon modifiers, announcements.
-2. **Next phase: rates calculator and view** (section 4 plus the display). Filed once capture runs.
+2. **Next phase: rates calculator and view** (sections 4 and 5).
 
 ## Open questions
 

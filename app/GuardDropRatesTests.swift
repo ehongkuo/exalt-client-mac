@@ -67,5 +67,14 @@ enum DropRateTests {
         check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 0, "nothing new")
         check(!FileManager.default.fileExists(atPath: file.path), "an ended game's file is removed")
         check(int("SELECT ended > started FROM sessions") == 1, "session times")
+
+        // Today's summary, as the Drop data panel shows it.
+        let day = DropDay.load(store, since: 0)
+        check(day.kills == 3 && day.bags == 2 && day.linked == 1 && day.lost == 3, "day totals")
+        check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1]), "kills by mob, with bag colours")
+        check(day.notable == [DropDay.Notable(time: 1763300020.4, bag: .orange, mob: 3340, items: [2856, 2856])], "notable bags only")
+        let xml = "<Object type=\"0x090a\" id=\"Archdemon Malphas\">\n<Group>Demons</Group></Object>" +
+            "<Object type=\"0xb05\" id=\"Robe of the Grand Sorcerer\" x=\"1\"></Object><Objects type=\"0x1\" id=\"no\">"
+        check(GameNames.names(inXML: xml) == [0x090a: "Archdemon Malphas", 0xb05: "Robe of the Grand Sorcerer"], "names from XML")
     }
 }
