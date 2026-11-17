@@ -36,6 +36,15 @@ class ProfileTests(unittest.TestCase):
         bad['callsites'][0]['target'] = 'potion'
         with self.assertRaises(ValueError): compat.validate_profile(bad)
 
+    def test_loot_hooks_are_all_or_none(self):
+        current = compat.load_profile(ROOT / 'compatibility/profiles/2026-11-06.json')
+        self.assertIn('newobject_prologue', compat.render_header(current))
+        older = compat.load_profile(ROOT / 'compatibility/profiles/2026-10-15.json')
+        self.assertNotIn('ENEMY_DAMAGE_OFFSET', compat.render_header(older))
+        partial = copy.deepcopy(current)
+        partial['methods'] = [m for m in partial['methods'] if m['id'] != 'newobject']
+        with self.assertRaises(ValueError): compat.validate_profile(partial)
+
     def test_dump_preserves_overloads_defaults_and_generic_parameters(self):
         dump = '''// Namespace: Demo
 public class Thing // TypeDefIndex: 1

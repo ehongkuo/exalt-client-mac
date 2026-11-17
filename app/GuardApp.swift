@@ -1244,7 +1244,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var lootTimer: Timer?
+    private var lootBusy = false
+    private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
+    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    private func importLoot() {
+        guard !lootBusy else { return }
+        lootBusy = true
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        lootQueue.async {
+            if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
+                LootImport.run(logs: GuardPaths.logs(data: dataURL), store: store, appVersion: version)
+            }
+            DispatchQueue.main.async { self.lootBusy = false }
+        }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
@@ -1270,6 +1285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                                                  attributes: [.posixPermissions: 0o700])
         #if !GUARD_UI_TEST
         LogCleanup.removeOld(data: dataURL)
+        #endif
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        importLoot()
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
         #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)

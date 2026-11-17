@@ -201,6 +201,55 @@
       "offset": "0x925c50",
       "id": "zero_hp_context",
       "entry_prefix": "554889e5"
+    },
+    {
+      "namespace": "",
+      "owner": "LKHPPBEGNOM",
+      "name": "FNEBPDEDIJP",
+      "parameters": [
+        "bool",
+        "int",
+        "List<byte>",
+        "bool",
+        "HBEAKBIHANL",
+        "bool",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x11291f0",
+      "id": "enemydamage",
+      "entry_prefix": "554889e54157415641554154534883ec68",
+      "hook": "enemydamage",
+      "constant": "ENEMY_DAMAGE_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "DJCPAGLIIBO",
+      "parameters": [
+        "MMDLNDNCGMA",
+        "out LKHPPBEGNOM"
+      ],
+      "returns": "void",
+      "offset": "0x926410",
+      "id": "damagemessage",
+      "entry_prefix": "554889e541574156415541545350",
+      "hook": "damagemessage",
+      "constant": "DAMAGE_MESSAGE_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "AODEIADKBCC",
+      "parameters": [
+        "KBGIJJLLFFD"
+      ],
+      "returns": "void",
+      "offset": "0x936110",
+      "id": "newobject",
+      "entry_prefix": "554889e541574156415541545350",
+      "hook": "newobject",
+      "constant": "NEW_OBJECT_OFFSET"
     }
   ],
   "fields": [
@@ -434,6 +483,102 @@
       "name": "m_CachedPtr",
       "type": "IntPtr",
       "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KJMONHENJEN",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x34",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "MMDLNDNCGMA",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x2c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KBGIJJLLFFD",
+      "name": "JHIKGCPGEDB",
+      "type": "ushort",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "KBGIJJLLFFD",
+      "name": "ANBOELDHAIK",
+      "type": "BOEANEODCOA",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "HHPOJBFICAH",
+      "type": "int",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "BMKMLEPFEJK",
+      "type": "FFLIAABAAFP",
+      "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "BOEANEODCOA",
+      "name": "PLAMMIIHNHB",
+      "type": "List<CGOECEPGBBG>",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FFLIAABAAFP",
+      "name": "<CHOGDNLDCMD>k__BackingField",
+      "type": "float",
+      "offset": "0x1c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "FFLIAABAAFP",
+      "name": "<HDJDHDGIBON>k__BackingField",
+      "type": "float",
+      "offset": "0x20",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "MPOLBNPCMKP",
+      "type": "byte",
+      "offset": "0x10",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "GNAMBLMALLL",
+      "type": "int",
+      "offset": "0x14",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "CGOECEPGBBG",
+      "name": "HKLKENHBFLH",
+      "type": "string",
+      "offset": "0x18",
       "is_static": false
     }
   ],

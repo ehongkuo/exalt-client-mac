@@ -50,6 +50,8 @@ python3 "$src/tests/probe/test_damage_map.py"
 python3 "$src/tests/probe/test_damage_session.py"
 clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests"
 "$tests/core-tests"
+clang -Wall -Wextra -Werror "$src/tests/loot_tests.c" -o "$tests/loot-tests"
+"$tests/loot-tests"
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
 "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"
@@ -62,7 +64,7 @@ for i in {1..300}; do [[ -s "$cross" ]] && break; sleep 0.01; done
 [[ -s "$cross" ]] || { print 'FAIL: the cross-architecture writer never started'; exit 1; }
 "$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
-    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardModelTests.swift" \
+    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardDropRatesTests.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$tests/model-tests"
 "$tests/model-tests"
@@ -84,7 +86,7 @@ ui="$(mktemp -d)"
 mkdir -p "$ui/UITest.app/Contents/MacOS"
 clang -O2 -Wall -Wextra -Werror "$src/tests/ui_fixture.c" -o "$ui/ui-fixture"
 xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors -D GUARD_UI_TEST \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" \
     "$src/app/GuardApp.swift" -o "$ui/UITest.app/Contents/MacOS/UITest"
 "$ui/ui-fixture" "$ui/live.bin" 25 &
 writer=$!   # pids get their own names: $app is the app bundle path
@@ -147,7 +149,7 @@ cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" 
 
 print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardApp.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
 # Icon: DECA's launcher icon with the red lettering turned yellow (drawn fallback if missing).
 icons="$(mktemp -d)"

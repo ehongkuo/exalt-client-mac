@@ -223,5 +223,6 @@ private func sample() -> LiveData {
         SettingsTests.run()
         LaunchTests.run()
         DropTests.run()
+        DropRateTests.run()
     }
 }

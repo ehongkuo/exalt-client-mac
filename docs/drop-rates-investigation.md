@@ -66,12 +66,12 @@ callers apart this way.
 
 ### Principle
 
-The guard (inside the game) stays dumb and fast: it copies a few fields into a shared ring and
-returns. The app does dedupe, linking, naming and storage. Nothing about rates is computed at
+The guard (inside the game) stays dumb and fast: it copies a few fields into a ring in memory and
+returns. Its writer thread, which already writes the guard log, turns them into lines. The app does dedupe, linking, naming and storage. Nothing about rates is computed at
 capture time, so any later question can be answered from the raw rows.
 
 ```
-game hit ─▶ guard hook ─▶ shared event ring ─▶ app poller (4 Hz) ─▶ SQLite (one transaction per poll)
+game hit ─▶ guard hook ─▶ ring ─▶ writer (10 Hz) ─▶ logs/loot-<started>-<pid>.tsv ─▶ app importer (every 5 s) ─▶ SQLite
 ```
 
 ### Guard side
@@ -79,14 +79,14 @@ game hit ─▶ guard hook ─▶ shared event ring ─▶ app poller (4 Hz) ─
 **Hook A: base damage method (`0x11291F0`).** On every enemy hit:
 
 1. If the hit is yours, add its damage to the target's entry in a small "your damage" table
-   (open-addressed, 1,024 object ids, cleared on map change). Yours means: a `hit_handler` return
+   (4,096 slots indexed by object id, cleared on map change). Yours means: a `hit_handler` return
    address (your projectiles), or a server Damage message whose shooter (`+0x2C`) is your object id
    (abilities the server resolves). A pet is its own object, so its hits don't match. The shooter
    is in the message, not in hook A's arguments, so **hook C** on the Damage handler (`0x926410`)
    stores it in a variable that hook A reads during the same call.
-2. If the kill flag is set, the target is in the "your damage" table, and the id isn't in the
-   recent-kill set (256 ids, so a death reported twice counts once): push a `kill` event and
-   remember the id.
+2. If the kill flag is set and the target is in the "your damage" table and not yet marked killed:
+   push a `kill` event and mark it, so a death reported twice (your client and the server) counts
+   once.
 3. Call the original.
 
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
@@ -111,8 +111,8 @@ position and the item ids from its inventory stats; otherwise return. Cost is on
 new object; an `Update` arrives about 5 times a second. Later contents changes (players looting a
 public bag) come through `DBCEHNAEDCH` and aren't needed: a drop is what the bag held at first.
 
-**Events** (fixed 64-byte records, single producer, single consumer, in a new shared file next to
-the live state):
+**Events** (fixed records in the guard, single producer, single consumer; the writer thread writes
+one tab-separated line each, columns in `guard/loot_core.h`):
 
 | Event | Fields |
 |---|---|
@@ -120,19 +120,21 @@ the live state):
 | `bag` | time, map instance, object id, bag type, x, y, up to 8 item ids |
 | `bag_stat` | bag object id, stat type, int value, first 40 bytes of the string value (one per non-item stat, so enchant data is kept raw for later) |
 | `map` | time, map instance, map name, character id and class (on every map change) |
-| `factors` | time, packed loot factors (character boosts and dungeon factors), only when they change |
-| `announce` | time, first 48 bytes of a server announcement that mentions loot (from the chat the guard already reads) |
+| `factors` | *Not built yet.* time, packed loot factors (character boosts and dungeon factors), only when they change |
+| `announce` | *Not built yet.* time, first 48 bytes of a server announcement that mentions loot (from the chat the guard already reads) |
+| `gap` | time, records lost because the ring was full |
 
-Ring: 4,096 records (256 KB). At 2,000 kills an hour, bursts of a few hundred in a second still fit
-before a 250 ms poll. On overflow the guard counts the lost records; the app stores the count as a
+Ring: 4,096 records (about 560 KB). At 2,000 kills an hour, bursts of a few hundred in a second still
+fit before the next 100 ms write. On overflow the guard counts the lost records; the app stores the count as a
 capture gap, so a rate is never silently wrong.
 
 ### App side
 
-The poller drains the ring every 250 ms and writes one SQLite transaction. It:
+Every 5 s, off the main thread, the importer reads the new whole lines of each loot file (from the
+offset it stored) in one SQLite transaction per file, and deletes a file once its game has ended. It:
 
-- drops kills that aren't new for `(session, map instance, object id)`;
-- links each bag to the kill on the same map within 0.5 tiles and 0–2 s before it (nearest one).
+- links each bag to the kill on the same map within 1 tile and 0–2 s before it (nearest one). Until
+  a staging run shows which axes of the kill's position match the bag's x and y, it tries each.
   Position is used only for this: in a burst of kills (one AOE can kill ten mobs in the same tick),
   it is the only way to tell which mob type each bag came from. It isn't used in any rate;
   bags with no kill are kept unlinked (chests, mobs you didn't hit);
@@ -155,7 +157,11 @@ mode, opened only by the app.
 | `bag_stats` | bag, stat type, value, text | Every other stat the bag arrived with, raw (enchants are decoded later) |
 | `capture_gaps` | session, from, to, lost events, reason | Ring overflow, app not running, map unknown |
 
-Indexes: `kills(mob_type)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
+Built so far: `sessions`, `maps` (no character yet), `kills` (your damage split into projectile,
+second projectile path and ability), `bags`, `bag_items`, `bag_stats`, `capture_gaps`.
+`factor_states` and `announcements` come with the loot-factor work.
+
+Indexes: `kills(mob_type)`, `kills(map, time)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
 `GROUP BY` over a year of rows is milliseconds, and raw rows keep every later question open.
 
 Size: about 70 bytes per kill and 100 per bag with items; factor, map and announcement rows are
@@ -228,8 +234,12 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
 ## Phases
 
 1. **#38: capture and store** (this design): hooks A, B and C, loot factors, the event ring, the app
-   poller, `drop_rates.db` and the RealmHound cross-check. Needs the profile change and staging live
+   importer, `drop_rates.db` and the RealmHound cross-check. Needs the profile change and staging live
    tests.
+   - Built (`guard/loot_core.h`, `guard/loot_capture.h`, `app/GuardDropRates.swift`): hooks A, B and
+     C, the ring and loot file, the importer and store, bag-to-kill linking. Mob type comes from the
+     object's type in hook B (kept per id), so the `+0x30` question below is moot.
+   - Still to do: loot factors, character id and class, dungeon modifiers, announcements.
 2. **Next phase: rates calculator and view** (section 4 plus the display). Filed once capture runs.
 
 ## Open questions
@@ -240,8 +250,10 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
   - where enchants live (likely a string stat; kept raw in `bag_stats` either way);
   - whether the kill's object position (`+0x68`, a float3) matches the bag's x/y directly or needs
     an axis swap.
-- **Mob type field:** the object's type is either `KJMONHENJEN +0x30` or inside its properties
-  (`+0x18`); confirm in the same run.
+- **Map boundary:** the guard starts a new map generation (and forgets damage) when hook B's
+  connection object or your player object changes. Confirm a new connection per map in staging.
+- **Second projectile path (`0x17d1430`):** it never carries a kill flag; its damage is stored
+  apart so a staging run can show whose hits it is.
 - **Kill flag trust:** your own kills are the client's prediction. Live test against RealmHound's
   boss kills.
 - **Mob type id:** confirm the object type the guard reads equals RealmHound's `mob_type`.

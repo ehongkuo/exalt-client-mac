@@ -29,6 +29,11 @@
 #define EXALT_PROFILE_HOOK_BYTES
 #endif
 #include "build_profile.h"
+#if defined(EXALT_CLIENT_FATAL) && defined(ENEMY_DAMAGE_OFFSET)
+#define LOOT_CAPTURE 1   /* drop-rate capture, issue #38 */
+static void loot_prepare(const void *game);
+static void loot_drain(int closing);
+#endif
 
 enum { RESULT_DRY = 0, RESULT_CALLED = 1, RESULT_EXCEPTION = -1, RESULT_UNAVAILABLE = -2, RESULT_EMPTY = -3 };
 #define MAX_QUICKSLOTS 8
@@ -344,6 +349,9 @@ static int prepare(void) {
         refuse(REFUSAL_GUARD, "hud_fields_missing"); return 0;
     }
     prepare_guard(game);
+#ifdef LOOT_CAPTURE
+    loot_prepare(game);
+#endif
     return 1;
 }
 
@@ -752,6 +760,9 @@ static void drain(void *unused) {
     hit_probe_drain();
 #endif
     int closing = atomic_load_explicit(&finished, memory_order_acquire);
+#ifdef LOOT_CAPTURE
+    loot_drain(closing);
+#endif
     uint64_t tail = atomic_load_explicit(&note_tail, memory_order_relaxed);
     while (tail != atomic_load_explicit(&note_head, memory_order_acquire)) {
         fputs(notes[tail % NOTE_CAPACITY], logfile);
@@ -810,6 +821,9 @@ static void refuse(int code, const char *detail) {
 }
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 #include "../probe/hit_probe.h"
+#endif
+#ifdef LOOT_CAPTURE
+#include "loot_capture.h"
 #endif
 static void tick(void *unused) {
     (void)unused;
@@ -876,6 +890,9 @@ done:
 #ifdef EXALT_CLIENT_FATAL
     if(r.status==0)hit_probe_terminal_sample(own,r.player_hp,r.player_max);
 #endif
+#endif
+#ifdef LOOT_CAPTURE
+    loot_tick(own);
 #endif
     if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;
@@ -994,6 +1011,9 @@ __attribute__((constructor)) static void start(void) {
     start_epoch = epoch.tv_sec + epoch.tv_nsec / 1e9; start_ns = monotonic_ns();
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_open(folder);
+#endif
+#ifdef LOOT_CAPTURE
+    loot_open(folder);
 #endif
     live_data.session_start_epoch = start_epoch;
     /* STRICT: without it the kernel coalesces a non-foreground process's 1 ms timer to ~30 ms. */
