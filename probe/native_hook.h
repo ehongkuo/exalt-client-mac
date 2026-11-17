@@ -39,13 +39,17 @@ static inline int native_hook_write(NativeHook *h,const unsigned char *bytes) {
 static inline int native_hook_install(NativeHook *h,void *entry,void *replacement,
                                      const unsigned char *expected,size_t length,void **original) {
     if(h->installed || length<14 || length>sizeof h->original) return HOOK_STATE;
-    mach_vm_address_t region=(uintptr_t)entry;mach_vm_size_t size=0;
-    vm_region_basic_info_data_64_t info;mach_msg_type_number_t count=VM_REGION_BASIC_INFO_COUNT_64;
-    mach_port_t object=MACH_PORT_NULL;
-    kern_return_t kr=mach_vm_region(mach_task_self(),&region,&size,VM_REGION_BASIC_INFO_64,(vm_region_info_t)&info,&count,&object);
-    if(object!=MACH_PORT_NULL)mach_port_deallocate(mach_task_self(),object);
-    if(kr!=KERN_SUCCESS || region>(uintptr_t)entry || (uintptr_t)entry+length>region+size ||
-       !(info.protection&VM_PROT_READ) || !(info.protection&VM_PROT_EXECUTE))return HOOK_REGION;
+    /* A prologue can cross into the next page, which is its own region once another hook copied it. */
+    vm_region_basic_info_data_64_t info;vm_prot_t protection=0;
+    for(mach_vm_address_t at=(uintptr_t)entry;at<(uintptr_t)entry+length;){
+        mach_vm_address_t region=at;mach_vm_size_t size=0;
+        mach_msg_type_number_t count=VM_REGION_BASIC_INFO_COUNT_64;mach_port_t object=MACH_PORT_NULL;
+        kern_return_t kr=mach_vm_region(mach_task_self(),&region,&size,VM_REGION_BASIC_INFO_64,(vm_region_info_t)&info,&count,&object);
+        if(object!=MACH_PORT_NULL)mach_port_deallocate(mach_task_self(),object);
+        if(kr!=KERN_SUCCESS || region>at || !(info.protection&VM_PROT_READ) || !(info.protection&VM_PROT_EXECUTE) ||
+           (at!=(uintptr_t)entry && info.protection!=protection))return HOOK_REGION;
+        protection=info.protection;at=region+size;
+    }
     if(memcmp(entry,expected,length))return HOOK_BYTES;
     size_t allocation=(size_t)getpagesize();
     unsigned char *trampoline=mmap(NULL,allocation,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON,-1,0);
@@ -53,7 +57,7 @@ static inline int native_hook_install(NativeHook *h,void *entry,void *replacemen
     memcpy(trampoline,entry,length);native_jump(trampoline+length,(unsigned char*)entry+length);
     sys_icache_invalidate(trampoline,length+14);
     if(mprotect(trampoline,allocation,PROT_READ|PROT_EXEC)){munmap(trampoline,allocation);return HOOK_PROTECTION;}
-    *h=(NativeHook){.entry=entry,.trampoline=trampoline,.length=length,.allocation=allocation,.protection=info.protection};
+    *h=(NativeHook){.entry=entry,.trampoline=trampoline,.length=length,.allocation=allocation,.protection=protection};
     memcpy(h->original,entry,length);
     unsigned char patch[32];memset(patch,0x90,length);native_jump(patch,replacement);
     *original=trampoline;

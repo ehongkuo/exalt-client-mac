@@ -302,7 +302,9 @@ static void loot_install(void *player) {
         int result = native_hook_install(&loot_hooks[i], entries[i], replacements[i], bytes[i], lengths[i], originals[i]);
         if (result != HOOK_OK) {
             for (int j = i - 1; j >= 0; --j) if (native_hook_remove(&loot_hooks[j]) != HOOK_OK) __builtin_trap();
-            loot_refuse("redirect_error"); return;
+            static char why[40];   /* static: loot_refusal keeps the pointer */
+            snprintf(why, sizeof why, "redirect_error index=%d code=%d", i, result);
+            loot_refuse(why); return;
         }
     }
 #ifdef EXALT_CLIENT_FATAL
