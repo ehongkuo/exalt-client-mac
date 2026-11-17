@@ -350,7 +350,8 @@ struct DropDay: Equatable {
             day.bags = Int(sqlite3_column_int64($0, 0)); day.linked = Int(sqlite3_column_int64($0, 1))
         }
         store.run("SELECT coalesce(sum(lost), 0) FROM capture_gaps WHERE time >= ?", [since]) { day.lost = Int(sqlite3_column_int64($0, 0)) }
-        store.run("SELECT status FROM sessions WHERE started >= ? AND status LIKE 'refused%' ORDER BY id DESC LIMIT 1", [since - 86400]) {
+        // Only the latest game counts: a refusal from an earlier game today is gone once a later one captures.
+        store.run("SELECT status FROM (SELECT status FROM sessions WHERE started >= ? ORDER BY id DESC LIMIT 1) WHERE status LIKE 'refused%'", [since - 86400]) {
             day.refused = String(cString: sqlite3_column_text($0, 0))
         }
         store.run("""

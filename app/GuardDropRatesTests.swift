@@ -88,6 +88,10 @@ enum DropRateTests {
         check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
         check(day.notable == [DropDay.Notable(time: 1763300020.0, bag: .orange, mob: 3340, items: [2856, 2856], enchants: [nil, nil])],
               "notable bags only; no enchantments from text that does not decode")
+        _ = store.run("INSERT INTO sessions(file, started, status) VALUES ('r', 1763300040, 'refused\tentry_bytes')", [])
+        check(DropDay.load(store, since: 0).refused == "refused\tentry_bytes", "the latest game's refusal shows")
+        _ = store.run("INSERT INTO sessions(file, started) VALUES ('ok', 1763300050)", [])
+        check(DropDay.load(store, since: 0).refused == nil, "an earlier game's refusal clears once a later one captures")
         // Enchantments: real stat 80 parts from staging run 1 (0, 1 and 2 enchantments), an empty slot, a cut-off part.
         check(Enchantments.counts("AAIE_f_9__3__f8FAA==,AAIEGgX9__3__f8FAA==,AAIEcAFcBf3__f8FAA==,,AAIE_f_9") == [0, 1, 2, nil, nil],
               "enchantments per slot")
