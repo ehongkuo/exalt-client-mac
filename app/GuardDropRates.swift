@@ -154,6 +154,9 @@ final class DropRateStore {
                 DELETE FROM catalog_source; PRAGMA user_version = 4
                 """, nil, nil, nil) == SQLITE_OK else { return nil }
         }
+        if version < 5 {   // textures written with attributes (<Texture xOffset=...>) were missed: rebuild
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 5", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
     }
     deinit { sqlite3_close(db) }
 
@@ -559,9 +562,11 @@ enum GameNames {
             func element(_ name: String) -> String? { value("<\(name)>", "</\(name)>", close, end) }
             func flag(_ name: String) -> Bool { find("<\(name) />", close, end) != nil || find("<\(name)/>", close, end) != nil }
             let display = element("DisplayId")
-            // <Texture>, or the first frame of <AnimatedTexture>; Index is hex (0xa7) or decimal.
+            // <Texture>, or the first frame of <AnimatedTexture>, either with attributes (xOffset=); Index is hex
+            // (0xa7) or decimal.
             let texture = ["Texture", "AnimatedTexture"].lazy.compactMap { tag -> GameTexture? in
-                guard let a = find("<\(tag)>", close, end), let b = find("</\(tag)>", a, end),
+                guard let a = [find("<\(tag)>", close, end), find("<\(tag) ", close, end)].compactMap({ $0 }).min(),
+                      let b = find("</\(tag)>", a, end),
                       let file = value("<File>", "</File>", a, b), let raw = value("<Index>", "</Index>", a, b) else { return nil }
                 let index = raw.trimmingCharacters(in: .whitespaces)
                 return (index.hasPrefix("0x") ? Int(index.dropFirst(2), radix: 16) : Int(index))
