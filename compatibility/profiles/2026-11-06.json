@@ -264,6 +264,23 @@
       "entry_prefix": "554889e54157415653504189f64889fb",
       "hook": "removeobject",
       "constant": "REMOVE_OBJECT_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "DBCEHNAEDCH",
+      "parameters": [
+        "BOEANEODCOA",
+        "int",
+        "int",
+        "bool"
+      ],
+      "returns": "void",
+      "offset": "0x919ff0",
+      "id": "statusapply",
+      "entry_prefix": "554889e54157415641554154534883ec68",
+      "hook": "statusapply",
+      "constant": "STATUS_APPLY_OFFSET"
     }
   ],
   "fields": [
@@ -593,6 +610,94 @@
       "name": "HKLKENHBFLH",
       "type": "string",
       "offset": "0x18",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CMAEBFGEKFC",
+      "type": "int",
+      "offset": "0x120",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CBIKBMMKKGC",
+      "type": "int",
+      "offset": "0x10c",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "HOHDMDGBEBK",
+      "type": "int",
+      "offset": "0x110",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "PMEKDGIJFDF",
+      "type": "string",
+      "offset": "0x28",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "FIJHPAMHMKN",
+      "type": "int",
+      "offset": "0x30",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "FLMJIMDEFOP",
+      "type": "int",
+      "offset": "0x34",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "IGHPIBHBBOE",
+      "type": "int",
+      "offset": "0x38",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "NDFKPKPKPCP",
+      "type": "string",
+      "offset": "0x48",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "NBODPGADKHF",
+      "type": "int",
+      "offset": "0x50",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "BJLGEEKOKLM",
+      "type": "int",
+      "offset": "0x54",
+      "is_static": false
+    },
+    {
+      "namespace": "",
+      "owner": "NCAFKHMPKJC",
+      "name": "DGGDBIMMDHE",
+      "type": "string[]",
+      "offset": "0x58",
       "is_static": false
     }
   ],

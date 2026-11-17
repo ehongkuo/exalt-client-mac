@@ -44,6 +44,8 @@ enum DropRateTests {
             bag\t1763300020.400\t2\t600\t1295\t10.10\t20.10\t2856\t2856\t-1\t-1\t-1\t-1\t-1\t-1
             bag_stat\t1763300020.400\t2\t600\t80\t0\tAQID
             bag\t1763300020.400\t2\t601\t1287\t50.00\t50.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
+            map_info\t1763300010.100\t2\t782\t123456\t0\t1\t2\t3\t1463\t5\tZephyr\tDRAINED_3;|A\t
+            player_stat\t1763300010.100\t2\t39\t2500
             gap\t1763300021.000\t3\tring_full
             bag\t1763300021.900\t2\t602\t1287\t1.00\t1.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
             kill\t1763300022
@@ -51,7 +53,7 @@ enum DropRateTests {
         try! first.write(to: file, atomically: false, encoding: .utf8)
         let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
         var running = true
-        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 11, "whole lines only")
+        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 13, "whole lines only")
         func int(_ sql: String) -> Int64 { var v: Int64 = -1; store.run(sql) { v = sqlite3_column_int64($0, 0) }; return v }
         check(int("SELECT count(*) FROM kills") == 3 && int("SELECT count(*) FROM maps") == 2, "kills and maps")
         check(int("SELECT since_hit_ms FROM kills WHERE object_id = 503") == 3000, "time since your last hit is kept")
@@ -60,6 +62,10 @@ enum DropRateTests {
         check(int("SELECT count(*) FROM bag_items WHERE item_type = 2856") == 2, "two copies count as two items")
         check(int("SELECT count(*) FROM bag_stats WHERE text = 'AQID'") == 1, "other bag stats are kept raw")
         check(int("SELECT lost FROM capture_gaps") == 3, "ring overflow is a gap")
+        check(int("SELECT i.class FROM map_info i JOIN maps m ON m.id = i.map WHERE m.name = 'Shatters'") == 782 &&
+              int("SELECT connection_10c FROM map_info") == 1463 && int("SELECT count(*) FROM map_info WHERE info_48 = 'DRAINED_3;|A'") == 1,
+              "map info kept raw on its map")
+        check(int("SELECT value FROM player_stats WHERE stat_type = 39") == 2500, "your stats kept")
         check(int("SELECT count(*) FROM maps m JOIN kills k ON k.map = m.id WHERE m.name = 'Shatters'") == 3, "kills carry their map")
         check(FileManager.default.fileExists(atPath: file.path), "a running game's file stays")
 

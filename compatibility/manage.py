@@ -21,9 +21,10 @@ METHOD_CONSTANTS = {
 OPTIONAL_METHODS = {'hit_handler'}
 METHOD_CONSTANTS['hit_handler'] = None
 HOOKS = {'nexus', 'report', 'notify', 'hp', 'damage', 'death', 'update', 'stats'}
-# Drop-rate capture (issue #38): a profile has all four or none; without them the guard skips capture.
+# Drop-rate capture (issue #38): a profile has all five or none; without them the guard skips capture.
 LOOT_HOOKS = {'enemydamage': 'ENEMY_DAMAGE_OFFSET', 'damagemessage': 'DAMAGE_MESSAGE_OFFSET',
-              'newobject': 'NEW_OBJECT_OFFSET', 'removeobject': 'REMOVE_OBJECT_OFFSET'}
+              'newobject': 'NEW_OBJECT_OFFSET', 'removeobject': 'REMOVE_OBJECT_OFFSET',
+              'statusapply': 'STATUS_APPLY_OFFSET'}
 METHOD_CONSTANTS.update(LOOT_HOOKS)
 OPTIONAL_METHODS |= set(LOOT_HOOKS)
 CALL_LAYOUT = {

@@ -104,6 +104,26 @@ the milliseconds since your last hit. The bag arrives in the same message just b
 are handled before removed ids), and the importer links a kill up to 0.25 s after its bag. The app
 counts a removal as a death when it comes within 1 s of your last hit (to be set from run 2).
 
+**Hook E: status apply (`HJMBOMEHGDJ.DBCEHNAEDCH`, `0x919FF0`).** Every object's stats go through it:
+on arrival (hook B's method calls it) and on each server tick (`LDKKFMBNOCN`). Only your own
+object's are kept (its id is the connection's `CMAEBFGEKFC`, `+0x120`, set before the map's objects
+arrive): every int stat except HP, MP and experience, written when it changes and all again on each
+map. Text stats (your name) are never written. The loot factors (loot potions, seasonal, exaltation
+bonus) are expected among them; RealmHound's per-drop flags tell which.
+
+**Map info.** Once per map, beside its name, the guard writes your class (your object's type) and the
+map info message (`NCAFKHMPKJC`) raw: ints at `+0x30` (seed?), `+0x34`, `+0x38`, `+0x50`, `+0x54`,
+strings at `+0x28` and `+0x48` and the string list at `+0x58` (dungeon modifiers are expected in
+one), and two connection ints (`+0x10C`, `+0x110`; character id?).
+
+**Map boundary.** A map starts when the connection's own id changes. Run 1 moved the boundary only
+once your new player object existed, after the map's first objects, so bags already on the ground
+when you arrived were filed under the previous map.
+
+**Checking a run.** `tools/drop_check.py` compares a capture session with RealmHound (read-only):
+bag matches, kill links and their mob, time since your last hit for removal kills, the axis
+mapping, boss kills, and which fields equal RealmHound's seed, character id and loot factors.
+
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
 thread calls this method (the guard already asserts that for its other hooks).
 

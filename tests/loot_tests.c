@@ -51,6 +51,8 @@ static void test_types(void) {
     loot_type_set(t, 42 + LOOT_TYPES, 5);
     assert(loot_type_get(t, 42) == 0 && loot_type_get(t, 42 + LOOT_TYPES) == 5);
     assert(loot_is_bag(1292) && loot_is_bag(1728) && !loot_is_bag(1293) && !loot_is_bag(0));
+    assert(loot_player_stat_kept(0) && !loot_player_stat_kept(1) && !loot_player_stat_kept(4) && !loot_player_stat_kept(6) &&
+           loot_player_stat_kept(255) && !loot_player_stat_kept(256));
     assert(loot_item_slot(8) == 0 && loot_item_slot(15) == 7 && loot_item_slot(7) == -1 && loot_item_slot(16) == -1);
 }
 
@@ -78,6 +80,13 @@ static void test_format(void) {
     strcpy(map.text, "Lost Halls");
     loot_format(&map, 1763300001, line, sizeof line);
     assert(!strcmp(line, "map\t1763300001.000\t4\tLost Halls\n"));
+    LootEvent info = {.map = 4, .kind = LOOT_MAP_INFO, .v = {782, 123456, 0, 1, 2, 3, 4, 5}};
+    strcpy(info.text, "Zephyr\tDRAINED_3;|A\t");
+    loot_format(&info, 1763300001, line, sizeof line);
+    assert(!strcmp(line, "map_info\t1763300001.000\t4\t782\t123456\t0\t1\t2\t3\t4\t5\tZephyr\tDRAINED_3;|A\t\n"));
+    LootEvent player = {.map = 4, .kind = LOOT_PLAYER_STAT, .v = {39, 2500}};
+    loot_format(&player, 1763300001, line, sizeof line);
+    assert(!strcmp(line, "player_stat\t1763300001.000\t4\t39\t2500\n"));
     LootEvent odd = {.kind = LOOT_KILL, .source = 200};
     loot_format(&odd, 0, line, sizeof line);
     assert(strstr(line, "\tunknown\t0\n"));

@@ -211,7 +211,7 @@ The automated tests use a simulated game/runtime and do not act on the real game
 | `guard/` | IL2CPP bindings, potion decisions, potions, Nexus, party chat/Join, shared-state protocol, logging, and game fingerprint. |
 | `probe/` | Shared production damage hooks and prediction policy, plus standalone diagnostic tools. Its production headers are required by the app build. |
 | `tests/` | Synthetic game fixtures, guard/integration tests, native-hook regressions, shared-memory checks, and UI fixtures. |
-| `tools/` | Command-line utilities for reading live state and sending settings or Join requests, and the README screenshot script. |
+| `tools/` | Command-line utilities for reading live state and sending settings or Join requests, the README screenshot script, and `drop_check.py`, which checks a drop-rate capture against RealmHound. |
 | `docs/` | Architecture notes, intervention notes, and screenshots (regenerate with `tools/readme-screenshots.sh`). |
 | `build/`, `module-cache/` | Generated binaries and compiler caches, excluded from Git. |
 

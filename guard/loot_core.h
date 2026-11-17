@@ -9,7 +9,7 @@
 #include <string.h>
 
 #define LOOT_FORMAT 2
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP };
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT };
 /* Who dealt a hit. The first three are you; only they put a mob in the damage table. A kill seen
  * only as the server removing the mob (no kill flag) is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
@@ -31,7 +31,8 @@ typedef struct {
     uint16_t type;
     uint8_t kind, source;
     float pos[3];
-    int32_t v[8];           /* kill: damage by source, max HP, ms since your last hit; bag: items; stat: type, value */
+    int32_t v[8];           /* kill: damage by source, max HP, ms since your last hit; bag: items; stat: type, value;
+                               map info: your class, then raw ints; the text holds its strings, tab-separated */
     char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
 
@@ -106,6 +107,9 @@ static inline int loot_is_bag(uint16_t type) {
     default: return 0;
     }
 }
+/* Your own stats are kept when they change, for the loot factors among them. Not HP, MP or
+ * experience (1, 4, 6), which change all fight long, and never text stats (your name). */
+static inline int loot_player_stat_kept(int stat) { return stat >= 0 && stat < 256 && stat != 1 && stat != 4 && stat != 6; }
 /* Container slots 0-7 are stat types 8-15; anything else on a bag is kept raw. */
 static inline int loot_item_slot(int stat) { return stat >= 8 && stat <= 15 ? stat - 8 : -1; }
 
@@ -124,6 +128,11 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
         return snprintf(out, size, "bag_stat\t%.3f\t%u\t%d\t%d\t%d\t%s\n", epoch, e->map, e->id, v[0], v[1], e->text);
     case LOOT_MAP:
         return snprintf(out, size, "map\t%.3f\t%u\t%s\n", epoch, e->map, e->text);
+    case LOOT_MAP_INFO:
+        return snprintf(out, size, "map_info\t%.3f\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+                        epoch, e->map, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], e->text);
+    case LOOT_PLAYER_STAT:
+        return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
     default: return 0;
     }
 }

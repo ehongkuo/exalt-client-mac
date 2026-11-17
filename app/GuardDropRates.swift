@@ -25,6 +25,9 @@ enum LootLine: Equatable {
     case kill(LootKill)
     case bag(LootBag)
     case bagStat(time: Double, generation: Int, object: Int, stat: Int, value: Int, text: String)
+    /// The map's info message, raw: your class, then its ints and strings in guard order.
+    case mapInfo(time: Double, generation: Int, values: [Int], texts: [String])
+    case playerStat(time: Double, generation: Int, stat: Int, value: Int)
     case gap(time: Double, lost: Int, reason: String)
     case status(time: Double, text: String)
     case summary(String)
@@ -54,6 +57,13 @@ enum LootLine: Equatable {
         case "bag_stat":
             guard let t = d(1), let g = n(2), let o = n(3), let s = n(4), let v = n(5) else { return nil }
             self = .bagStat(time: t, generation: g, object: o, stat: s, value: v, text: f.count > 6 ? f[6] : "")
+        case "map_info":
+            let values = (3..<11).compactMap(n)
+            guard f.count == 14, values.count == 8, let t = d(1), let g = n(2) else { return nil }
+            self = .mapInfo(time: t, generation: g, values: values, texts: Array(f[11...]))
+        case "player_stat":
+            guard f.count == 5, let t = d(1), let g = n(2), let s = n(3), let v = n(4) else { return nil }
+            self = .playerStat(time: t, generation: g, stat: s, value: v)
         case "gap":
             guard let t = d(1), let lost = n(2) else { return nil }
             self = .gap(time: t, lost: lost, reason: f.count > 3 ? f[3] : "")
@@ -99,6 +109,14 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS bag_items(bag INTEGER NOT NULL, slot INTEGER NOT NULL, item_type INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS bag_stats(bag INTEGER NOT NULL, stat_type INTEGER, value INTEGER, text TEXT);
         CREATE TABLE IF NOT EXISTS capture_gaps(session INTEGER NOT NULL, time REAL, lost INTEGER, reason TEXT);
+        -- Raw until a staging run names them: the map info message's fields by offset, and the two
+        -- connection ints (character id?). class is your character's object type.
+        CREATE TABLE IF NOT EXISTS map_info(map INTEGER PRIMARY KEY, class INTEGER, info_30 INTEGER, info_34 INTEGER,
+            info_38 INTEGER, info_50 INTEGER, info_54 INTEGER, connection_10c INTEGER, connection_110 INTEGER,
+            info_28 TEXT, info_48 TEXT, info_58 TEXT);
+        -- Your own int stats (not HP, MP or experience), each time one changes and again on each map.
+        CREATE TABLE IF NOT EXISTS player_stats(map INTEGER NOT NULL, time REAL NOT NULL, stat_type INTEGER, value INTEGER);
+        CREATE INDEX IF NOT EXISTS player_stats_map ON player_stats(map, stat_type);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -252,6 +270,14 @@ enum LootImport {
                                   [map(generation, time), object]) { bag = sqlite3_column_int64($0, 0) }
                     }
                     if let bag { store.run("INSERT INTO bag_stats(bag, stat_type, value, text) VALUES (?, ?, ?, ?)", [bag, stat, value, text]) }
+                case let .mapInfo(time, generation, values, texts):
+                    store.run("""
+                        INSERT OR REPLACE INTO map_info(map, class, info_30, info_34, info_38, info_50, info_54, connection_10c,
+                            connection_110, info_28, info_48, info_58) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, [map(generation, time)] + values.map { $0 as Any? } + texts.map { $0 as Any? })
+                case let .playerStat(time, generation, stat, value):
+                    store.run("INSERT INTO player_stats(map, time, stat_type, value) VALUES (?, ?, ?, ?)",
+                              [map(generation, time), time, stat, value])
                 case let .gap(time, lost, reason):
                     store.run("INSERT INTO capture_gaps(session, time, lost, reason) VALUES (?, ?, ?, ?)", [session, time, lost, reason])
                 case let .status(time, text):
