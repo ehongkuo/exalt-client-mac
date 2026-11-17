@@ -16,7 +16,8 @@ current compatibility profile covers).
 |---|---|
 | Kill source | Our own guard hook, for bosses and ordinary mobs alike |
 | Drop source | Our own capture in the guard, independent of RealmHound and its filters |
-| What counts as a kill | A mob you damaged directly (projectiles and abilities) that then died. Pet damage doesn't count. |
+| How a drop is registered | RealmHound's mechanism, copied, with no bag filter: every bag once per map, linked to the nearest hit mob the server removed in the next update (section 3) |
+| What counts as a kill | A mob you damaged directly (projectiles and abilities) that then died. Pet damage doesn't count. Mobs only others hit are stored too, so their bags link. |
 | Loot factors | Captured with every kill: character boosts (loot potions, seasonal, crucible, blood ritual, exaltations, loot enchants), dungeon factors (modifiers, hard or exalted versions) and server-wide loot events |
 | Also captured | Map, time and character per kill; your damage and the mob's max HP; every bag, linked or not; game build, guard version and capture gaps |
 | Kill and drop counts | True counts, incrementing forever from rollout; never weighted or altered |
@@ -84,29 +85,46 @@ game hit ─▶ guard hook ─▶ ring ─▶ writer (10 Hz) ─▶ logs/loot-<s
 
 ### Guard side
 
-**Hook A: base damage method (`0x11291F0`).** On every enemy hit:
+**Drops are registered the way RealmHound registers them** (its `LootDetector`, read from its
+source), for every bag type, with none of its filters:
 
-1. If the hit is yours, add its damage to the target's entry in a small "your damage" table
-   (4,096 slots indexed by object id, cleared on map change). Yours means: a `hit_handler` return
-   address (your projectiles), or a server Damage message whose shooter (`+0x2C`) is your object id
-   (abilities the server resolves). A pet is its own object, so its hits don't match. The shooter
-   is in the message, not in hook A's arguments, so **hook C** on the Damage handler (`0x926410`)
-   stores it in a variable that hook A reads during the same call.
-2. Note where and when you last hit it, and its max HP: removal (hook D) only has the id.
-3. If the kill flag is set and the target is in the "your damage" table and not yet marked killed:
-   push a `kill` event and mark it, so a death reported twice (flag, server, removal) counts once.
-4. Call the original.
+1. **Hit list.** A mob is "hit" once you hit it (RealmHound: your outgoing `EnemyHit`) or the server
+   sends a `Damage` message for it with damage above 0 (anyone's hit).
+2. **Kill.** When the server's `Update` removes a hit mob, it is a kill at its last server position.
+   The mob then leaves the hit list, so one that left view and comes back needs new hits.
+3. **Bag.** Each bag object counts once per map: the server sends it again each time it comes back
+   into view, and those copies are skipped.
+4. **Link.** Bags wait one tick. At each `NewTick`, the bags from the tick before last go to the
+   nearest (no distance limit) of the kills since the last tick, because the server sends a bag one
+   update before it removes the mob that dropped it. A bag with no kill then stays unlinked.
+
+RealmHound also skips walls and gates as drop sources (from its object catalogue) and adds a few
+special cases (Ice Tomb souls, boss overrides); none of that is copied yet. Positions are the
+server's (tile x, y), as RealmHound uses.
+
+**Hook A: base damage method (`0x11291F0`).** On every enemy hit, before the original:
+
+1. A hit counts if it is yours or comes from the Damage handler with damage. Yours means a
+   `hit_handler` return address (your projectiles) or a server Damage message whose shooter
+   (`+0x2C`) is your object id (abilities the server resolves). A pet is its own object, so its hits
+   are another player's. The shooter is in the message, not in hook A's arguments, so **hook C** on
+   the Damage handler (`0x926410`) stores it in a variable that hook A reads during the same call.
+2. The mob's entry (4,096 slots by object id, cleared on map change) adds your damage per source,
+   others' damage, the time of the last hit and its max HP. The kill flag is ignored (below).
 
 **Hook D: remove object (`HJMBOMEHGDJ.CGOAIMCNNON`, `0x923440`).** Only for the `Update` handler's
 call (return address `0x936072`; other callers remove projectiles by a different key): a removed id
-that is in the "your damage" table and not yet killed becomes a `kill` with source `removed` and
-the milliseconds since your last hit. The bag arrives in the same message just before (new objects
-are handled before removed ids), and the importer links a kill up to 0.25 s after its bag. The app
-counts a removal as a death when it comes within 1 s of your last hit (to be set from run 2).
+with an entry becomes a `kill` (source `removed`) at the mob's last server position, with the
+damage and the milliseconds since the last hit, and the entry is cleared. Leaving view removes a
+mob the same way; the app counts a removal as a death when it comes within 1 s of the last hit (to
+be set from run 2).
+
+**Hook F: NewTick (`HJMBOMEHGDJ.LDKKFMBNOCN`, `0x936DA0`).** After the tick's statuses, writes a
+`drop` line for each bag of the tick before last with the kill it links to (step 4 above).
 
 **Hook E: status apply (`HJMBOMEHGDJ.DBCEHNAEDCH`, `0x919FF0`).** Every object's stats go through it:
 on arrival (hook B's method calls it) and on each server tick (`LDKKFMBNOCN`). Only your own
-object's are kept (its id is the connection's `CMAEBFGEKFC`, `+0x120`, set before the map's objects
+object's stats are kept; every object's server position is noted, for kills (its id is the connection's `CMAEBFGEKFC`, `+0x120`, set before the map's objects
 arrive): every int stat except HP, MP and experience, written when it changes and all again on each
 map. Text stats (your name) are never written. The loot factors (loot potions, seasonal, exaltation
 bonus) are expected among them; RealmHound's per-drop flags tell which.
@@ -121,8 +139,9 @@ once your new player object existed, after the map's first objects, so bags alre
 when you arrived were filed under the previous map.
 
 **Checking a run.** `tools/drop_check.py` compares a capture session with RealmHound (read-only):
-bag matches, kill links and their mob, time since your last hit for removal kills, the axis
-mapping, boss kills, and which fields equal RealmHound's seed, character id and loot factors.
+bag matches, bags counted once, kill links and their mob, time since the last hit for removal
+kills, bag-to-kill distance, boss kills, and which fields equal RealmHound's seed, character id and
+loot factors.
 
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
 thread calls this method (the guard already asserts that for its other hooks).
@@ -141,8 +160,9 @@ The hook reads the message, not the game object:
 | Status | `ObjectData +0x18` → `ObjectStatus` (`BOEANEODCOA`): id `+0x10`, position `+0x18` (x `+0x1C`, y `+0x20`), stats `+0x20` |
 | Each stat | `List<StatData>` (`CGOECEPGBBG`): stat type `+0x10` (byte), int value `+0x14`, string `+0x18` |
 
-On each call: if the object type is in the bag-type set (20 ids), push a `bag` event with its id,
-position and the item ids from its inventory stats; otherwise return. Cost is one set lookup per
+On each call it notes the object's type and position. If the type is in the bag-type set (20 ids)
+and the bag is new on this map, it pushes a `bag` event with its id, position and the item ids from
+its inventory stats, and queues it for linking (hook F). Cost is one set lookup per
 new object; an `Update` arrives about 5 times a second. Later contents changes (players looting a
 public bag) come through `DBCEHNAEDCH` and aren't needed: a drop is what the bag held at first.
 
@@ -151,7 +171,8 @@ one tab-separated line each, columns in `guard/loot_core.h`):
 
 | Event | Fields |
 |---|---|
-| `kill` | time, map instance, object id, object type, x, y, your damage, mob max HP, who landed the kill (you / server) |
+| `kill` | time, map instance, object id, object type, x, y, your damage by source, mob max HP, `removed`, ms since the last hit, others' damage |
+| `drop` | time, map instance, bag object id, the kill's object id (0: none) |
 | `bag` | time, map instance, object id, bag type, x, y, up to 8 item ids |
 | `bag_stat` | bag object id, stat type, int value, first 40 bytes of the string value (one per non-item stat, so enchant data is kept raw for later) |
 | `map` | time, map instance, map name, character id and class (on every map change) |
@@ -168,11 +189,10 @@ capture gap, so a rate is never silently wrong.
 Every 5 s, off the main thread, the importer reads the new whole lines of each loot file (from the
 offset it stored) in one SQLite transaction per file, and deletes a file once its game has ended. It:
 
-- links each bag to the kill on the same map within 1 tile and 0–2 s before it (nearest one). Until
-  a staging run shows which axes of the kill's position match the bag's x and y, it tries each.
-  Position is used only for this: in a burst of kills (one AOE can kill ten mobs in the same tick),
-  it is the only way to tell which mob type each bag came from. It isn't used in any rate;
-  bags with no kill are kept unlinked (chests, mobs you didn't hit);
+- links each bag to the kill its `drop` line names (the guard decides, as RealmHound does). Position
+  is used only for this: in a burst of kills (one AOE can kill ten mobs in the same tick), it is the
+  only way to tell which mob type each bag came from. Bags with no kill stay unlinked (chests,
+  mobs nobody hit);
 - resolves names from the game's XML at display time only. Ids are the truth, names can change.
 
 ### Store
@@ -202,7 +222,8 @@ Indexes: `kills(mob_type)`, `kills(map, time)`, `bags(kill)`, `bag_items(item_ty
 Size: about 70 bytes per kill and 100 per bag with items; factor, map and announcement rows are
 rare. 500 hours a year at 2,000 kills an hour is about 1 M kills, roughly 80 MB a year.
 
-Kills of mobs you didn't damage aren't stored (they never count), but their bags are, unlinked.
+Kills of mobs only others damaged are stored (with your damage 0), so their bags link; they don't
+count as your kills.
 
 ### Loot factors
 

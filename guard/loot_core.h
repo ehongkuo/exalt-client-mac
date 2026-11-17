@@ -8,10 +8,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#define LOOT_FORMAT 2
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT };
-/* Who dealt a hit. The first three are you; only they put a mob in the damage table. A kill seen
- * only as the server removing the mob (no kill flag) is "removed". */
+#define LOOT_FORMAT 3
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP };
+/* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
+ * is the server removing a mob someone hit, so every kill is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
 static const char *const loot_source_names[] = {"projectile", "projectile_alt", "ability", "other", "unknown", "removed"};
 /* Who dealt a hit into the damage method, from where it was called (an offset in the game) and, for a
@@ -31,7 +31,8 @@ typedef struct {
     uint16_t type;
     uint8_t kind, source;
     float pos[3];
-    int32_t v[8];           /* kill: damage by source, max HP, ms since your last hit; bag: items; stat: type, value;
+    int32_t v[8];           /* kill: your damage by source, max HP, ms since the last hit, others' damage; bag: items;
+                               stat: type, value; drop: the bag's kill (object id, 0 for none);
                                map info: your class, then raw ints; the text holds its strings, tab-separated */
     char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
@@ -60,42 +61,93 @@ static inline int loot_pop(LootRing *r, LootEvent *e) {
     return 1;
 }
 
-/* Your damage per mob, with where and when you last hit it. Direct-mapped by object id: the server
- * hands out ids in order, so a slot is reused only when a much newer mob you also hit lands on it
- * (counted as an eviction). */
+/* Mobs someone hit, as RealmHound keeps them: your hits and every Damage message the server sends
+ * with damage. Direct-mapped by object id: the server hands out ids in order, so a slot is reused
+ * only when a much newer hit mob lands on it (counted as an eviction). */
 #define LOOT_HITS 4096
-typedef struct { int32_t id, killed, damage[LOOT_YOURS], max; float pos[3]; uint64_t last_ns; } LootHit;
+typedef struct { int32_t id, damage[LOOT_YOURS], others, max; uint64_t last_ns; } LootHit;
 typedef struct { LootHit slot[LOOT_HITS]; uint64_t evictions; } LootHits;
 static inline void loot_hits_clear(LootHits *t) { memset(t->slot, 0, sizeof t->slot); }
-/* Returns the mob's entry for your hit, or NULL for anyone else's. */
+/* Returns the mob's entry, or NULL when the hit does not count: an unknown caller, or someone
+ * else's hit without damage. */
 static inline LootHit *loot_hit_add(LootHits *t, int32_t id, int source, int32_t damage, uint64_t ns) {
-    if (!id || source < 0 || source >= LOOT_YOURS) return NULL;
+    if (!id || source < 0 || source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return NULL;
     LootHit *h = &t->slot[(uint32_t)id % LOOT_HITS];
     if (h->id != id) {
-        if (h->id && !h->killed) ++t->evictions;
+        if (h->id) ++t->evictions;
         *h = (LootHit){.id = id};
     }
-    if (!h->killed && damage > 0) h->damage[source] += damage;
+    if (damage > 0) *(source == LOOT_OTHER ? &h->others : &h->damage[source]) += damage;
     h->last_ns = ns;
     return h;
 }
-/* A kill counts once, and only for a mob you hit: a later report of the same death (kill flag,
- * server Damage, removal) finds it already killed. */
-static inline LootHit *loot_hit_kill(LootHits *t, int32_t id) {
+/* The server removed the object: hand back its hits, if it had any, and forget them, so a mob that
+ * left view and comes back needs new hits to count. */
+static inline int loot_hit_take(LootHits *t, int32_t id, LootHit *out) {
     LootHit *h = &t->slot[(uint32_t)id % LOOT_HITS];
-    if (!id || h->id != id || h->killed) return NULL;
-    h->killed = 1;
-    return h;
+    if (!id || h->id != id) return 0;
+    *out = *h;
+    *h = (LootHit){0};
+    return 1;
 }
 
-/* Object type by id, from each new object the server sends. Never cleared: every id that can be
- * hit was written when its object arrived. */
+/* Each object's type and last server position, from its arrival and every status after. Never
+ * cleared: every id that can be hit was written when its object arrived. */
 #define LOOT_TYPES 16384
-typedef struct { int32_t id; uint16_t type; } LootType;
-static inline void loot_type_set(LootType *t, int32_t id, uint16_t type) { t[(uint32_t)id % LOOT_TYPES] = (LootType){id, type}; }
-static inline uint16_t loot_type_get(const LootType *t, int32_t id) {
-    const LootType *e = &t[(uint32_t)id % LOOT_TYPES];
-    return e->id == id ? e->type : 0;
+typedef struct { int32_t id; uint16_t type; float pos[2]; } LootType;
+static inline void loot_type_set(LootType *t, int32_t id, uint16_t type, const float pos[2]) {
+    t[(uint32_t)id % LOOT_TYPES] = (LootType){id, type, {pos[0], pos[1]}};
+}
+static inline LootType *loot_type_find(LootType *t, int32_t id) {
+    LootType *e = &t[(uint32_t)id % LOOT_TYPES];
+    return id && e->id == id ? e : NULL;
+}
+static inline uint16_t loot_type_get(LootType *t, int32_t id) { LootType *e = loot_type_find(t, id); return e ? e->type : 0; }
+
+/* Bags already seen on this map: the server sends a bag again each time it comes back into view.
+ * shortcut: direct-mapped, so a bag 4096 ids after another on the same map can push it out and a
+ * later resend of the older one counts again; a set per map if a run ever shows that. */
+#define LOOT_SEEN 4096
+typedef struct { int32_t id; uint32_t map; } LootSeen;
+static inline int loot_bag_first(LootSeen *s, int32_t id, uint32_t map) {
+    LootSeen *e = &s[(uint32_t)id % LOOT_SEEN];
+    if (e->id == id && e->map == map) return 0;
+    *e = (LootSeen){id, map};
+    return 1;
+}
+
+/* Which kill each bag came from, as RealmHound decides it: bags wait one tick, then each goes to the
+ * nearest (server position, no limit) of the hit mobs removed since the last tick, because the
+ * server sends a bag one update before it removes the mob that dropped it. */
+#define LOOT_PENDING 256
+typedef struct { int32_t id; float pos[2]; } LootSpot;
+typedef struct { LootSpot bags[2][LOOT_PENDING], killed[LOOT_PENDING]; int bag_count[2], killed_count, toggle; uint64_t overflow; } LootTicks;
+static inline void loot_ticks_clear(LootTicks *t) { t->bag_count[0] = t->bag_count[1] = t->killed_count = 0; }
+static inline void loot_spot_add(LootSpot *list, int *count, uint64_t *overflow, int32_t id, const float pos[2]) {
+    if (*count == LOOT_PENDING) { ++*overflow; return; }
+    list[(*count)++] = (LootSpot){id, {pos[0], pos[1]}};
+}
+static inline void loot_tick_bag(LootTicks *t, int32_t id, const float pos[2]) {
+    loot_spot_add(t->bags[t->toggle], &t->bag_count[t->toggle], &t->overflow, id, pos);
+}
+static inline void loot_tick_killed(LootTicks *t, int32_t id, const float pos[2]) {
+    loot_spot_add(t->killed, &t->killed_count, &t->overflow, id, pos);
+}
+/* A new tick: the bags of the tick before last, each with its kill's id (0 for none). */
+static inline int loot_tick_end(LootTicks *t, LootSpot *bags, int32_t *killers) {
+    t->toggle ^= 1;
+    int n = t->bag_count[t->toggle];
+    for (int i = 0; i < n; ++i) {
+        LootSpot b = bags[i] = t->bags[t->toggle][i];
+        float best = 0;
+        killers[i] = 0;
+        for (int k = 0; k < t->killed_count; ++k) {
+            float dx = t->killed[k].pos[0] - b.pos[0], dy = t->killed[k].pos[1] - b.pos[1], d = dx * dx + dy * dy;
+            if (!killers[i] || d < best) { killers[i] = t->killed[k].id; best = d; }
+        }
+    }
+    t->bag_count[t->toggle] = t->killed_count = 0;
+    return n;
 }
 
 /* Loot bag object types, as in the app's DropBag (RealmHound's ids; 17xx are boosted bags). */
@@ -118,9 +170,9 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
     const int32_t *v = e->v;
     switch (e->kind) {
     case LOOT_KILL:
-        return snprintf(out, size, "kill\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%s\t%d\n",
+        return snprintf(out, size, "kill\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%s\t%d\t%d\n",
                         epoch, e->map, e->id, e->type, e->pos[0], e->pos[1], e->pos[2], v[0], v[1], v[2], v[3],
-                        loot_source_names[e->source <= LOOT_REMOVED ? e->source : LOOT_UNKNOWN], v[4]);
+                        loot_source_names[e->source <= LOOT_REMOVED ? e->source : LOOT_UNKNOWN], v[4], v[5]);
     case LOOT_BAG:
         return snprintf(out, size, "bag\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
                         epoch, e->map, e->id, e->type, e->pos[0], e->pos[1], v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
@@ -133,6 +185,8 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
                         epoch, e->map, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], e->text);
     case LOOT_PLAYER_STAT:
         return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
+    case LOOT_DROP:
+        return snprintf(out, size, "drop\t%.3f\t%u\t%d\t%d\n", epoch, e->map, e->id, v[0]);
     default: return 0;
     }
 }

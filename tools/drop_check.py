@@ -5,10 +5,10 @@
 
 Compares one capture session in drop_rates.db (default: the staging app's, latest session) with
 RealmHound's loot and boss-fight records for the same time window, and prints what a staging run
-has to answer: do your bags match, does each link to a kill of the right mob, how long after your
-last hit removal kills come, which axis mapping links kills to bags, and which of your stats or
-map fields carry RealmHound's seed, character id and loot factors. It never prints character or
-account names.
+has to answer: do your bags match, is each bag counted once, does each link to a kill of the right
+mob, how long after the last hit removal kills come, how far bags land from their kills, and which
+of your stats or map fields carry RealmHound's seed, character id and loot factors. It never prints
+character or account names.
 """
 import argparse
 import glob
@@ -19,7 +19,6 @@ import sys
 
 STAGING_DB = '~/Library/Application Support/Exalt Client Mac Staging/drop_rates.db'
 REALMHOUND = '~/Library/Application Support/RealmHound/accounts'
-AXES = {'y': lambda k: k[1], '-y': lambda k: -k[1], 'z': lambda k: k[2], '-z': lambda k: -k[2]}
 FACTORS = ('fame', 'is_seasonal', 'exalt_bonus', 'loot_drop_active', 'loot_tier_active', 'char_id', 'class_id')
 
 
@@ -57,13 +56,17 @@ def realmhound_bosses(folder, start, end):
 
 def check(db, drops, bosses, session, out=print):
     bags = {}
-    for bag, time, bag_type, x, y, kill, map_id in db.execute(
-            'SELECT b.id, b.time, b.bag_type, b.x, b.y, b.kill, b.map FROM bags b JOIN maps m ON m.id = b.map WHERE m.session = ?', (session,)):
+    for bag, time, bag_type, x, y, kill, map_id, object_id in db.execute(
+            '''SELECT b.id, b.time, b.bag_type, b.x, b.y, b.kill, b.map, b.object_id FROM bags b JOIN maps m ON m.id = b.map
+               WHERE m.session = ?''', (session,)):
         items = sorted(r[0] for r in db.execute('SELECT item_type FROM bag_items WHERE bag = ?', (bag,)))
-        bags[bag] = dict(time=time, type=bag_type, x=x, y=y, kill=kill, map=map_id, items=items)
-    kills = {r[0]: r[1:] for r in db.execute('''SELECT k.id, k.time, k.mob_type, k.x, k.y, k.z, k.landed_by, k.since_hit_ms, k.map
+        bags[bag] = dict(time=time, type=bag_type, x=x, y=y, kill=kill, map=map_id, object=object_id, items=items)
+    kills = {r[0]: r[1:] for r in db.execute('''SELECT k.id, k.time, k.mob_type, k.x, k.y, k.z, k.landed_by, k.since_hit_ms, k.map,
+                                                k.damage_projectile + k.damage_projectile_alt + k.damage_ability
                                                 FROM kills k JOIN maps m ON m.id = k.map WHERE m.session = ?''', (session,))}
     out(f'Capture: {len(bags)} bags, {len(kills)} kills. RealmHound: {len(drops)} of your drops, {len(bosses)} boss kills.')
+    once = len({(b['map'], b['object']) for b in bags.values()})
+    out(f'   bags counted once: {once} distinct of {len(bags)} rows')
 
     # 1. Your bags, matched by type and items within 3 s.
     matched = []
@@ -78,10 +81,8 @@ def check(db, drops, bosses, session, out=print):
     linked = [(d, b, kills[b['kill']]) for d, b in matched if b['kill'] in kills]
     right = [x for x in linked if x[2][1] == x[0]['mob_type']]
     out(f'2. Kills: {len(linked)} of {len(matched)} matched bags link to a kill; {len(right)} of those are the mob RealmHound names.')
-    by = {}
-    for _, _, k in linked: by[k[5]] = by.get(k[5], 0) + 1
-    out(f'   seen as: {by or "-"}')
-    out(f'   ms from your last hit, linked kills: {spread([k[6] for _, _, k in linked if k[6] is not None])}')
+    out(f'   of those, mobs you damaged: {sum(bool(k[8]) for _, _, k in linked)}')
+    out(f'   ms from the last hit, linked kills: {spread([k[6] for _, _, k in linked if k[6] is not None])}')
     for d, b in matched:
         if b['kill'] not in kills:
             out(f'   unlinked: bag {b["type"]} at {b["time"]:.3f}, RealmHound mob {d["mob_type"]}')
@@ -89,19 +90,13 @@ def check(db, drops, bosses, session, out=print):
     # 3. Removal kills with no bag: where to cut "died" from "left your view".
     with_bag = {b['kill'] for b in bags.values()}
     lone = [k[6] for i, k in kills.items() if k[5] == 'removed' and i not in with_bag and k[6] is not None]
-    out(f'3. Removal kills without a bag, ms from your last hit: {spread(lone)}')
+    out(f'3. Removal kills without a bag, ms from the last hit: {spread(lone)}')
     for cut in (500, 1000, 2000):
         out(f'   within {cut} ms: {sum(v <= cut for v in lone)}')
 
-    # 4. Which float3 axis is the bag's tile y: distance from each matched bag to its RealmHound mob's nearest kill.
-    out('4. Axis mapping, kill to bag distance (tiles) over matched bags:')
-    for name, axis in AXES.items():
-        best = []
-        for d, b in matched:
-            near = [((k[2] - b['x']) ** 2 + (axis(k[2:5]) - b['y']) ** 2) ** 0.5 for k in kills.values()
-                    if k[7] == b['map'] and k[1] == d['mob_type'] and -2 <= b['time'] - k[0] <= 2]
-            if near: best.append(round(min(near), 2))
-        out(f'   {name:>2}: {spread(best)}')
+    # 4. How far each bag landed from the kill it links to (both server positions, in tiles).
+    far = [round(((k[2] - b['x']) ** 2 + (k[3] - b['y']) ** 2) ** 0.5, 2) for b in bags.values() if (k := kills.get(b['kill']))]
+    out(f'4. Bag to its kill, tiles: {spread(far)}')
 
     # 5. Boss kills.
     found = sum(any(k[1] == boss and abs(k[0] - t) < 5 for k in kills.values()) for t, boss in bosses)
@@ -144,13 +139,14 @@ def self_test():
         CREATE TABLE bags(id INTEGER PRIMARY KEY, map INTEGER, time REAL, object_id INTEGER, bag_type INTEGER, x REAL, y REAL, kill INTEGER);
         CREATE TABLE bag_items(bag INTEGER, slot INTEGER, item_type INTEGER);
         CREATE TABLE kills(id INTEGER PRIMARY KEY, map INTEGER, time REAL, object_id INTEGER, mob_type INTEGER, x REAL, y REAL, z REAL,
-            damage_projectile INTEGER, damage_projectile_alt INTEGER, damage_ability INTEGER, max_hp INTEGER, landed_by TEXT, since_hit_ms INTEGER);
+            damage_projectile INTEGER, damage_projectile_alt INTEGER, damage_ability INTEGER, max_hp INTEGER, landed_by TEXT, since_hit_ms INTEGER,
+            damage_others INTEGER);
         CREATE TABLE map_info(map INTEGER PRIMARY KEY, class INTEGER, info_30 INTEGER, info_34 INTEGER, info_38 INTEGER, info_50 INTEGER,
             info_54 INTEGER, connection_10c INTEGER, connection_110 INTEGER, info_28 TEXT, info_48 TEXT, info_58 TEXT);
         CREATE TABLE player_stats(map INTEGER, time REAL, stat_type INTEGER, value INTEGER);
         INSERT INTO maps VALUES (1, 1, 2, 'Abyss of Demons', 100);
-        INSERT INTO kills VALUES (1, 1, 110.0, 50, 2314, 10, 0, -20, 0, 0, 0, 20000, 'removed', 240);
-        INSERT INTO kills VALUES (2, 1, 115.0, 51, 1650, 90, 0, -90, 0, 0, 0, 900, 'removed', 4000);
+        INSERT INTO kills VALUES (1, 1, 110.0, 50, 2314, 10, 20, 0, 300, 0, 0, 20000, 'removed', 240, 900);
+        INSERT INTO kills VALUES (2, 1, 115.0, 51, 1650, 90, 90, 0, 0, 0, 0, 900, 'removed', 4000, 50);
         INSERT INTO bags VALUES (1, 1, 109.99, 60, 1295, 10.2, 20.1, 1);
         INSERT INTO bag_items VALUES (1, 0, 2856);
         INSERT INTO map_info VALUES (1, 782, 4242, 0, 0, 0, 0, 1463, 7, 'Zephyr', 'DRAINED_3;|A', '');
@@ -161,8 +157,8 @@ def self_test():
     lines = []
     check(db, drops, [(110.1, 2314)], 1, out=lines.append)
     text = '\n'.join(lines)
-    for expected in ('1 of 1 RealmHound drops match', '1 of 1 matched bags link to a kill; 1 of those', "{'removed': 1}",
-                     'within 1000 ms: 0', '-z: n=1 min=0.22', '1 of 1 RealmHound boss kills', 'seed: info_30',
+    for expected in ('1 of 1 RealmHound drops match', 'counted once: 1 distinct of 1', '1 of 1 matched bags link to a kill; 1 of those',
+                     'mobs you damaged: 1', 'within 1000 ms: 0', 'tiles: n=1 min=0.22', '1 of 1 RealmHound boss kills', 'seed: info_30',
                      'char_id: connection_10c', 'class_id: class', 'fame (RealmHound values [2500]): equal stats [39]'):
         assert expected in text, (expected, text)
     print('drop_check self-test passed')

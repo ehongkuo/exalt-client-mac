@@ -1,16 +1,17 @@
 /* Drop-rate capture hooks (issue #38). Included by guard.c in the client build when the profile has
- * the loot hooks. Records every kill of a mob you damaged and every bag as it arrives, into
+ * the loot hooks. Registers drops the way RealmHound does, for every bag type with no filter, into
  * loot-<started>-<pid>.tsv beside the guard log. A failure here turns capture off and is logged;
  * it never stops the game.
  *
- *   A  damage method (base, enemies only): your hits and kill flags
- *   B  new object: bags and their contents, and each object's type
- *   C  Damage message: who the server says shot (abilities)
- *   D  remove object, from the server's Update: a mob you hit is gone. The kill flag alone misses
- *      most kills: the game sets it only when one shot outdoes the HP the server last sent, and it
- *      never lowers a mob's HP itself (staging run 1: 0 kill flags over 32 kills RealmHound saw).
- *   E  status apply (every object's stats, on arrival and each tick): your own stats when they
- *      change, for the loot factors among them
+ *   A  damage method (base, enemies only): your hits, and each Damage message's hit on a mob
+ *   B  new object: each object's type and position; each bag once per map, with its contents
+ *   C  Damage message: who the server says shot (your abilities)
+ *   D  remove object, from the server's Update: a mob someone hit is gone, which is a kill. The
+ *      game's kill flag misses most kills (staging run 1: none over 32 kills RealmHound saw), and
+ *      RealmHound counts this removal too. A mob that only left view is also a kill here.
+ *   E  status apply (every object, on arrival and each tick): server positions, and your own stats
+ *      when they change, for the loot factors among them
+ *   F  NewTick: each bag of the tick before goes to the nearest kill since then
  * Once per map it also writes the map's info message raw (seed, strings such as modifiers).
  */
 #include "loot_core.h"
@@ -19,12 +20,14 @@ typedef void (*LootMessageFunction)(void *, void *, void **, const void *);
 typedef void (*LootObjectFunction)(void *, void *, const void *);
 typedef void (*LootRemoveFunction)(void *, int32_t, const void *);
 typedef void (*LootStatusFunction)(void *, void *, int32_t, int32_t, uint8_t, const void *);
+typedef void (*LootTickFunction)(void *, void *, const void *);
 static NotifyFunction loot_damage_original;
 static LootMessageFunction loot_message_original;
 static LootObjectFunction loot_object_original;
 static LootRemoveFunction loot_remove_original;
 static LootStatusFunction loot_status_original;
-enum { LOOT_HOOK_COUNT = 5 };
+static LootTickFunction loot_newtick_original;
+enum { LOOT_HOOK_COUNT = 6 };
 static NativeHook loot_hooks[LOOT_HOOK_COUNT];
 /* Return addresses (checked at install): the Damage handler's call into the damage method, and the
  * Update handler's call into remove-object for each dropped id. Other callers remove projectiles. */
@@ -34,6 +37,8 @@ static NativeHook loot_hooks[LOOT_HOOK_COUNT];
 static LootRing loot_ring;
 static LootHits loot_hits;
 static LootType loot_types[LOOT_TYPES];
+static LootSeen loot_seen[LOOT_SEEN];
+static LootTicks loot_ticks;
 static FILE *loot_file;
 static const void *loot_methods[LOOT_HOOK_COUNT];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
@@ -73,9 +78,11 @@ static void loot_prepare(const void *game) {
                                         REMOVE_OBJECT_OFFSET_NAME, 1, "System.Int32");
     loot_methods[4] = find_method_named(il2cpp_class_from_name(game, STATUS_APPLY_OFFSET_NAMESPACE, STATUS_APPLY_OFFSET_OWNER),
                                         STATUS_APPLY_OFFSET_NAME, 4, "BOEANEODCOA");
+    loot_methods[5] = find_method_named(il2cpp_class_from_name(game, NEW_TICK_OFFSET_NAMESPACE, NEW_TICK_OFFSET_OWNER),
+                                        NEW_TICK_OFFSET_NAME, 1, "OODFCLBKDJJ");
     if (!at_offset(loot_methods[0], ENEMY_DAMAGE_OFFSET) || !at_offset(loot_methods[1], DAMAGE_MESSAGE_OFFSET) ||
         !at_offset(loot_methods[2], NEW_OBJECT_OFFSET) || !at_offset(loot_methods[3], REMOVE_OBJECT_OFFSET) ||
-        !at_offset(loot_methods[4], STATUS_APPLY_OFFSET)) {
+        !at_offset(loot_methods[4], STATUS_APPLY_OFFSET) || !at_offset(loot_methods[5], NEW_TICK_OFFSET)) {
         loot_refuse("method_offsets_differ"); return;
     }
     loot_id_field = typed_field(entity, "HHPOJBFICAH", "System.Int32");
@@ -105,7 +112,7 @@ static void loot_prepare(const void *game) {
     if (!(loot_id_field && loot_shooter_field && loot_type_field && loot_status_field && loot_status_id_field &&
           loot_pos_field && loot_stats_field && loot_x_field && loot_y_field && loot_stat_type_field &&
           loot_stat_int_field && loot_stat_text_field && loot_own_field && loot_connection_ints[0] && loot_connection_ints[1] &&
-          info_ok && loot_info_texts[0] && loot_info_texts[1] && loot_info_list && max_field && position_field)) {
+          info_ok && loot_info_texts[0] && loot_info_texts[1] && loot_info_list && max_field)) {
         loot_refuse("fields_missing"); return;
     }
     Dl_info info;
@@ -117,77 +124,33 @@ static void loot_prepare(const void *game) {
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
 static int32_t loot_player_values[256];
 static uint8_t loot_player_known[256];
-/* Ids restart with each map, so damage is forgotten when the server gives you a new object id. */
+/* Ids restart with each map, so hits, waiting bags and kills are forgotten when the server gives
+ * you a new object id. The seen bags are per map already. */
 static void loot_new_map(void) {
     ++loot_map;
     loot_hits_clear(&loot_hits);
+    loot_ticks_clear(&loot_ticks);
     memset(loot_player_known, 0, sizeof loot_player_known);
 }
 
-static void loot_kill(const LootHit *h, int source, uint64_t now) {
-    LootEvent e = {.ns = now, .id = h->id, .map = loot_map, .type = loot_type_get(loot_types, h->id), .kind = LOOT_KILL,
-                   .source = (uint8_t)source, .pos = {h->pos[0], h->pos[1], h->pos[2]},
-                   .v = {h->damage[0], h->damage[1], h->damage[2], h->max, (int32_t)((now - h->last_ns) / 1000000)}};
-    if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
-}
-static void loot_hit(void *self, int damage, int kill, uintptr_t caller) {
+static void loot_hit(void *self, int damage, uintptr_t caller) {
     int source = loot_source(caller, NOTIFY_CALLER, NOTIFY_CALLER_ALT, LOOT_DAMAGE_CALLER, loot_shooter, loot_self_id);
-    if (source >= LOOT_YOURS && !kill) return;   /* the common case: someone else's hit */
+    if (source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return;
     int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
-    uint64_t now = monotonic_ns();
-    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, now);
-    if (kill) h = loot_hit_kill(&loot_hits, id);
-    if (!h) return;
-    /* Where it was when you last hit it: removal comes later, when only its id is known. */
-    if (!h->max) il2cpp_field_get_value(self, max_field, &h->max);
-    il2cpp_field_get_value(self, position_field, h->pos);
-    if (kill) loot_kill(h, source, now);
+    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, monotonic_ns());
+    if (h && !h->max) il2cpp_field_get_value(self, max_field, &h->max);
 }
 static int loot_live(void) {
     if (pthread_main_np()) return !atomic_load_explicit(&finished, memory_order_relaxed);
     atomic_fetch_add_explicit(&loot_off_main, 1, memory_order_relaxed);
     return 0;
 }
-/* Diagnostics while kills are unproven live (the first staging run captured none): hook A calls by
- * return address, noted every 60 s, and the first plain and kill-flagged calls in full. */
-typedef struct { uint32_t caller, calls, kills; } LootCaller;
-static LootCaller loot_callers[8];
-static int loot_traced[2];
-static uint64_t loot_next_callers;
-static void loot_trace(void *self, uintptr_t caller, int damage, int kill) {
-    for (int i = 0; i < 8; ++i) {
-        LootCaller *c = &loot_callers[i];
-        if (c->calls && c->caller != caller) continue;
-        c->caller = (uint32_t)caller; ++c->calls; c->kills += kill != 0;
-        break;
-    }
-    if (loot_traced[kill != 0] >= 8) return;
-    ++loot_traced[kill != 0];
-    int32_t id = 0;
-    il2cpp_field_get_value(self, loot_id_field, &id);
-    note("loot_trace\tcaller=0x%lx\tkill=%d\tid=%d\tdamage=%d\ttype=%u\ttracked=%d\tself=%d\tshooter=%d\tmap=%u\n",
-         (unsigned long)caller, kill, id, damage, loot_type_get(loot_types, id),
-         id && loot_hits.slot[(uint32_t)id % LOOT_HITS].id == id, loot_self_id, loot_shooter, loot_map);
-}
-static void loot_note_callers(void) {
-    uint64_t now = monotonic_ns();
-    if (now < loot_next_callers) return;
-    loot_next_callers = now + 60 * NSEC_PER_SEC;
-    char text[512] = "";
-    for (int i = 0, n = 0; i < 8 && loot_callers[i].calls; ++i)
-        n += snprintf(text + n, sizeof text - (size_t)n, "\t0x%x=%u/%u", loot_callers[i].caller, loot_callers[i].calls, loot_callers[i].kills);
-    note("loot_callers%s\n", text);
-}
 
 static void loot_damage_observed(void *self, uint8_t flag0, int damage, void *effects, uint8_t kill, void *projectile,
                                  uint8_t a, uint8_t b, const void *info) {
     /* Read before forwarding, while the mob is still whole. */
-    if (self && loot_live()) {
-        uintptr_t caller = (uintptr_t)__builtin_return_address(0) - loot_base;
-        loot_trace(self, caller, damage, kill);
-        loot_hit(self, damage, kill, caller);
-    }
+    if (self && loot_live()) loot_hit(self, damage, (uintptr_t)__builtin_return_address(0) - loot_base);
     loot_damage_original(self, flag0, damage, effects, kill, projectile, a, b, info);
 }
 static void loot_message_observed(void *self, void *message, void **target, const void *info) {
@@ -195,6 +158,10 @@ static void loot_message_observed(void *self, void *message, void **target, cons
     loot_message_original(self, message, target, info);
 }
 
+static void loot_status_pos(void *status, float pos[2]) {
+    void *p = read_reference(status, loot_pos_field);
+    if (p) { il2cpp_field_get_value(p, loot_x_field, &pos[0]); il2cpp_field_get_value(p, loot_y_field, &pos[1]); }
+}
 /* Reads the message, not the game object: a bag's first status (its contents) is in it. */
 static void loot_object(void *connection, void *data) {
     /* A new map starts when the server gives you a new id, which it does before it sends the map's
@@ -209,12 +176,14 @@ static void loot_object(void *connection, void *data) {
     if (!status) return;
     int32_t id = 0;
     il2cpp_field_get_value(status, loot_status_id_field, &id);
-    loot_type_set(loot_types, id, type);
-    if (!loot_is_bag(type)) return;
+    float pos[2] = {0, 0};
+    loot_status_pos(status, pos);
+    loot_type_set(loot_types, id, type, pos);
+    if (!loot_is_bag(type) || !loot_bag_first(loot_seen, id, loot_map)) return;
     uint64_t now = monotonic_ns();
-    LootEvent bag = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG, .v = {-1, -1, -1, -1, -1, -1, -1, -1}};
-    void *pos = read_reference(status, loot_pos_field);
-    if (pos) { il2cpp_field_get_value(pos, loot_x_field, &bag.pos[0]); il2cpp_field_get_value(pos, loot_y_field, &bag.pos[1]); }
+    LootEvent bag = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG, .pos = {pos[0], pos[1]},
+                     .v = {-1, -1, -1, -1, -1, -1, -1, -1}};
+    loot_tick_bag(&loot_ticks, id, pos);
     LootEvent extra[16];
     int extras = 0;
     void *const *stats = NULL;
@@ -238,9 +207,11 @@ static void loot_object_observed(void *self, void *data, const void *info) {
     if (data && loot_live()) loot_object(self, data);
     loot_object_original(self, data, info);
 }
-static void loot_player_status(void *connection, void *status) {
+static void loot_status(void *connection, void *status) {
     int32_t id = 0, own = 0;
     il2cpp_field_get_value(status, loot_status_id_field, &id);
+    LootType *known = loot_type_find(loot_types, id);
+    if (known) loot_status_pos(status, known->pos);
     il2cpp_field_get_value(connection, loot_own_field, &own);
     if (!id || id != own) return;
     void *const *stats = NULL;
@@ -260,15 +231,36 @@ static void loot_player_status(void *connection, void *status) {
     }
 }
 static void loot_status_observed(void *self, void *status, int32_t time, int32_t tick, uint8_t first, const void *info) {
-    if (status && loot_live()) loot_player_status(self, status);
+    if (status && loot_live()) loot_status(self, status);
     loot_status_original(self, status, time, tick, first, info);
 }
 static void loot_remove_observed(void *self, int32_t id, const void *info) {
-    if ((uintptr_t)__builtin_return_address(0) - loot_base == LOOT_DROP_CALLER && loot_live()) {
-        LootHit *h = loot_hit_kill(&loot_hits, id);
-        if (h) loot_kill(h, LOOT_REMOVED, monotonic_ns());
+    LootHit h;
+    if ((uintptr_t)__builtin_return_address(0) - loot_base == LOOT_DROP_CALLER && loot_live() && loot_hit_take(&loot_hits, id, &h)) {
+        /* Where the server last put it; one it never sent can't be placed, so RealmHound skips it too. */
+        LootType *known = loot_type_find(loot_types, id);
+        if (known) {
+            uint64_t now = monotonic_ns();
+            LootEvent e = {.ns = now, .id = id, .map = loot_map, .type = known->type, .kind = LOOT_KILL, .source = LOOT_REMOVED,
+                           .pos = {known->pos[0], known->pos[1]},
+                           .v = {h.damage[0], h.damage[1], h.damage[2], h.max, (int32_t)((now - h.last_ns) / 1000000), h.others}};
+            loot_tick_killed(&loot_ticks, id, known->pos);
+            if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
+        }
     }
     loot_remove_original(self, id, info);
+}
+/* After the tick's statuses, as RealmHound runs it. */
+static void loot_newtick_observed(void *self, void *message, const void *info) {
+    loot_newtick_original(self, message, info);
+    if (!loot_live()) return;
+    static LootSpot bags[LOOT_PENDING];
+    static int32_t killers[LOOT_PENDING];
+    uint64_t now = monotonic_ns();
+    for (int i = 0, n = loot_tick_end(&loot_ticks, bags, killers); i < n; ++i) {
+        LootEvent e = {.ns = now, .id = bags[i].id, .map = loot_map, .kind = LOOT_DROP, .v = {killers[i]}};
+        loot_push(&loot_ring, &e);
+    }
 }
 
 /* Same rule as the death guard's hooks: install once, in the Nexus, on the main thread. */
@@ -284,13 +276,13 @@ static void loot_install(void *player) {
     memcpy(&relative, drop_call + 1, sizeof relative);
     if (drop_call[0] != 0xe8 || LOOT_DROP_CALLER + (intptr_t)relative != REMOVE_OBJECT_OFFSET) { loot_refuse("caller_bytes"); return; }
     const unsigned char *bytes[] = {enemydamage_prologue, damagemessage_prologue, newobject_prologue, removeobject_prologue,
-                                    statusapply_prologue};
+                                    statusapply_prologue, newtick_prologue};
     size_t lengths[] = {sizeof enemydamage_prologue, sizeof damagemessage_prologue, sizeof newobject_prologue,
-                        sizeof removeobject_prologue, sizeof statusapply_prologue};
+                        sizeof removeobject_prologue, sizeof statusapply_prologue, sizeof newtick_prologue};
     void *replacements[] = {(void *)loot_damage_observed, (void *)loot_message_observed, (void *)loot_object_observed,
-                            (void *)loot_remove_observed, (void *)loot_status_observed};
+                            (void *)loot_remove_observed, (void *)loot_status_observed, (void *)loot_newtick_observed};
     void **originals[] = {(void **)&loot_damage_original, (void **)&loot_message_original, (void **)&loot_object_original,
-                          (void **)&loot_remove_original, (void **)&loot_status_original};
+                          (void **)&loot_remove_original, (void **)&loot_status_original, (void **)&loot_newtick_original};
     void *entries[LOOT_HOOK_COUNT];
     for (int i = 0; i < LOOT_HOOK_COUNT; ++i) {
         entries[i] = *(void *const *)loot_methods[i];
@@ -311,7 +303,6 @@ static void loot_tick(void *player) {
     if (!ready || !loot_prepared) return;
     loot_install(player);
     if (!loot_installed || !player) return;
-    loot_note_callers();
     /* Name each map once, when your player object with the new id exists. The server sent the map's
      * info before your id, so by then the name is this map's, never the previous one's. */
     int32_t id = 0;
@@ -370,9 +361,10 @@ static void loot_drain(int closing) {
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
     if (closing || now >= next_summary) {
         next_summary = now + 60 * NSEC_PER_SEC;
-        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\n",
+        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu\n",
                 epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags,
-                (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions);
+                (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions,
+                (unsigned long long)loot_ticks.overflow);
     }
     if (closing) { fprintf(loot_file, "status\t%.3f\tcomplete\n", epoch); fclose(loot_file); loot_file = NULL; }
     else fflush(loot_file);

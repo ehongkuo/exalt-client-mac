@@ -1,7 +1,8 @@
 import Foundation
 import SQLite3
 
-/// Drop-rate capture (issue #38). The guard writes every kill of a mob you damaged and every bag to
+/// Drop-rate capture (issue #38). The guard registers drops as RealmHound does, for every bag type:
+/// each hit mob the server removes (a kill), each bag once per map, and which kill each bag came from, to
 /// logs/loot-<started>-<pid>.tsv (guard/loot_core.h has the columns). This imports those lines into
 /// drop_rates.db and removes each file once it is fully imported and its game has ended.
 /// Nothing here computes a rate: the rows stay raw so any later question can be asked of them.
@@ -11,7 +12,8 @@ struct LootKill: Equatable {
     var x: Double, y: Double, z: Double
     var projectile: Int, projectileAlt: Int, ability: Int, maxHP: Int
     var landedBy: String              // "removed": seen only as the server removing a mob you hit
-    var sinceHitMs: Int? = nil        // from your last hit to the kill (format 2)
+    var sinceHitMs: Int? = nil        // from the last hit to the kill (format 2)
+    var others: Int? = nil            // other players' damage, from Damage messages (format 3)
 }
 struct LootBag: Equatable {
     var time: Double, generation: Int, object: Int, type: Int
@@ -25,6 +27,8 @@ enum LootLine: Equatable {
     case kill(LootKill)
     case bag(LootBag)
     case bagStat(time: Double, generation: Int, object: Int, stat: Int, value: Int, text: String)
+    /// The kill a bag came from (killer 0: none), decided by the guard one tick after the bag.
+    case drop(time: Double, generation: Int, bag: Int, killer: Int)
     /// The map's info message, raw: your class, then its ints and strings in guard order.
     case mapInfo(time: Double, generation: Int, values: [Int], texts: [String])
     case playerStat(time: Double, generation: Int, stat: Int, value: Int)
@@ -44,11 +48,11 @@ enum LootLine: Equatable {
             guard let t = d(1), let g = n(2) else { return nil }
             self = .map(time: t, generation: g, name: f.count > 3 ? f[3] : "")
         case "kill":
-            guard f.count == 13 || f.count == 14, let t = d(1), let g = n(2), let o = n(3), let ty = n(4),
+            guard (13...15).contains(f.count), let t = d(1), let g = n(2), let o = n(3), let ty = n(4),
                   let x = d(5), let y = d(6), let z = d(7), let p = n(8), let pa = n(9), let a = n(10), let hp = n(11)
             else { return nil }
             self = .kill(LootKill(time: t, generation: g, object: o, type: ty, x: x, y: y, z: z,
-                                  projectile: p, projectileAlt: pa, ability: a, maxHP: hp, landedBy: f[12], sinceHitMs: n(13)))
+                                  projectile: p, projectileAlt: pa, ability: a, maxHP: hp, landedBy: f[12], sinceHitMs: n(13), others: n(14)))
         case "bag":
             let items = (7..<15).compactMap(n)
             guard f.count == 15, items.count == 8, let t = d(1), let g = n(2), let o = n(3), let ty = n(4), let x = d(5), let y = d(6)
@@ -57,6 +61,9 @@ enum LootLine: Equatable {
         case "bag_stat":
             guard let t = d(1), let g = n(2), let o = n(3), let s = n(4), let v = n(5) else { return nil }
             self = .bagStat(time: t, generation: g, object: o, stat: s, value: v, text: f.count > 6 ? f[6] : "")
+        case "drop":
+            guard f.count == 5, let t = d(1), let g = n(2), let b = n(3), let k = n(4) else { return nil }
+            self = .drop(time: t, generation: g, bag: b, killer: k)
         case "map_info":
             let values = (3..<11).compactMap(n)
             guard f.count == 14, values.count == 8, let t = d(1), let g = n(2) else { return nil }
@@ -74,21 +81,6 @@ enum LootLine: Equatable {
             self = .summary(f.dropFirst().joined(separator: "\t"))
         default: return nil
         }
-    }
-}
-
-enum LootLink {
-    /// The kill a bag came from: same map, up to 2 s before the bag, nearest within one tile.
-    /// Only position can tell which mob dropped what when one blast kills several at once.
-    // shortcut: tries every candidate axis mapping of the kill's float3 (the bag is tile x, y);
-    // narrow to the right one once a staging run shows which matches.
-    static func nearest(_ bag: LootBag, among kills: [(id: Int64, time: Double, x: Double, y: Double, z: Double)]) -> Int64? {
-        var best: (id: Int64, distance: Double)?
-        for k in kills where k.time <= bag.time + 0.25 && k.time >= bag.time - 2 {
-            let distance = [k.y, -k.y, k.z, -k.z].map { hypot(k.x - bag.x, $0 - bag.y) }.min()!
-            if distance <= 1, distance < best?.distance ?? .infinity { best = (k.id, distance) }
-        }
-        return best?.id
     }
 }
 
@@ -136,6 +128,10 @@ final class DropRateStore {
         run("PRAGMA user_version") { version = Int(sqlite3_column_int64($0, 0)) }
         if version < 2 {
             guard sqlite3_exec(db, "ALTER TABLE kills ADD COLUMN since_hit_ms INTEGER; PRAGMA user_version = 2", nil, nil, nil)
+                == SQLITE_OK else { return nil }
+        }
+        if version < 3 {
+            guard sqlite3_exec(db, "ALTER TABLE kills ADD COLUMN damage_others INTEGER; PRAGMA user_version = 3", nil, nil, nil)
                 == SQLITE_OK else { return nil }
         }
     }
@@ -224,18 +220,8 @@ enum LootImport {
                 maps[generation] = id
                 return id
             }
-            func link(_ mapID: Int64, _ b: LootBag) -> Int64? {
-                var kills: [(id: Int64, time: Double, x: Double, y: Double, z: Double)] = []
-                store.run("SELECT id, time, x, y, z FROM kills WHERE map = ? AND time BETWEEN ? AND ?",
-                          [mapID, b.time - 2, b.time + 0.25]) {
-                    kills.append((sqlite3_column_int64($0, 0), sqlite3_column_double($0, 1), sqlite3_column_double($0, 2),
-                                  sqlite3_column_double($0, 3), sqlite3_column_double($0, 4)))
-                }
-                return LootLink.nearest(b, among: kills)
-            }
             guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return 0 }
             store.failed = false
-            var firstKill = Double.infinity
             let text = String(decoding: data.prefix(complete), as: UTF8.self)
             for raw in text.split(separator: "\n") {
                 guard let line = LootLine(raw) else { continue }
@@ -249,14 +235,14 @@ enum LootImport {
                 case let .kill(k):
                     store.run("""
                         INSERT INTO kills(map, time, object_id, mob_type, x, y, z, damage_projectile, damage_projectile_alt,
-                            damage_ability, max_hp, landed_by, since_hit_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            damage_ability, max_hp, landed_by, since_hit_ms, damage_others) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, [map(k.generation, k.time), k.time, k.object, k.type, k.x, k.y, k.z,
-                              k.projectile, k.projectileAlt, k.ability, k.maxHP, k.landedBy, k.sinceHitMs])
-                    last = k.time; firstKill = min(firstKill, k.time)
+                              k.projectile, k.projectileAlt, k.ability, k.maxHP, k.landedBy, k.sinceHitMs, k.others])
+                    last = k.time
                 case let .bag(b):
                     let mapID = map(b.generation, b.time)
-                    store.run("INSERT INTO bags(map, time, object_id, bag_type, x, y, kill) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                              [mapID, b.time, b.object, b.type, b.x, b.y, link(mapID, b)])
+                    store.run("INSERT INTO bags(map, time, object_id, bag_type, x, y) VALUES (?, ?, ?, ?, ?, ?)",
+                              [mapID, b.time, b.object, b.type, b.x, b.y])
                     let bag = store.lastID
                     bags["\(b.generation)/\(b.object)"] = bag
                     for (slot, item) in b.items.enumerated() where item >= 0 {
@@ -270,6 +256,13 @@ enum LootImport {
                                   [map(generation, time), object]) { bag = sqlite3_column_int64($0, 0) }
                     }
                     if let bag { store.run("INSERT INTO bag_stats(bag, stat_type, value, text) VALUES (?, ?, ?, ?)", [bag, stat, value, text]) }
+                case let .drop(time, generation, bag, killer) where killer != 0:
+                    let mapID = map(generation, time)
+                    store.run("""
+                        UPDATE bags SET kill = (SELECT id FROM kills WHERE map = ?1 AND object_id = ?2 ORDER BY id DESC LIMIT 1)
+                        WHERE id = (SELECT id FROM bags WHERE map = ?1 AND object_id = ?3 ORDER BY id DESC LIMIT 1)
+                        """, [mapID, killer, bag])
+                case .drop: break
                 case let .mapInfo(time, generation, values, texts):
                     store.run("""
                         INSERT OR REPLACE INTO map_info(map, class, info_30, info_34, info_38, info_50, info_54, connection_10c,
@@ -289,16 +282,6 @@ enum LootImport {
                 case let .summary(text):
                     store.run("UPDATE sessions SET summary = ? WHERE id = ?", [text, session])
                 }
-            }
-            // A kill can land just after its bag, and in the next import: give recent loose bags another try.
-            if firstKill.isFinite {
-                var loose: [(id: Int64, map: Int64, bag: LootBag)] = []
-                store.run("SELECT id, map, time, x, y FROM bags WHERE kill IS NULL AND time >= ?", [firstKill - 0.25]) {
-                    loose.append((sqlite3_column_int64($0, 0), sqlite3_column_int64($0, 1),
-                                  LootBag(time: sqlite3_column_double($0, 2), generation: 0, object: 0, type: 0,
-                                          x: sqlite3_column_double($0, 3), y: sqlite3_column_double($0, 4), items: [])))
-                }
-                for l in loose { if let kill = link(l.map, l.bag) { store.run("UPDATE bags SET kill = ? WHERE id = ?", [kill, l.id]) } }
             }
             store.run("UPDATE sessions SET imported_bytes = ?, ended = max(coalesce(ended, 0), ?) WHERE id = ?",
                       [offset + complete, last ?? 0, session])
@@ -325,10 +308,14 @@ struct DropDay: Equatable {
 
     static let notableBags: Set<DropBag> = [.white, .orange, .red]
 
-    /// A removal soon after your last hit is a death; a later one is usually a mob that left your view.
+    /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
+    /// that left your view.
     // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
-    // that left one of your bags.
-    static let died = "(k.landed_by <> 'removed' OR k.since_hit_ms <= 1000)"
+    // that left a bag.
+    static let died = """
+        (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
+        AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
+        """
 
     static func load(_ store: DropRateStore, since: Double, mobLimit: Int = 20) -> DropDay {
         var day = DropDay()

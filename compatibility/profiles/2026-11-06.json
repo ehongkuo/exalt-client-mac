@@ -281,6 +281,20 @@
       "entry_prefix": "554889e54157415641554154534883ec68",
       "hook": "statusapply",
       "constant": "STATUS_APPLY_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "LDKKFMBNOCN",
+      "parameters": [
+        "OODFCLBKDJJ"
+      ],
+      "returns": "void",
+      "offset": "0x936da0",
+      "id": "newtick",
+      "entry_prefix": "554889e54157415641554154534883ec28",
+      "hook": "newtick",
+      "constant": "NEW_TICK_OFFSET"
     }
   ],
   "fields": [
