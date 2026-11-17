@@ -132,7 +132,9 @@ capture gap, so a rate is never silently wrong.
 The poller drains the ring every 250 ms and writes one SQLite transaction. It:
 
 - drops kills that aren't new for `(session, map instance, object id)`;
-- links each bag to the kill on the same map within 0.5 tiles and 0–2 s before it (nearest one);
+- links each bag to the kill on the same map within 0.5 tiles and 0–2 s before it (nearest one).
+  Position is used only for this: in a burst of kills (one AOE can kill ten mobs in the same tick),
+  it is the only way to tell which mob type each bag came from. It isn't used in any rate;
   bags with no kill are kept unlinked (chests, mobs you didn't hit);
 - resolves names from the game's XML at display time only. Ids are the truth, names can change.
 
@@ -181,6 +183,19 @@ In staging, with RealmHound running as before:
 
 Every query is a ratio of true counts from the store, filtered by mob (type or class), item (or bag
 colour), and kills you hit.
+
+**What counts as a drop** depends on the question, and is decided at query time from the raw bags
+and items (the store keeps every item, so no question is closed off):
+
+| Question | A kill counts once when… | Example: one bag with 2 STs, 2 purple, 1 cyan, 1 brown |
+|---|---|---|
+| Rate of an x bag from mob y | its **top bag** is x: the highest-priority bag over all bags from that kill (`DropBag` order, white highest) | Counts as orange only |
+| Rate of item x from mob y | at least one x dropped | Each distinct item counts once |
+| Items per kill | (a count, not a rate) every item | 2 STs, 2 purples, … |
+
+The game already colours a bag by its best item, so a bag's type is its priority. A kill can still
+leave more than one bag (for example a soulbound bag and a public one, or more than 8 items), which
+is why the top bag is taken over all of a kill's bags.
 
 - **Observed rate** = drops ÷ kills.
 - **Base rate** = adjusted drops ÷ kills, where a drop on a kill with boost multiplier *m* counts as
