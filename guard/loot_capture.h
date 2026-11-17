@@ -56,6 +56,7 @@ static uint32_t loot_map, loot_named_map = UINT32_MAX;
 static _Atomic uint64_t loot_kills, loot_bags, loot_off_main;
 /* Where a kill can drop out, for the summary: damage calls by source, Update removals, those with hits. */
 static _Atomic uint64_t loot_hit_calls[LOOT_UNKNOWN + 1], loot_removals, loot_removals_hit;
+static _Atomic uintptr_t loot_unknown_caller;
 static const char *_Atomic loot_refusal;
 
 static void loot_refuse(const char *why) {
@@ -138,6 +139,7 @@ static void loot_new_map(void) {
 static void loot_hit(void *self, int damage, uintptr_t caller) {
     int source = loot_source(caller, NOTIFY_CALLER, NOTIFY_CALLER_ALT, LOOT_DAMAGE_CALLER, loot_shooter, loot_self_id);
     atomic_fetch_add_explicit(&loot_hit_calls[source], 1, memory_order_relaxed);
+    if (source == LOOT_UNKNOWN) atomic_store_explicit(&loot_unknown_caller, caller, memory_order_relaxed);
     if (source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return;
     int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
@@ -386,12 +388,12 @@ static void loot_drain(int closing) {
     if (closing || now >= next_summary) {
         next_summary = now + 60 * NSEC_PER_SEC;
         fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
-                "\thits=%llu/%llu/%llu/%llu/%llu\tremovals=%llu\tremovals_hit=%llu\n",
+                "\thits=%llu/%llu/%llu/%llu/%llu\tremovals=%llu\tremovals_hit=%llu\tunknown_caller=0x%lx\n",
                 epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags,
                 (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions,
                 (unsigned long long)loot_ticks.overflow, (unsigned long long)loot_hit_calls[0], (unsigned long long)loot_hit_calls[1],
                 (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],
-                (unsigned long long)loot_removals, (unsigned long long)loot_removals_hit);
+                (unsigned long long)loot_removals, (unsigned long long)loot_removals_hit, (unsigned long)loot_unknown_caller);
     }
     if (closing) { fprintf(loot_file, "status\t%.3f\tcomplete\n", epoch); fclose(loot_file); loot_file = NULL; }
     else fflush(loot_file);
