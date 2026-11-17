@@ -147,6 +147,13 @@ final class DropRateStore {
             guard sqlite3_exec(db, "ALTER TABLE kills ADD COLUMN damage_others INTEGER; PRAGMA user_version = 3", nil, nil, nil)
                 == SQLITE_OK else { return nil }
         }
+        if version < 4 {   // sprites (issue #41); clearing the signature rebuilds the catalog with them
+            guard sqlite3_exec(db, """
+                ALTER TABLE objects ADD COLUMN texture_file TEXT; ALTER TABLE objects ADD COLUMN texture_index INTEGER;
+                ALTER TABLE items ADD COLUMN texture_file TEXT; ALTER TABLE items ADD COLUMN texture_index INTEGER;
+                DELETE FROM catalog_source; PRAGMA user_version = 4
+                """, nil, nil, nil) == SQLITE_OK else { return nil }
+        }
     }
     deinit { sqlite3_close(db) }
 
@@ -371,6 +378,147 @@ struct DropDay: Equatable {
     }
 }
 
+/// A rate: `count` drops (or runs with one) in `of` kills (or runs), with a 95% range from the drop count
+/// (Poisson, docs/drop-rates-investigation.md section 4). Under 10 drops it reads as rough.
+struct DropRate: Equatable {
+    var count: Int, of: Int
+    var rate: Double { of > 0 ? Double(count) / Double(of) : 0 }
+    var rough: Bool { count < 10 }
+    var range: ClosedRange<Double> {
+        guard of > 0 else { return 0...0 }
+        let (low, high) = Self.poissonRange(count)
+        return low / Double(of)...high / Double(of)
+    }
+
+    /// The 95% range of a Poisson mean given `x` events: exact below 50, Byar's approximation above (within 0.1% there).
+    static func poissonRange(_ x: Int) -> (Double, Double) {
+        let z = 1.96, n = Double(x)
+        if x >= 50 {
+            return (n * pow(1 - 1 / (9 * n) - z / (3 * n.squareRoot()), 3),
+                    (n + 1) * pow(1 - 1 / (9 * (n + 1)) + z / (3 * (n + 1).squareRoot()), 3))
+        }
+        func cdf(_ k: Int, _ mean: Double) -> Double {   // P(X <= k)
+            guard k >= 0 else { return 0 }
+            var term = exp(-mean), sum = term
+            for i in stride(from: 1, through: k, by: 1) { term *= mean / Double(i); sum += term }
+            return sum
+        }
+        // The mean where P(X <= k) falls to `target`, by bisection (the cdf falls as the mean grows).
+        func mean(_ k: Int, _ target: Double) -> Double {
+            var low = 0.0, high = 100.0
+            for _ in 0..<60 { let mid = (low + high) / 2; if cdf(k, mid) > target { low = mid } else { high = mid } }
+            return (low + high) / 2
+        }
+        return (x == 0 ? 0 : mean(x - 1, 0.975), mean(x, 0.025))
+    }
+
+    /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
+    static func oneIn(_ rate: Double) -> String {
+        rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
+    }
+}
+
+/// Everything the Drop rates window shows past Today (issue #41), from all the data kept. Every query of the
+/// window is here, so a change in the data's shape after a staging run changes this one place.
+/// - A kill is `DropDay.died`; its drops are the items in bags linked to it (`bags.kill`).
+/// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
+///   second bag of the same colour adds nothing.
+/// - A run is a map visit in which a boss (catalog `boss`) died; per-run rates count runs with at least one.
+struct DropReport: Equatable {
+    /// A mob type in one dungeon (the map name).
+    struct Mob: Hashable { var type: Int, dungeon: String }
+    var kills: [Mob: Int] = [:]
+    var maxHP: [Mob: Int] = [:]
+    var bestBag: [Mob: [DropBag: Int]] = [:]        // kills whose best bag was that colour
+    var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
+    var runs: [String: Int] = [:]                   // by dungeon
+    var runsWith: [String: [Int: Int]] = [:]        // dungeon → item → runs with at least one copy
+    /// dungeon → boss type (nil: any boss) → runs whose best bag from it was that colour.
+    var bossBags: [String: [Int?: [DropBag: Int]]] = [:]
+    var itemBag: [Int: DropBag] = [:]               // the highest bag colour each item came in
+    var names: [Int: String] = [:]
+    var bosses: Set<Int> = []
+    var textures: [Int: GameTexture] = [:]
+
+    /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
+    static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
+        DropBag(id: id).map { "WHEN \(id) THEN \(DropBag.allCases.firstIndex(of: $0)!)" }
+    }.joined(separator: " ") + " END"
+
+    static func load(_ store: DropRateStore) -> DropReport {
+        var r = DropReport()
+        let died = DropDay.died, rank = Self.rank
+        let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
+        func int(_ s: OpaquePointer, _ i: Int32) -> Int { Int(sqlite3_column_int64(s, i)) }
+        func text(_ s: OpaquePointer, _ i: Int32) -> String { sqlite3_column_text(s, i).map { String(cString: $0) } ?? "" }
+        func bag(_ s: OpaquePointer, _ i: Int32) -> DropBag? {
+            sqlite3_column_type(s, i) == SQLITE_NULL ? nil : DropBag.allCases[int(s, i)]
+        }
+        func better(_ a: DropBag?, _ b: DropBag) -> DropBag {
+            guard let a else { return b }
+            return DropBag.allCases.firstIndex(of: a)! > DropBag.allCases.firstIndex(of: b)! ? a : b
+        }
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), count(*), max(k.max_hp) FROM kills k JOIN maps m ON m.id = k.map
+            WHERE \(died) GROUP BY 1, 2
+            """) {
+            let mob = Mob(type: int($0, 0), dungeon: text($0, 1))
+            r.kills[mob] = int($0, 2); r.maxHP[mob] = int($0, 3)
+        }
+        store.run("""
+            SELECT mob_type, dungeon, top, count(*) FROM (
+                SELECT k.mob_type, coalesce(m.name, '') dungeon, max(\(rank)) top FROM kills k JOIN maps m ON m.id = k.map
+                JOIN bags b ON b.kill = k.id WHERE \(died) GROUP BY k.id)
+            WHERE top IS NOT NULL GROUP BY 1, 2, 3
+            """) { r.bestBag[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][DropBag.allCases[int($0, 2)]] = int($0, 3) }
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, count(*), max(\(rank)) FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) GROUP BY 1, 2, 3
+            """) {
+            let item = int($0, 2)
+            r.copies[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][item] = int($0, 3)
+            if let top = bag($0, 4) { r.itemBag[item] = better(r.itemBag[item], top) }
+        }
+        store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
+            r.runs[text($0, 0)] = int($0, 1)
+        }
+        store.run("""
+            \(runs) SELECT coalesce(m.name, ''), i.item_type, count(DISTINCT k.map) FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs) GROUP BY 1, 2
+            """) { r.runsWith[text($0, 0), default: [:]][int($0, 1)] = int($0, 2) }
+        var anyBoss: [Int: (dungeon: String, bag: DropBag)] = [:]   // by map
+        store.run("""
+            SELECT k.map, coalesce(m.name, ''), k.mob_type, max(\(rank)) FROM kills k JOIN maps m ON m.id = k.map
+            JOIN objects o ON o.type = k.mob_type JOIN bags b ON b.kill = k.id WHERE o.boss AND \(died) GROUP BY k.map, k.mob_type
+            """) {
+            guard let top = bag($0, 3) else { return }
+            let map = int($0, 0), dungeon = text($0, 1)
+            r.bossBags[dungeon, default: [:]][int($0, 2), default: [:]][top, default: 0] += 1
+            anyBoss[map] = (dungeon, better(anyBoss[map]?.bag, top))
+        }
+        for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
+        store.run("""
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index FROM objects
+            WHERE type IN (SELECT mob_type FROM kills) UNION ALL
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index FROM items WHERE type IN (SELECT item_type FROM bag_items)
+            """) {
+            let type = int($0, 0)
+            r.names[type] = text($0, 1)
+            if int($0, 2) != 0 { r.bosses.insert(type) }
+            if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
+        }
+        return r
+    }
+
+    func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    /// Copies of an item from every mob.
+    func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
+    /// Every item dropped, by name.
+    var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
+    /// Dungeons with a run, most runs first.
+    var dungeons: [String] { runs.keys.sorted { (runs[$0]!, $1) > (runs[$1]!, $0) } }
+}
+
 /// The game XML RealmHound extracts (assets/xml): names by type id, and the catalog the drop views
 /// group mobs and items by (issue #40). Objects come in either attribute order: `type= id=` or `id= type=`.
 enum GameNames {
@@ -381,6 +529,7 @@ enum GameNames {
         var labels: [String] = []
         var quest = false, item = false
         var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
+        var texture: GameTexture? = nil
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -410,13 +559,21 @@ enum GameNames {
             func element(_ name: String) -> String? { value("<\(name)>", "</\(name)>", close, end) }
             func flag(_ name: String) -> Bool { find("<\(name) />", close, end) != nil || find("<\(name)/>", close, end) != nil }
             let display = element("DisplayId")
+            // <Texture>, or the first frame of <AnimatedTexture>; Index is hex (0xa7) or decimal.
+            let texture = ["Texture", "AnimatedTexture"].lazy.compactMap { tag -> GameTexture? in
+                guard let a = find("<\(tag)>", close, end), let b = find("</\(tag)>", a, end),
+                      let file = value("<File>", "</File>", a, b), let raw = value("<Index>", "</Index>", a, b) else { return nil }
+                let index = raw.trimmingCharacters(in: .whitespaces)
+                return (index.hasPrefix("0x") ? Int(index.dropFirst(2), radix: 16) : Int(index))
+                    .map { GameTexture(file: file.trimmingCharacters(in: .whitespaces), index: $0) }
+            }.first
             objects.append(Object(
                 type: type, name: name, displayName: display?.hasPrefix("{") == true ? nil : display,
                 objectClass: element("Class"), group: element("Group"),
                 labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
-                tier: element("Tier").flatMap { Int($0) }))
+                tier: element("Tier").flatMap { Int($0) }, texture: texture))
         }
         return objects
     }
@@ -457,16 +614,17 @@ enum GameNames {
             if o.item {
                 let origins = o.labels.filter { $0.hasPrefix("ORG_") }.map { $0.dropFirst(4) }
                 store.run("""
-                    INSERT INTO items(type, name, display_name, bag_type, slot_type, tier, labels, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO items(type, name, display_name, bag_type, slot_type, tier, labels, origin, texture_file, texture_index)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, [o.type, o.name, o.displayName, o.bagType, o.slotType, o.tier, labels,
-                          origins.isEmpty ? nil : "," + origins.joined(separator: ",") + ","])
+                          origins.isEmpty ? nil : "," + origins.joined(separator: ",") + ",", o.texture?.file, o.texture?.index])
             } else {
                 let minion = o.labels.first { $0.hasPrefix("MINION_") }?.dropFirst(7)
                 store.run("""
-                    INSERT INTO objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels,
+                        texture_file, texture_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, [o.type, o.name, o.displayName, o.objectClass, o.group, o.quest || o.labels.contains("BOSSFIGHT") ? 1 : 0,
-                          minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels])
+                          minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels, o.texture?.file, o.texture?.index])
             }
         }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])

@@ -50,12 +50,15 @@ enum DropTests {
             """
         check(ShinyIndex.ids(inXML: xml) == [0x1f4a], "shiny ids from labels")
 
-        check(BagSprites.mapObjectRects(sheet: "lofiObj4", in: Data([1, 2, 3])).isEmpty, "a broken sprite file reads as empty")
+        check(GameSprites.rects(in: Data([1, 2, 3])).isEmpty, "a broken sprite file reads as empty")
         // RealmHound's real assets, when installed: every bag has an 8×8 sprite.
         if FileManager.default.fileExists(atPath: RealmHoundPaths.assets.appendingPathComponent("flatbuffer/spritesheetf").path) {
             let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
             check(sprites.count == DropBag.allCases.count && sprites.values.allSatisfy { $0.width == 8 && $0.height == 8 },
                   "bag sprites from RealmHound's assets")
+            let mobAndItem = GameSprites.load(assets: RealmHoundPaths.assets, [
+                "Malphas": GameTexture(file: "abyssOfDemonsChars16x16", index: 0), "Bow": GameTexture(file: "lostHallsObjects8x8", index: 0xa7)])
+            check(mobAndItem["Malphas"]?.width == 16 && mobAndItem["Bow"]?.width == 8, "a mob's first frame and an item's sprite")
         }
 
         // The log: first sight sets the start, later drops come back with their items in slot order.

@@ -336,6 +336,16 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
 3. **Drop rates window:** a larger window with Today, Mobs, Items and Dungeons tabs. Today shows
    today's kills; every other tab uses all the data kept. Each shows rates with "1 in N" and the 95 %
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
+   Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
+   the window (opened from the Drop data panel). Rules as built:
+   - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
+     not each item's `<BagType>`), so it is a chance per kill. Item rates count copies.
+   - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
+     runs with at least one. Realm quests count as bosses, so a realm visit with a quest kill is a run.
+   - **Range:** exact Poisson below 50 drops, Byar's approximation above (within 0.01 %).
+   - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
+     `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
+     (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
 4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
    unit) and base rates without boosts once loot factors are captured.
 

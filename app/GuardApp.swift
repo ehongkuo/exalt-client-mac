@@ -353,7 +353,7 @@ final class DropAlerts: ObservableObject {
     /// Bag sprites are cut from a large atlas, so they are read once, off the main thread.
     private func loadBagsIfNeeded() {
         #if !GUARD_UI_TEST
-        guard settings.enabled, bagSprites.isEmpty, !loadingBags else { return }
+        guard bagSprites.isEmpty, !loadingBags else { return }   // also with alerts off: the drop panels show them
         loadingBags = true
         DispatchQueue.global(qos: .utility).async {
             let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
@@ -577,6 +577,7 @@ final class WindowState: ObservableObject {
     @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
+    var showRates: () -> Void = {}
     /// Which rows of the More section are open.
     @Published var sessionOpen = false
     @Published var partyOpen = false
@@ -1103,6 +1104,7 @@ struct GuardPanel {
         let day = dropData.day
         let priority = { (bag: DropBag) in DropBag.allCases.firstIndex(of: bag) ?? 0 }
         return VStack(alignment: .leading, spacing: 8) {
+            Button("Open Drop rates") { window.showRates() }.controlSize(.small)
             if let refused = day.refused { Text("Capture is off: \(refused)").foregroundStyle(warn) }
             Text("\(day.kills) kills · \(day.bags) bags, \(day.linked) linked to a kill" + (day.lost > 0 ? " · \(day.lost) records lost" : ""))
                 .foregroundStyle(.secondary)
@@ -1310,6 +1312,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let alerts = PartyAlerts()
     let drops = DropAlerts()
     let dropData = DropData()
+    let rates = DropRatesModel()
+    var ratesWindow: NSWindow?
+    private var ratesLoaded = -Double.infinity
     var joinPopups: [NSPanel] = []
     var dropPopup: NSPanel!
     private var popupWatch: AnyCancellable?
@@ -1339,7 +1344,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             DispatchQueue.main.async {
                 if let day { self.dropData.update(day); self.lootDay = today }
                 self.lootBusy = false
+                // All-time queries are heavier, so an open Drop rates window refreshes at most every 30 s.
+                if self.ratesWindow?.isVisible == true, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
             }
+        }
+    }
+    /// The Drop rates window (issue #41): one window, filled off the main thread.
+    func showRates() {
+        if ratesWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  backing: .buffered, defer: false)
+            window.title = "Drop rates"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: DropRatesView(model: rates, drops: drops))
+            window.center(); window.setFrameAutosaveName("ExaltClientMacDropRates")
+            ratesWindow = window
+        }
+        ratesWindow?.makeKeyAndOrderFront(nil)
+        loadRates()
+    }
+    private func loadRates() {
+        ratesLoaded = Date().timeIntervalSince1970
+        let today = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        lootQueue.async {
+            guard let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) else { return }
+            let report = DropReport.load(store), day = DropDay.load(store, since: today, mobLimit: 500)
+            DispatchQueue.main.async { self.rates.update(report, day: day) }
         }
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1400,6 +1430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
+        state.showRates = { [weak self] in self?.showRates() }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
             guard let self else { return }
