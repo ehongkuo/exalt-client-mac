@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 static const unsigned char prologue[] = {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18};
 typedef uint64_t (*Function)(void *, int, uint32_t, int, int, uint8_t, int, const void *);
@@ -76,7 +77,26 @@ static void test_send_prologue(void){
  send_audit_fixture(object,(void*)3,(void*)4);assert(send_audit_calls==1);
  assert(native_hook_remove(&hook)==HOOK_OK);
 }
+/* A prologue that crosses into a page another hook already patched: the second page is its own region. */
+static void test_prologue_across_regions(void){
+ size_t page=(size_t)getpagesize();
+ /* File-backed, as the game's code is: the patched page becomes a private copy, a region of its own. */
+ char path[]="/tmp/hook-tests-XXXXXX";int fd=mkstemp(path);assert(fd>=0);unlink(path);
+ unsigned char *image=calloc(2,page);memcpy(image+page-sizeof prologue/2,prologue,sizeof prologue);
+ assert(write(fd,image,2*page)==(ssize_t)(2*page));free(image);
+ unsigned char *code=mmap(NULL,2*page,PROT_READ,MAP_PRIVATE,fd,0);assert(code!=MAP_FAILED);close(fd);
+ assert(!mprotect(code,2*page,PROT_READ|PROT_EXEC));
+ unsigned char *entry=code+page-sizeof prologue/2;
+ NativeHook other={.entry=code+page+0x100,.length=1,.protection=VM_PROT_READ|VM_PROT_EXECUTE};
+ unsigned char nop=0x90;assert(native_hook_write(&other,&nop)==HOOK_OK);
+ NativeHook hook={0};void *trampoline;
+ int result=native_hook_install(&hook,entry,(void*)wrapper,prologue,sizeof prologue,&trampoline);
+ printf("install across regions: %d\n",result);assert(result==HOOK_OK);
+ assert(native_hook_remove(&hook)==HOOK_OK && !memcmp(entry,prologue,sizeof prologue));
+ munmap(code,2*page);puts("Prologue across two regions: hooked and restored");
+}
 int main(void) {
+ test_prologue_across_regions();
  test_send_prologue();
  setbuf(stdout,NULL);puts("test started");hp_assignment_test();death_prefix_test();
  NativeHook hook={0};

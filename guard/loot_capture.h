@@ -33,6 +33,10 @@ static NativeHook loot_hooks[LOOT_HOOK_COUNT];
  * Update handler's call into remove-object for each dropped id. Other callers remove projectiles. */
 #define LOOT_DAMAGE_CALLER 0x92658fUL
 #define LOOT_DROP_CALLER 0x936072UL
+/* Mobs' damage method is an override (0x980ac0) that calls the base one we hook from here, so the
+ * real caller (your shot, the Damage handler) is one frame up. */
+#define LOOT_OVERRIDE 0x980ac0UL
+#define LOOT_OVERRIDE_CALLER 0x980aecUL
 
 static LootRing loot_ring;
 static LootHits loot_hits;
@@ -54,6 +58,9 @@ static int32_t loot_self_id, loot_shooter;   /* your object id, from the connect
 static void *loot_connection;
 static uint32_t loot_map, loot_named_map = UINT32_MAX;
 static _Atomic uint64_t loot_kills, loot_bags, loot_off_main;
+/* Where a kill can drop out, for the summary: damage calls by source, Update removals, those with hits. */
+static _Atomic uint64_t loot_hit_calls[LOOT_UNKNOWN + 1], loot_removals, loot_removals_hit;
+static _Atomic uintptr_t loot_unknown_caller;
 static const char *_Atomic loot_refusal;
 
 static void loot_refuse(const char *why) {
@@ -135,6 +142,8 @@ static void loot_new_map(void) {
 
 static void loot_hit(void *self, int damage, uintptr_t caller) {
     int source = loot_source(caller, NOTIFY_CALLER, NOTIFY_CALLER_ALT, LOOT_DAMAGE_CALLER, loot_shooter, loot_self_id);
+    atomic_fetch_add_explicit(&loot_hit_calls[source], 1, memory_order_relaxed);
+    if (source == LOOT_UNKNOWN) atomic_store_explicit(&loot_unknown_caller, caller, memory_order_relaxed);
     if (source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return;
     int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
@@ -150,7 +159,12 @@ static int loot_live(void) {
 static void loot_damage_observed(void *self, uint8_t flag0, int damage, void *effects, uint8_t kill, void *projectile,
                                  uint8_t a, uint8_t b, const void *info) {
     /* Read before forwarding, while the mob is still whole. */
-    if (self && loot_live()) loot_hit(self, damage, (uintptr_t)__builtin_return_address(0) - loot_base);
+    if (self && loot_live()) {
+        uintptr_t caller = (uintptr_t)__builtin_return_address(0) - loot_base;
+        /* The override keeps a frame pointer (checked at install), so one frame up is its caller. */
+        if (caller == LOOT_OVERRIDE_CALLER) caller = (uintptr_t)(*(void *const *const *)__builtin_frame_address(0))[1] - loot_base;
+        loot_hit(self, damage, caller);
+    }
     loot_damage_original(self, flag0, damage, effects, kill, projectile, a, b, info);
 }
 static void loot_message_observed(void *self, void *message, void **target, const void *info) {
@@ -236,7 +250,10 @@ static void loot_status_observed(void *self, void *status, int32_t time, int32_t
 }
 static void loot_remove_observed(void *self, int32_t id, const void *info) {
     LootHit h;
-    if ((uintptr_t)__builtin_return_address(0) - loot_base == LOOT_DROP_CALLER && loot_live() && loot_hit_take(&loot_hits, id, &h)) {
+    int update = (uintptr_t)__builtin_return_address(0) - loot_base == LOOT_DROP_CALLER && loot_live();
+    if (update) atomic_fetch_add_explicit(&loot_removals, 1, memory_order_relaxed);
+    if (update && loot_hit_take(&loot_hits, id, &h)) {
+        atomic_fetch_add_explicit(&loot_removals_hit, 1, memory_order_relaxed);
         /* Where the server last put it; one it never sent can't be placed, so RealmHound skips it too. */
         LootType *known = loot_type_find(loot_types, id);
         if (known) {
@@ -267,6 +284,15 @@ static void loot_newtick_observed(void *self, void *message, const void *info) {
 static void loot_install(void *player) {
     if (loot_attempted || !loot_prepared || !loot_file || !guard_ok) return;
     if (!in_nexus || !map_ok || map_unknown_logged || !player) return;
+    /* NewTick is the death guard's update method (0x936da0). With the death guard on, let it hook first
+     * and run ours inside its hook: a second patch on the same entry would fail the prologue check. */
+    int chain = 0;
+#ifdef EXALT_CLIENT_FATAL
+    if (config.death && !probe_attempted) return;
+    chain = probe_installed && probe_hooks[6].entry == *(void *const *)loot_methods[5];
+    /* shortcut: with death off at install, turning it on later makes the death guard refuse (entry_bytes
+     * index=6) until the game restarts; share one hook between both if that toggle turns out common. */
+#endif
     loot_attempted = 1;
     static const unsigned char via_rax[] = {0xff, 0x90, 0x28, 6, 0, 0}, via_rbx[] = {0xff, 0x93, 0x28, 6, 0, 0};
     if (memcmp((void *)(loot_base + NOTIFY_CALLER - 6), via_rax, 6) || memcmp((void *)(loot_base + NOTIFY_CALLER_ALT - 6), via_rbx, 6) ||
@@ -275,6 +301,11 @@ static void loot_install(void *player) {
     int32_t relative;
     memcpy(&relative, drop_call + 1, sizeof relative);
     if (drop_call[0] != 0xe8 || LOOT_DROP_CALLER + (intptr_t)relative != REMOVE_OBJECT_OFFSET) { loot_refuse("caller_bytes"); return; }
+    static const unsigned char frame[] = {0x55, 0x48, 0x89, 0xe5};   /* push rbp; mov rbp, rsp */
+    const unsigned char *base_call = (const unsigned char *)(loot_base + LOOT_OVERRIDE_CALLER - 5);
+    memcpy(&relative, base_call + 1, sizeof relative);
+    if (memcmp((void *)(loot_base + LOOT_OVERRIDE), frame, sizeof frame) || base_call[0] != 0xe8 ||
+        LOOT_OVERRIDE_CALLER + (intptr_t)relative != ENEMY_DAMAGE_OFFSET) { loot_refuse("override_bytes"); return; }
     const unsigned char *bytes[] = {enemydamage_prologue, damagemessage_prologue, newobject_prologue, removeobject_prologue,
                                     statusapply_prologue, newtick_prologue};
     size_t lengths[] = {sizeof enemydamage_prologue, sizeof damagemessage_prologue, sizeof newobject_prologue,
@@ -284,19 +315,28 @@ static void loot_install(void *player) {
     void **originals[] = {(void **)&loot_damage_original, (void **)&loot_message_original, (void **)&loot_object_original,
                           (void **)&loot_remove_original, (void **)&loot_status_original, (void **)&loot_newtick_original};
     void *entries[LOOT_HOOK_COUNT];
-    for (int i = 0; i < LOOT_HOOK_COUNT; ++i) {
+    int native = chain ? LOOT_HOOK_COUNT - 1 : LOOT_HOOK_COUNT;
+    for (int i = 0; i < native; ++i) {
         entries[i] = *(void *const *)loot_methods[i];
         if (memcmp(entries[i], bytes[i], lengths[i])) { loot_refuse("entry_bytes"); return; }
     }
-    for (int i = 0; i < LOOT_HOOK_COUNT; ++i) {
+    for (int i = 0; i < native; ++i) {
         int result = native_hook_install(&loot_hooks[i], entries[i], replacements[i], bytes[i], lengths[i], originals[i]);
         if (result != HOOK_OK) {
             for (int j = i - 1; j >= 0; --j) if (native_hook_remove(&loot_hooks[j]) != HOOK_OK) __builtin_trap();
-            loot_refuse("redirect_error"); return;
+            static char why[40];   /* static: loot_refusal keeps the pointer */
+            snprintf(why, sizeof why, "redirect_error index=%d code=%d", i, result);
+            loot_refuse(why); return;
         }
     }
+#ifdef EXALT_CLIENT_FATAL
+    if (chain) {   /* death guard's hook -> ours -> the game's tick; set ours before publishing it */
+        loot_newtick_original = (LootTickFunction)update_original;
+        __atomic_store_n(&update_original, (UpdateFunction)loot_newtick_observed, __ATOMIC_RELEASE);
+    }
+#endif
     loot_installed = 1;
-    note("loot_ready\tformat=%d\n", LOOT_FORMAT);
+    note("loot_ready\tformat=%d\tnewtick=%s\n", LOOT_FORMAT, chain ? "chained" : "native");
 }
 
 static void loot_tick(void *player) {
@@ -361,10 +401,13 @@ static void loot_drain(int closing) {
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
     if (closing || now >= next_summary) {
         next_summary = now + 60 * NSEC_PER_SEC;
-        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu\n",
+        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
+                "\thits=%llu/%llu/%llu/%llu/%llu\tremovals=%llu\tremovals_hit=%llu\tunknown_caller=0x%lx\n",
                 epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags,
                 (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions,
-                (unsigned long long)loot_ticks.overflow);
+                (unsigned long long)loot_ticks.overflow, (unsigned long long)loot_hit_calls[0], (unsigned long long)loot_hit_calls[1],
+                (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],
+                (unsigned long long)loot_removals, (unsigned long long)loot_removals_hit, (unsigned long)loot_unknown_caller);
     }
     if (closing) { fprintf(loot_file, "status\t%.3f\tcomplete\n", epoch); fclose(loot_file); loot_file = NULL; }
     else fflush(loot_file);

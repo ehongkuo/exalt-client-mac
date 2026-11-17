@@ -86,7 +86,15 @@ enum DropRateTests {
         let day = DropDay.load(store, since: 0)
         check(day.kills == 2 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals: not a removal 3 s after the last hit, nor a mob only others hit")
         check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
-        check(day.notable == [DropDay.Notable(time: 1763300020.0, bag: .orange, mob: 3340, items: [2856, 2856])], "notable bags only")
+        check(day.notable == [DropDay.Notable(time: 1763300020.0, bag: .orange, mob: 3340, items: [2856, 2856], enchants: [nil, nil])],
+              "notable bags only; no enchantments from text that does not decode")
+        _ = store.run("INSERT INTO sessions(file, started, status) VALUES ('r', 1763300040, 'refused\tentry_bytes')", [])
+        check(DropDay.load(store, since: 0).refused == "refused\tentry_bytes", "the latest game's refusal shows")
+        _ = store.run("INSERT INTO sessions(file, started) VALUES ('ok', 1763300050)", [])
+        check(DropDay.load(store, since: 0).refused == nil, "an earlier game's refusal clears once a later one captures")
+        // Enchantments: real stat 80 parts from staging run 1 (0, 1 and 2 enchantments), an empty slot, a cut-off part.
+        check(Enchantments.counts("AAIE_f_9__3__f8FAA==,AAIEGgX9__3__f8FAA==,AAIEcAFcBf3__f8FAA==,,AAIE_f_9") == [0, 1, 2, nil, nil],
+              "enchantments per slot")
         let xml = "<Object type=\"0x090a\" id=\"Archdemon Malphas\">\n<Group>Demons</Group></Object>" +
             "<Object type=\"0xb05\" id=\"Robe of the Grand Sorcerer\" x=\"1\"></Object><Objects type=\"0x1\" id=\"no\">"
         // A failed write rolls the file back and the next run retries it from the same place.
@@ -110,6 +118,7 @@ enum DropRateTests {
         let abyss = """
             <Objects>
               <Object type="0x090a" id="Archdemon Malphas"><Group>Demons</Group><Class>Character</Class><Quest />
+                <AnimatedTexture><File>abyssOfDemonsChars16x16</File><Index>0</Index></AnimatedTexture>
                 <Projectile id="0"><ObjectId>Abyss Soul Shot Projectile</ObjectId></Projectile>
                 <Labels>ENEMY,BOSS,BOSSFIGHT,QUEST,GOD</Labels></Object>
               <Object type="0x0901" id="Malphas Flamer"><Class>Character</Class><Labels>ENEMY,MINION,MINION_WEAK,ABYSSBASE</Labels></Object>
@@ -120,10 +129,12 @@ enum DropRateTests {
         let equip = """
             <Objects>
               <Object type="0x024c" id="Bow of the Void" collectionIcon="17"><Class>Equipment</Class><Item />
+                <Texture><File>lostHallsObjects8x8</File><Index>0xa7</Index></Texture>
                 <SlotType>3</SlotType><BagType>6</BagType><Labels>EQUIPMENT,WEAPON,BOW,UT,TAB_UT,ORG_VOID</Labels></Object>
               <Object id="MoonWizardST" type="0x0c10"><DisplayId>Robe of the Moon Wizard</DisplayId><Class>Equipment</Class><Item />
                 <SlotType>14</SlotType><BagType>2</BagType><Labels>EQUIPMENT,ARMOR,ROBE,ST,TAB_ST,ORG_MOONLIGHT,ORG_UMI</Labels></Object>
               <Object type="0x0a00" id="Robe of the Grand Sorcerer"><Class>Equipment</Class><Item />
+                <Texture xOffset="-2" yOffset="0"><File>d2LofiObjEmbed</File><Index>0x214</Index></Texture>
                 <SlotType>14</SlotType><Tier>13</Tier><BagType>3</BagType><Labels>EQUIPMENT,ARMOR,ROBE,TIERED,T13</Labels></Object>
               <Object type="0x0a01" id="Void Blade Blueprint"><Class>Equipment</Class><Item /><BagType>7</BagType>
                 <Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
@@ -153,6 +164,10 @@ enum DropRateTests {
         check(names("SELECT name FROM items WHERE tier = 13 AND slot_type = 14 AND bag_type = 3") == ["Robe of the Grand Sorcerer"],
               "item tier, slot and bag")
         check(names("SELECT name FROM objects WHERE drop_source = 0") == ["Abyss Gate Wall"], "a wall is not a drop source")
+        check(names("SELECT texture_file || ' ' || texture_index FROM items WHERE type = 588") == ["lostHallsObjects8x8 167"] &&
+              names("SELECT texture_file || ' ' || texture_index FROM objects WHERE type = 2314") == ["abyssOfDemonsChars16x16 0"] &&
+              names("SELECT count(*) FROM objects WHERE texture_file IS NULL") == ["3"] &&
+              names("SELECT texture_index FROM items WHERE type = 2560") == ["532"], "sprite sheet and index, hex or decimal, attributes or not")
         check(names("SELECT count(*) FROM objects WHERE type IN (SELECT type FROM items)") == ["0"], "items are not objects")
         try! (abyss + "<Object type=\"0x0904\" id=\"Malphas Egg\"><Class>Character</Class></Object>")
             .write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
@@ -160,5 +175,47 @@ enum DropRateTests {
               "rebuilt when the XML changes")
         check(!GameNames.refreshCatalog(catalog, folder: folder.appendingPathComponent("none")) &&
               names("SELECT count(*) FROM items") == ["4"], "no XML keeps the last catalog")
+
+        // Rates (issue #41): 1 in N, and a 95% range from the drop count (exact Poisson values).
+        let ten = DropRate(count: 10, of: 1000)
+        check(abs(ten.range.lowerBound - 0.0047954) < 1e-6 && abs(ten.range.upperBound - 0.0183904) < 1e-6 && !ten.rough,
+              "exact range at 10 drops")
+        let none = DropRate(count: 0, of: 100)
+        check(none.range.lowerBound == 0 && abs(none.range.upperBound - 0.0368888) < 1e-6 && none.rough, "no drops still has a range")
+        check(abs(DropRate.poissonRange(1).0 - 0.0253178) < 1e-6 && abs(DropRate.poissonRange(400).0 - 361.756) < 0.01 &&
+              abs(DropRate.poissonRange(400).1 - 441.187) < 0.01, "exact below 50 drops, Byar above")
+        check(DropRate(count: 3, of: 0).range == 0...0 && DropRate(count: 3, of: 0).rate == 0, "no kills, no rate")
+        check(DropRate.oneIn(3.0 / 123) == "1 in 41" && DropRate.oneIn(0) == "none yet" && DropRate.oneIn(1.5) == "every time", "1 in N")
+
+        // The report: per-kill and per-run counts on fixture rows. A run is a map visit where a boss died.
+        let rates = DropRateStore(path: folder.appendingPathComponent("rates.db").path)!
+        check(rates.exec("""
+            INSERT INTO objects(type, name, boss, drop_source) VALUES (1, 'Void Entity', 1, 1), (2, 'Void Minion', 0, 1);
+            INSERT INTO items(type, name, texture_file, texture_index) VALUES (588, 'Bow of the Void', 'lostHallsObjects8x8', 167);
+            INSERT INTO maps(id, session, generation, name) VALUES (1, 1, 1, 'The Void'), (2, 1, 2, 'The Void'), (3, 1, 3, 'The Void'),
+                (4, 1, 4, 'The Void');
+            -- 1: boss and minion die; 2: boss dies; 3: only a minion dies; 4: the boss left view 3 s after your last hit.
+            INSERT INTO kills(id, map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by, since_hit_ms)
+                VALUES (1, 1, 1, 1, 100, 0, 0, 'removed', 100), (2, 1, 2, 2, 100, 0, 0, 'removed', 100),
+                (3, 2, 3, 1, 100, 0, 0, 'removed', 100), (4, 3, 4, 2, 100, 0, 0, 'removed', 100), (5, 4, 5, 1, 100, 0, 0, 'removed', 3000);
+            INSERT INTO bags(id, map, time, bag_type, kill) VALUES (1, 1, 1, 1292, 1), (2, 1, 1, 1287, 1), (3, 1, 2, 1296, 2),
+                (4, 2, 3, 1295, 3), (5, 3, 4, 1292, 4), (6, 4, 5, 1292, 5);
+            INSERT INTO bag_items(bag, slot, item_type) VALUES (1, 0, 588), (3, 0, 588), (4, 0, 9), (5, 0, 588), (6, 0, 588);
+            -- The boss's Bow has 2 enchantments, the minion's 1.
+            INSERT INTO bag_stats(bag, stat_type, value, text) VALUES (1, 80, 0, 'AAIEcAFcBf3__f8FAA=='), (3, 80, 0, 'AAIEGgX9__3__f8FAA==');
+            """), "fixture rows")
+        let report = DropReport.load(rates)
+        let boss = DropReport.Mob(type: 1, dungeon: "The Void"), minion = DropReport.Mob(type: 2, dungeon: "The Void")
+        check(report.runs == ["The Void": 2], "runs: visits where the boss died")
+        check(report.runsWith["The Void"]?[588] == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
+        check(report.kills == [boss: 2, minion: 2] && report.copies[minion]?[588] == 2, "kills and copies by mob")
+        check(report.bestBag[boss] == [.white: 1, .orange: 1], "best bag per kill: white over purple")
+        check(report.bossBags["The Void"]?[nil] == [.white: 1, .orange: 1] && report.bossBags["The Void"]?[1] == [.white: 1, .orange: 1],
+              "best bag from the bosses, per run")
+        check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
+              report.textures[588] == GameTexture(file: "lostHallsObjects8x8", index: 167), "names, bosses and sprites")
+        check(report.dungeons == ["The Void"] && report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
+        check(report.enchants[boss]?[588] == 2 && report.enchants[minion]?[588] == 1 && report.bestEnchants(588) == 2 &&
+              report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "most enchantments per mob and item")
     }
 }

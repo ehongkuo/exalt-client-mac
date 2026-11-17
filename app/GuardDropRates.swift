@@ -147,6 +147,16 @@ final class DropRateStore {
             guard sqlite3_exec(db, "ALTER TABLE kills ADD COLUMN damage_others INTEGER; PRAGMA user_version = 3", nil, nil, nil)
                 == SQLITE_OK else { return nil }
         }
+        if version < 4 {   // sprites (issue #41); clearing the signature rebuilds the catalog with them
+            guard sqlite3_exec(db, """
+                ALTER TABLE objects ADD COLUMN texture_file TEXT; ALTER TABLE objects ADD COLUMN texture_index INTEGER;
+                ALTER TABLE items ADD COLUMN texture_file TEXT; ALTER TABLE items ADD COLUMN texture_index INTEGER;
+                DELETE FROM catalog_source; PRAGMA user_version = 4
+                """, nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 5 {   // textures written with attributes (<Texture xOffset=...>) were missed: rebuild
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 5", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
     }
     deinit { sqlite3_close(db) }
 
@@ -313,7 +323,10 @@ enum LootImport {
 /// Rates and the counting rules (a kill's top bag class) come with the rates view.
 struct DropDay: Equatable {
     struct Mob: Hashable { var type: Int, map: String, kills: Int, bags: [DropBag: Int] }
-    struct Notable: Hashable { var time: Double, bag: DropBag, mob: Int?, items: [Int] }
+    struct Notable: Hashable {
+        var time: Double, bag: DropBag, mob: Int?, items: [Int]
+        var enchants: [Int?] = []   // per item; nil where the bag's enchantment text is missing or cut short
+    }
     var kills = 0, bags = 0, linked = 0, lost = 0
     var refused: String?
     var mobs: [Mob] = []
@@ -337,7 +350,8 @@ struct DropDay: Equatable {
             day.bags = Int(sqlite3_column_int64($0, 0)); day.linked = Int(sqlite3_column_int64($0, 1))
         }
         store.run("SELECT coalesce(sum(lost), 0) FROM capture_gaps WHERE time >= ?", [since]) { day.lost = Int(sqlite3_column_int64($0, 0)) }
-        store.run("SELECT status FROM sessions WHERE started >= ? AND status LIKE 'refused%' ORDER BY id DESC LIMIT 1", [since - 86400]) {
+        // Only the latest game counts: a refusal from an earlier game today is gone once a later one captures.
+        store.run("SELECT status FROM (SELECT status FROM sessions WHERE started >= ? ORDER BY id DESC LIMIT 1) WHERE status LIKE 'refused%'", [since - 86400]) {
             day.refused = String(cString: sqlite3_column_text($0, 0))
         }
         store.run("""
@@ -358,17 +372,200 @@ struct DropDay: Equatable {
             day.mobs[i].bags[bag, default: 0] += Int(sqlite3_column_int64($0, 3))
         }
         store.run("""
-            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.item_type) FROM bags b
+            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.slot || ':' || i.item_type),
+                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bags b
             LEFT JOIN kills k ON k.id = b.kill LEFT JOIN bag_items i ON i.bag = b.id
             WHERE b.time >= ? GROUP BY b.id ORDER BY b.time DESC
             """, [since]) {
             guard day.notable.count < 10, let bag = DropBag(id: Int(sqlite3_column_int64($0, 1))), notableBags.contains(bag) else { return }
-            let items = sqlite3_column_text($0, 3).map { String(cString: $0).split(separator: ",").compactMap { Int($0) } } ?? []
+            let slots = (sqlite3_column_text($0, 3).map { String(cString: $0) } ?? "").split(separator: ",")
+                .compactMap { pair -> (Int, Int)? in
+                    let p = pair.split(separator: ":").compactMap { Int($0) }
+                    return p.count == 2 ? (p[0], p[1]) : nil
+                }.sorted { $0.0 < $1.0 }
+            let enchants = Enchantments.counts(sqlite3_column_text($0, 4).map { String(cString: $0) } ?? "")
             day.notable.append(Notable(time: sqlite3_column_double($0, 0), bag: bag,
-                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)), items: items))
+                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)),
+                                       items: slots.map(\.1), enchants: slots.map { $0.0 < enchants.count ? enchants[$0.0] : nil }))
         }
         return day
     }
+}
+
+/// Enchantments on the items of a bag, from its stat 80: one comma-separated part per slot, each base64url of
+/// `00 02 n`, n 16-bit enchantment ids (fffd: an empty slot), then `05 00`. The counts match RealmHound's
+/// enchant_count on staging run 1. A slot's count is nil where its part is empty or cut short (run 1's guard
+/// kept only 64 characters).
+enum Enchantments {
+    static func counts(_ stat: String) -> [Int?] {
+        stat.split(separator: ",", omittingEmptySubsequences: false).map { part -> Int? in
+            var text = part.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            while text.count % 4 != 0 { text += "=" }
+            guard let data = Data(base64Encoded: text), data.count >= 3 else { return nil }
+            let b = [UInt8](data), n = Int(b[2])
+            guard b.count >= 3 + 2 * n else { return nil }
+            return (0..<n).filter { Int16(bitPattern: UInt16(b[3 + 2 * $0]) | UInt16(b[4 + 2 * $0]) << 8) >= 0 }.count
+        }
+    }
+}
+
+/// A rate: `count` drops (or runs with one) in `of` kills (or runs), with a 95% range from the drop count
+/// (Poisson, docs/drop-rates-investigation.md section 4). Under 10 drops it reads as rough.
+struct DropRate: Equatable {
+    var count: Int, of: Int
+    var rate: Double { of > 0 ? Double(count) / Double(of) : 0 }
+    var rough: Bool { count < 10 }
+    var range: ClosedRange<Double> {
+        guard of > 0 else { return 0...0 }
+        let (low, high) = Self.poissonRange(count)
+        return low / Double(of)...high / Double(of)
+    }
+
+    /// The 95% range of a Poisson mean given `x` events: exact below 50, Byar's approximation above (within 0.1% there).
+    static func poissonRange(_ x: Int) -> (Double, Double) {
+        let z = 1.96, n = Double(x)
+        if x >= 50 {
+            return (n * pow(1 - 1 / (9 * n) - z / (3 * n.squareRoot()), 3),
+                    (n + 1) * pow(1 - 1 / (9 * (n + 1)) + z / (3 * (n + 1).squareRoot()), 3))
+        }
+        func cdf(_ k: Int, _ mean: Double) -> Double {   // P(X <= k)
+            guard k >= 0 else { return 0 }
+            var term = exp(-mean), sum = term
+            for i in stride(from: 1, through: k, by: 1) { term *= mean / Double(i); sum += term }
+            return sum
+        }
+        // The mean where P(X <= k) falls to `target`, by bisection (the cdf falls as the mean grows).
+        func mean(_ k: Int, _ target: Double) -> Double {
+            var low = 0.0, high = 100.0
+            for _ in 0..<60 { let mid = (low + high) / 2; if cdf(k, mid) > target { low = mid } else { high = mid } }
+            return (low + high) / 2
+        }
+        return (x == 0 ? 0 : mean(x - 1, 0.975), mean(x, 0.025))
+    }
+
+    /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
+    static func oneIn(_ rate: Double) -> String {
+        rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
+    }
+}
+
+/// Everything the Drop rates window shows past Today (issue #41), from all the data kept. Every query of the
+/// window is here, so a change in the data's shape after a staging run changes this one place.
+/// - A kill is `DropDay.died`; its drops are the items in bags linked to it (`bags.kill`).
+/// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
+///   second bag of the same colour adds nothing.
+/// - A run is a map visit in which a boss (catalog `boss`) died; per-run rates count runs with at least one.
+struct DropReport: Equatable {
+    /// A mob type in one dungeon (the map name).
+    struct Mob: Hashable { var type: Int, dungeon: String }
+    var kills: [Mob: Int] = [:]
+    var maxHP: [Mob: Int] = [:]
+    var bestBag: [Mob: [DropBag: Int]] = [:]        // kills whose best bag was that colour
+    var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
+    var runs: [String: Int] = [:]                   // by dungeon
+    var runsWith: [String: [Int: Int]] = [:]        // dungeon → item → runs with at least one copy
+    /// dungeon → boss type (nil: any boss) → runs whose best bag from it was that colour.
+    var bossBags: [String: [Int?: [DropBag: Int]]] = [:]
+    var itemBag: [Int: DropBag] = [:]               // the highest bag colour each item came in
+    var enchants: [Mob: [Int: Int]] = [:]           // the most enchantments on any copy of each item from the mob
+    var names: [Int: String] = [:]
+    var bosses: Set<Int> = []
+    var textures: [Int: GameTexture] = [:]
+
+    /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
+    static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
+        DropBag(id: id).map { "WHEN \(id) THEN \(DropBag.allCases.firstIndex(of: $0)!)" }
+    }.joined(separator: " ") + " END"
+
+    static func load(_ store: DropRateStore) -> DropReport {
+        var r = DropReport()
+        let died = DropDay.died, rank = Self.rank
+        let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
+        func int(_ s: OpaquePointer, _ i: Int32) -> Int { Int(sqlite3_column_int64(s, i)) }
+        func text(_ s: OpaquePointer, _ i: Int32) -> String { sqlite3_column_text(s, i).map { String(cString: $0) } ?? "" }
+        func bag(_ s: OpaquePointer, _ i: Int32) -> DropBag? {
+            sqlite3_column_type(s, i) == SQLITE_NULL ? nil : DropBag.allCases[int(s, i)]
+        }
+        func better(_ a: DropBag?, _ b: DropBag) -> DropBag {
+            guard let a else { return b }
+            return DropBag.allCases.firstIndex(of: a)! > DropBag.allCases.firstIndex(of: b)! ? a : b
+        }
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), count(*), max(k.max_hp) FROM kills k JOIN maps m ON m.id = k.map
+            WHERE \(died) GROUP BY 1, 2
+            """) {
+            let mob = Mob(type: int($0, 0), dungeon: text($0, 1))
+            r.kills[mob] = int($0, 2); r.maxHP[mob] = int($0, 3)
+        }
+        store.run("""
+            SELECT mob_type, dungeon, top, count(*) FROM (
+                SELECT k.mob_type, coalesce(m.name, '') dungeon, max(\(rank)) top FROM kills k JOIN maps m ON m.id = k.map
+                JOIN bags b ON b.kill = k.id WHERE \(died) GROUP BY k.id)
+            WHERE top IS NOT NULL GROUP BY 1, 2, 3
+            """) { r.bestBag[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][DropBag.allCases[int($0, 2)]] = int($0, 3) }
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, count(*), max(\(rank)) FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) GROUP BY 1, 2, 3
+            """) {
+            let item = int($0, 2)
+            r.copies[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][item] = int($0, 3)
+            if let top = bag($0, 4) { r.itemBag[item] = better(r.itemBag[item], top) }
+        }
+        var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id, s.text FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map JOIN bag_stats s ON s.bag = b.id AND s.stat_type = 80
+            WHERE \(died)
+            """) {
+            let bag = int($0, 4), slot = int($0, 3)
+            let counts = decoded[bag] ?? Enchantments.counts(text($0, 5))
+            decoded[bag] = counts
+            guard slot < counts.count, let n = counts[slot] else { return }
+            let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2)
+            r.enchants[mob, default: [:]][item] = max(r.enchants[mob]?[item] ?? 0, n)
+        }
+        store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
+            r.runs[text($0, 0)] = int($0, 1)
+        }
+        store.run("""
+            \(runs) SELECT coalesce(m.name, ''), i.item_type, count(DISTINCT k.map) FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs) GROUP BY 1, 2
+            """) { r.runsWith[text($0, 0), default: [:]][int($0, 1)] = int($0, 2) }
+        var anyBoss: [Int: (dungeon: String, bag: DropBag)] = [:]   // by map
+        store.run("""
+            SELECT k.map, coalesce(m.name, ''), k.mob_type, max(\(rank)) FROM kills k JOIN maps m ON m.id = k.map
+            JOIN objects o ON o.type = k.mob_type JOIN bags b ON b.kill = k.id WHERE o.boss AND \(died) GROUP BY k.map, k.mob_type
+            """) {
+            guard let top = bag($0, 3) else { return }
+            let map = int($0, 0), dungeon = text($0, 1)
+            r.bossBags[dungeon, default: [:]][int($0, 2), default: [:]][top, default: 0] += 1
+            anyBoss[map] = (dungeon, better(anyBoss[map]?.bag, top))
+        }
+        for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
+        store.run("""
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index FROM objects
+            WHERE type IN (SELECT mob_type FROM kills) UNION ALL
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index FROM items WHERE type IN (SELECT item_type FROM bag_items)
+            """) {
+            let type = int($0, 0)
+            r.names[type] = text($0, 1)
+            if int($0, 2) != 0 { r.bosses.insert(type) }
+            if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
+        }
+        return r
+    }
+
+    func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    /// The most enchantments on any copy of an item, from every mob or one dungeon's; nil when none was read.
+    func bestEnchants(_ item: Int, dungeon: String? = nil) -> Int? {
+        enchants.filter { dungeon == nil || $0.key.dungeon == dungeon }.compactMap { $0.value[item] }.max()
+    }
+    /// Copies of an item from every mob.
+    func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
+    /// Every item dropped, by name.
+    var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
+    /// Dungeons with a run, most runs first.
+    var dungeons: [String] { runs.keys.sorted { (runs[$0]!, $1) > (runs[$1]!, $0) } }
 }
 
 /// The game XML RealmHound extracts (assets/xml): names by type id, and the catalog the drop views
@@ -381,6 +578,7 @@ enum GameNames {
         var labels: [String] = []
         var quest = false, item = false
         var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
+        var texture: GameTexture? = nil
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -410,13 +608,23 @@ enum GameNames {
             func element(_ name: String) -> String? { value("<\(name)>", "</\(name)>", close, end) }
             func flag(_ name: String) -> Bool { find("<\(name) />", close, end) != nil || find("<\(name)/>", close, end) != nil }
             let display = element("DisplayId")
+            // <Texture>, or the first frame of <AnimatedTexture>, either with attributes (xOffset=); Index is hex
+            // (0xa7) or decimal.
+            let texture = ["Texture", "AnimatedTexture"].lazy.compactMap { tag -> GameTexture? in
+                guard let a = [find("<\(tag)>", close, end), find("<\(tag) ", close, end)].compactMap({ $0 }).min(),
+                      let b = find("</\(tag)>", a, end),
+                      let file = value("<File>", "</File>", a, b), let raw = value("<Index>", "</Index>", a, b) else { return nil }
+                let index = raw.trimmingCharacters(in: .whitespaces)
+                return (index.hasPrefix("0x") ? Int(index.dropFirst(2), radix: 16) : Int(index))
+                    .map { GameTexture(file: file.trimmingCharacters(in: .whitespaces), index: $0) }
+            }.first
             objects.append(Object(
                 type: type, name: name, displayName: display?.hasPrefix("{") == true ? nil : display,
                 objectClass: element("Class"), group: element("Group"),
                 labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
-                tier: element("Tier").flatMap { Int($0) }))
+                tier: element("Tier").flatMap { Int($0) }, texture: texture))
         }
         return objects
     }
@@ -457,16 +665,17 @@ enum GameNames {
             if o.item {
                 let origins = o.labels.filter { $0.hasPrefix("ORG_") }.map { $0.dropFirst(4) }
                 store.run("""
-                    INSERT INTO items(type, name, display_name, bag_type, slot_type, tier, labels, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO items(type, name, display_name, bag_type, slot_type, tier, labels, origin, texture_file, texture_index)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, [o.type, o.name, o.displayName, o.bagType, o.slotType, o.tier, labels,
-                          origins.isEmpty ? nil : "," + origins.joined(separator: ",") + ","])
+                          origins.isEmpty ? nil : "," + origins.joined(separator: ",") + ",", o.texture?.file, o.texture?.index])
             } else {
                 let minion = o.labels.first { $0.hasPrefix("MINION_") }?.dropFirst(7)
                 store.run("""
-                    INSERT INTO objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels,
+                        texture_file, texture_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, [o.type, o.name, o.displayName, o.objectClass, o.group, o.quest || o.labels.contains("BOSSFIGHT") ? 1 : 0,
-                          minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels])
+                          minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels, o.texture?.file, o.texture?.index])
             }
         }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])

@@ -23,7 +23,7 @@ current compatibility profile covers).
 | Kill and drop counts | True counts, incrementing forever from rollout; never weighted or altered |
 | Grouping | Mob type is a bucket; mob class = bosses or minions of a dungeon (boss list from RealmHound's fights first, the game's own data later). Bag colour is the drop class; boosted bag variants count as their colour. |
 | Default view | Orange and white bags (all colours captured) |
-| Start | Counting starts when capture first runs; older RealmHound data is not imported |
+| Start | Counting starts when capture first runs; older RealmHound data is not imported. One exception: staging run 1 captured bags but no kills, so its boss kills come from RealmHound (`tools/drop_backfill.py`, kills with `landed_by = 'realmhound'`, bags linked as RealmHound credits them). Its minion kills stay missing. |
 | RealmHound | Optional cross-check only |
 
 ## 1. Why not RealmHound
@@ -109,6 +109,9 @@ server's (tile x, y), as RealmHound uses.
    (`+0x2C`) is your object id (abilities the server resolves). A pet is its own object, so its hits
    are another player's. The shooter is in the message, not in hook A's arguments, so **hook C** on
    the Damage handler (`0x926410`) stores it in a variable that hook A reads during the same call.
+   Mobs' damage method is an override (`0x980AC0`) that calls the base method from `0x980AEC`, so
+   for those calls the caller is read one frame up (staging run 5: all 22 calls came from there and
+   no kill was captured; run 7 linked 67 of 70 bags and matched RealmHound on all 5 of its drops).
 2. The mob's entry (4,096 slots by object id, cleared on map change) adds your damage per source,
    others' damage, the time of the last hit and its max HP. The kill flag is ignored (below).
 
@@ -336,6 +339,16 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
 3. **Drop rates window:** a larger window with Today, Mobs, Items and Dungeons tabs. Today shows
    today's kills; every other tab uses all the data kept. Each shows rates with "1 in N" and the 95 %
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
+   Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
+   the window (opened from the Drop data panel). Rules as built:
+   - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
+     not each item's `<BagType>`), so it is a chance per kill. Item rates count copies.
+   - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
+     runs with at least one. Realm quests count as bosses, so a realm visit with a quest kill is a run.
+   - **Range:** exact Poisson below 50 drops, Byar's approximation above (within 0.01 %).
+   - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
+     `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
+     (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
 4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
    unit) and base rates without boosts once loot factors are captured.
 
