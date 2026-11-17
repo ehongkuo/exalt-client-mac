@@ -109,6 +109,9 @@ server's (tile x, y), as RealmHound uses.
    (`+0x2C`) is your object id (abilities the server resolves). A pet is its own object, so its hits
    are another player's. The shooter is in the message, not in hook A's arguments, so **hook C** on
    the Damage handler (`0x926410`) stores it in a variable that hook A reads during the same call.
+   Mobs' damage method is an override (`0x980AC0`) that calls the base method from `0x980AEC`, so
+   for those calls the caller is read one frame up (staging run 5: all 22 calls came from there and
+   no kill was captured; run 7 linked 67 of 70 bags and matched RealmHound on all 5 of its drops).
 2. The mob's entry (4,096 slots by object id, cleared on map change) adds your damage per source,
    others' damage, the time of the last hit and its max HP. The kill flag is ignored (below).
 
