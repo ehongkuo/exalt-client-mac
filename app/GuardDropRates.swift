@@ -122,6 +122,9 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS items(type INTEGER PRIMARY KEY, name TEXT, display_name TEXT, bag_type INTEGER, slot_type INTEGER,
             tier INTEGER, labels TEXT, origin TEXT);
         CREATE TABLE IF NOT EXISTS catalog_source(signature TEXT NOT NULL);
+        -- Dungeons (issue #45): each portal's <DungeonName> with the portal's type and sprite, and the labels of its
+        -- <DungeonModTemplate> (its drop tag among them: ",ABYSS," for the Abyss); labels NULL when it has no template.
+        CREATE TABLE IF NOT EXISTS dungeons(name TEXT PRIMARY KEY, portal INTEGER, texture_file TEXT, texture_index INTEGER, labels TEXT);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -156,6 +159,9 @@ final class DropRateStore {
         }
         if version < 5 {   // textures written with attributes (<Texture xOffset=...>) were missed: rebuild
             guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 5", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 6 {   // the dungeons table (issue #45): rebuild the catalog to fill it
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 6", nil, nil, nil) == SQLITE_OK else { return nil }
         }
     }
     deinit { sqlite3_close(db) }
@@ -418,12 +424,14 @@ struct DropReport: Equatable {
     /// mob → item → copies by `DropRarity`. A copy with no rarity counts in none: the bag's stat 80 has no part for it
     /// (potions, stones and other items without enchantments) or the part was cut short.
     var rarity: [Mob: [Int: [Int]]] = [:]
-    /// One copy from a kill, for Ask a question: the bag it came in, and its enchantments (nil: no rarity).
-    struct Copy: Hashable { var mob: Mob, map: Int, item: Int, bag: DropBag?, enchants: Int? }
+    /// One copy from a kill, with its enchantments (nil: no rarity).
+    struct Copy: Hashable { var mob: Mob, item: Int, enchants: Int? }
     var drops: [Copy] = []
-    var runMaps: Set<Int> = []                      // the map visits that are runs
-    var labels: [Int: String] = [:]                 // item labels from the catalog, wrapped in commas
     var origins: [Int: String] = [:]                // item → the catalog's origin codes (",ABYSS,"), for every tagged item
+    var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
+    /// A dungeon to list: one with a template in the catalog, or a map with kills. `codes`: its drop tags.
+    struct Dungeon: Hashable { var name: String, portal: Int?, codes: Set<String> }
+    var dungeons: [Dungeon] = []                    // by name
     var names: [Int: String] = [:]
     var bosses: Set<Int> = []
     var textures: [Int: GameTexture] = [:]
@@ -436,6 +444,19 @@ struct DropReport: Equatable {
         (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
         AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
         """
+
+    /// Drop tags for dungeons whose template labels name them differently from the items' `ORG_*` tags (LOSTHALLS for
+    /// LH; The Void reuses the Lost Halls template; Crystal Cavern's labels say FUNGAL), or that have no template.
+    /// These replace the labels, and list the dungeon.
+    // shortcut: by hand from the Nov 2026 game XML; a dungeon missing here and with no matching label shows only what dropped.
+    static let dropTags: [String: Set<String>] = [
+        "Lost Halls": ["LH"], "The Void": ["VOID"], "The Shatters": ["SHTT"], "Ocean Trench": ["OTRENCH"],
+        "Spider Den": ["SPIDER"], "Toxic Sewers": ["SEWER"], "Kogbold Steamworks": ["KOGBOLD"],
+        "Advanced Kogbold Steamworks": ["KOGBOLD"], "Cultist Hideout": ["CULT"], "Ice Cave": ["ICECAVE"],
+        "Spectral Penitentiary": ["SPECTRAL"], "Legacy Heroic Abyss of Demons": ["ABYSS"], "Legacy Heroic Undead Lair": ["UDL"],
+        "Crystal Cavern": ["CRYSTAL"], "Lair of Draconis": ["LOD"], "Oryx's Sanctuary": ["OSANC"], "Moonlight Village": ["MOONLIGHT"],
+        "Oryx's Castle": ["CASTLE"],
+    ]
 
     /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
     static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
@@ -478,19 +499,19 @@ struct DropReport: Equatable {
         }
         var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
         store.run("""
-            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id, k.map, b.bag_type,
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id,
                 (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died)
             """) {
             let bag = int($0, 4), slot = int($0, 3)
-            let counts = decoded[bag] ?? Enchantments.counts(text($0, 7))
+            let counts = decoded[bag] ?? Enchantments.counts(text($0, 5))
             decoded[bag] = counts
             let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2), n = slot < counts.count ? counts[slot] : nil
-            r.drops.append(Copy(mob: mob, map: int($0, 5), item: item, bag: DropBag(id: int($0, 6)), enchants: n))
+            r.drops.append(Copy(mob: mob, item: item, enchants: n))
             if let n { r.rarity[mob, default: [:]][item, default: [0, 0, 0, 0, 0]][DropRarity(enchants: n).rawValue] += 1 }
         }
-        store.run("\(runs) SELECT runs.map, coalesce(m.name, '') FROM runs JOIN maps m ON m.id = runs.map") {
-            r.runMaps.insert(int($0, 0)); r.runs[text($0, 1), default: 0] += 1
+        store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
+            r.runs[text($0, 0)] = int($0, 1)
         }
         store.run("""
             \(runs) SELECT coalesce(m.name, ''), i.item_type, count(DISTINCT k.map) FROM bag_items i JOIN bags b ON b.id = i.bag
@@ -510,16 +531,29 @@ struct DropReport: Equatable {
         store.run("""
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, labels, origin FROM items
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL
             """) {
             let type = int($0, 0)
             r.names[type] = text($0, 1)
-            if sqlite3_column_type($0, 5) != SQLITE_NULL { r.labels[type] = text($0, 5) }
+            if sqlite3_column_type($0, 5) != SQLITE_NULL, let bag = DropBag(bagType: int($0, 5)) { r.bags[type] = bag }
             if sqlite3_column_type($0, 6) != SQLITE_NULL { r.origins[type] = text($0, 6) }
             if int($0, 2) != 0 { r.bosses.insert(type) }
             if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
         }
+        // Drop tags are the template labels that some item carries as its origin.
+        let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
+        var listed: [String: Dungeon] = [:]
+        store.run("SELECT name, portal, texture_file, texture_index, labels FROM dungeons") {
+            let name = text($0, 0), portal = sqlite3_column_type($0, 1) == SQLITE_NULL ? nil : int($0, 1)
+            if let portal, sqlite3_column_type($0, 2) != SQLITE_NULL { r.textures[portal] = GameTexture(file: text($0, 2), index: int($0, 3)) }
+            let labels = sqlite3_column_type($0, 4) == SQLITE_NULL ? nil : Set(text($0, 4).split(separator: ",").map(String.init))
+            if labels != nil || Self.dropTags[name] != nil || r.kills.keys.contains(where: { $0.dungeon == name }) {
+                listed[name] = Dungeon(name: name, portal: portal, codes: Self.dropTags[name] ?? labels?.intersection(tags) ?? [])
+            }
+        }
+        for mob in r.kills.keys where listed[mob.dungeon] == nil { listed[mob.dungeon] = Dungeon(name: mob.dungeon, portal: nil, codes: []) }
+        r.dungeons = listed.values.sorted { $0.name < $1.name }
         return r
     }
 
@@ -533,100 +567,32 @@ struct DropReport: Equatable {
         rarity.filter { mob == nil || $0.key == mob }.compactMap { $0.value[item] }.reduce([0, 0, 0, 0, 0]) { zip($0, $1).map(+) }
     }
 
-    /// Ask a question (issue #45): matching copies over kills, runs (runs with at least one) or white bags.
-    /// `unread`: copies that matched all but a chosen rarity, and have no rarity. A white bag item is a copy that came in one.
-    struct Answer: Equatable { var rate: DropRate, unit: String, unread: Int }
-    func answer(_ q: DropQuestion) -> Answer {
-        func matches(_ copy: Copy) -> Bool {
-            let l = labels[copy.item] ?? ""
-            switch q.item {
-            case DropQuestion.anyUT: return l.contains(",UT,")
-            case DropQuestion.anySTRobe: return l.contains(",ST,") && l.contains(",ROBE,")
-            case DropQuestion.anyWhite: return copy.bag == .white
-            default: return name(copy.item) == q.item
-            }
-        }
-        func source(_ mob: Mob) -> Bool {
-            (q.from == nil || mob.dungeon == q.from) && (q.mobs == .any || bosses.contains(mob.type) == (q.mobs == .bosses))
-        }
-        let found = drops.filter { source($0.mob) && matches($0) }
-        let hits = q.rarity.map { r in found.filter { $0.enchants.map(DropRarity.init(enchants:)) == r } } ?? found
-        let unread = q.rarity == nil ? 0 : found.filter { $0.enchants == nil }.count
-        let mobs = kills.keys.filter(source)
-        switch q.per {
-        case .kill: return Answer(rate: DropRate(count: hits.count, of: mobs.reduce(0) { $0 + kills[$1]! }), unit: "kills", unread: unread)
-        case .white:
-            return Answer(rate: DropRate(count: hits.count, of: mobs.reduce(0) { $0 + (bestBag[$1]?[.white] ?? 0) }), unit: "white bags", unread: unread)
-        case .run:
-            return Answer(rate: DropRate(count: Set(hits.map(\.map)).intersection(runMaps).count,
-                                         of: Set(mobs.map(\.dungeon)).reduce(0) { $0 + (runs[$1] ?? 0) }), unit: "runs", unread: unread)
-        }
-    }
     /// Copies of an item from every mob.
     func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
     /// Every item dropped, by name.
     var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
-    func category(_ item: Int) -> ItemCategory { ItemCategory(labels: labels[item] ?? "") }
+    func bag(_ item: Int) -> DropBag? { bags[item] ?? itemBag[item] }
 
-    /// The catalog origin code of a dungeon: the one most common among the items that dropped there.
-    // shortcut: inferred from drops, so a dungeon has none until a tagged item drops there; a hand table of
-    // map names to codes would cover dungeons with no tagged drop yet.
-    func origin(of dungeon: String) -> String? {
-        var counts: [String: Int] = [:]
-        for copy in drops where copy.mob.dungeon == dungeon {
-            for code in (origins[copy.item] ?? "").split(separator: ",") { counts[String(code), default: 0] += 1 }
-        }
-        return counts.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key
+    /// A dungeon's possible drops: items the catalog tags with one of its drop tags, and every item that dropped there.
+    func possibleDrops(_ dungeon: Dungeon) -> Set<Int> {
+        let tagged = origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys
+        return Set(tagged).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
     }
-    /// A dungeon's possible drops: items the catalog tags with its origin, and every item that dropped there.
-    func possibleDrops(_ dungeon: String) -> [Int] {
-        let tagged = origin(of: dungeon).map { code in origins.filter { $0.value.contains(",\(code),") }.keys } ?? [:].keys
-        let dropped = drops.filter { $0.mob.dungeon == dungeon }.map(\.item)
-        return Set(tagged).union(dropped).sorted { (category($0), name($0)) < (category($1), name($1)) }
+    /// The mobs killed in a dungeon, bosses first, then most kills.
+    func mobs(in dungeon: String) -> [Mob] {
+        kills.keys.filter { $0.dungeon == dungeon }
+            .sorted { (bosses.contains($0.type) ? 1 : 0, kills[$0]!, $1.type) > (bosses.contains($1.type) ? 1 : 0, kills[$1]!, $0.type) }
     }
 }
 
-/// An item group for the Items view and the dungeon pages (issue #45), from the catalog's labels: UTs, STs, tiered
-/// weapons, armor, abilities and rings by tier, stat potions, other consumables, and everything else.
-struct ItemCategory: Hashable, Comparable {
-    enum Kind: Int { case ut, st, weapon, armor, ability, ring, statPotion, consumable, other }
-    var kind: Kind
-    var tier: Int?   // tiered weapons, armor, abilities and rings
-
-    init(kind: Kind, tier: Int? = nil) { self.kind = kind; self.tier = tier }
-    init(labels: String) {
-        let set = Set(labels.split(separator: ",").map(String.init))
-        let tier = set.lazy.compactMap { $0.hasPrefix("T") ? Int($0.dropFirst()) : nil }.first
-        let kind: Kind = set.contains("UT") ? .ut : set.contains("ST") ? .st : set.contains("STATPOTION") ? .statPotion
-            : set.contains("WEAPON") ? .weapon : set.contains("ARMOR") ? .armor : set.contains("ABILITY") ? .ability
-            : set.contains("RING") ? .ring : set.contains("CONSUMABLE") ? .consumable : .other
-        self.init(kind: kind, tier: [.weapon, .armor, .ability, .ring].contains(kind) ? tier : nil)
+extension DropBag {
+    /// An item's <BagType> in the game XML. 0-8 match the items looted in staging (Nov 2026).
+    // shortcut: 9 (red) is inferred, no red bag item has dropped yet; correct it from the first one.
+    init?(bagType: Int) {
+        guard let bag = [DropBag.brown, .pink, .purple, .egg, .cyan, .blue, .white, .gold, .orange, .red].dropFirst(bagType).first,
+              bagType >= 0 else { return nil }
+        self = bag
     }
-    var name: String {
-        let kind = ["Untiered (UT)", "Set tier (ST)", "weapons", "armor", "abilities", "rings", "Stat potions", "Consumables", "Other"][self.kind.rawValue]
-        return tier.map { "T\($0) \(kind)" } ?? (kind.first!.isLowercase ? kind.prefix(1).uppercased() + kind.dropFirst() : kind)
-    }
-    /// UT and ST first, then each kind by tier, highest first.
-    static func < (a: Self, b: Self) -> Bool { (a.kind.rawValue, -(a.tier ?? -1)) < (b.kind.rawValue, -(b.tier ?? -1)) }
-}
-
-/// A question for Ask a question: what dropped (an item's name or a kind), its rarity, from where and which mobs, per what.
-struct DropQuestion: Equatable {
-    enum Mobs: String, CaseIterable { case any = "Any mob", bosses = "Bosses", minions = "Minions" }
-    enum Per: String, CaseIterable { case kill = "Kill", run = "Run", white = "White bag" }
-    static let anyUT = "Any UT", anySTRobe = "Any ST robe", anyWhite = "Any white bag item"
-    var item: String
-    var rarity: DropRarity? = nil   // nil: any
-    var from: String? = nil         // a dungeon; nil: anywhere
-    var mobs = Mobs.any
-    var per = Per.kill
-
-    static let presets: [(String, DropQuestion)] = [
-        ("Chance of a Bow of the Void per Void run", DropQuestion(item: "Bow of the Void", from: "The Void", per: .run)),
-        ("Chance a white bag is legendary", DropQuestion(item: anyWhite, rarity: .legendary, per: .white)),
-        ("Legendary ST robe from an Abyss mob", DropQuestion(item: anySTRobe, rarity: .legendary, from: "Abyss of Demons")),
-        ("Any UT from Lost Halls bosses", DropQuestion(item: anyUT, from: "Lost Halls", mobs: .bosses)),
-    ]
 }
 
 /// The game XML RealmHound extracts (assets/xml): names by type id, and the catalog the drop views
@@ -640,6 +606,7 @@ enum GameNames {
         var quest = false, item = false
         var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
         var texture: GameTexture? = nil
+        var dungeon: String? = nil   // a portal's <DungeonName>
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -685,7 +652,7 @@ enum GameNames {
                 labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
-                tier: element("Tier").flatMap { Int($0) }, texture: texture))
+                tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName")))
         }
         return objects
     }
@@ -707,13 +674,28 @@ enum GameNames {
         store.run("SELECT signature FROM catalog_source") { stored = String(cString: sqlite3_column_text($0, 0)) }
         guard stored != signature else { return false }
         var objects: [Int: Object] = [:]   // a later file wins
+        var templates: [String: [String]] = [:]
         for file in files {
             guard let data = try? Data(contentsOf: file) else { return false }   // half a catalog is worse than an old one
-            for object in Self.objects(inXML: String(decoding: data, as: UTF8.self)) { objects[object.type] = object }
+            let text = String(decoding: data, as: UTF8.self)
+            for object in Self.objects(inXML: text) { objects[object.type] = object }
+            // shortcut: templates are looked for only in dungeon*.xml (where the game keeps them), as a search of
+            // every file costs seconds; widen it if a dungeon's drop tags go missing.
+            if file.lastPathComponent.hasPrefix("dungeon") { templates.merge(dungeonTemplates(inXML: text)) { _, new in new } }
         }
         guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return false }
         store.failed = false
-        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM catalog_source")
+        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM catalog_source")
+        // A dungeon's portal: the lowest type whose <DungeonName> it is.
+        var portals: [String: Object] = [:]
+        for o in objects.values.sorted(by: { $0.type < $1.type }) where o.objectClass == "Portal" {
+            if let name = o.dungeon, portals[name] == nil { portals[name] = o }
+        }
+        for name in Set(portals.keys).union(templates.keys) {
+            let portal = portals[name]
+            store.run("INSERT INTO dungeons(name, portal, texture_file, texture_index, labels) VALUES (?, ?, ?, ?, ?)",
+                      [name, portal?.type, portal?.texture?.file, portal?.texture?.index, templates[name].map { "," + $0.joined(separator: ",") + "," }])
+        }
         for o in objects.values {
             let labels = "," + o.labels.joined(separator: ",") + ","
             if o.item {
@@ -735,6 +717,17 @@ enum GameNames {
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
         guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return false }
         return true
+    }
+
+    /// Each `<DungeonModTemplate id="name">`'s `<IncludedLabels>`, by dungeon name.
+    static func dungeonTemplates(inXML text: String) -> [String: [String]] {
+        text.components(separatedBy: "<DungeonModTemplate id=\"").dropFirst().reduce(into: [:]) { found, part in
+            guard let name = part.components(separatedBy: "\"").first,
+                  let body = part.components(separatedBy: "</DungeonModTemplate>").first,
+                  let labels = body.components(separatedBy: "<IncludedLabels>").dropFirst().first?.components(separatedBy: "</IncludedLabels>").first
+            else { return }
+            found[name] = labels.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        }
     }
 
     private static func xmlFiles(_ folder: URL) -> [URL] {

@@ -349,23 +349,22 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
      `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
      (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
-4. **Rarity and custom questions (#45):** one window. Mobs, Items and Ask a question are views of the main
-   window, which widens to about 1040 pt for them and stops floating; the guard view keeps its own frame and
-   Keep on top. The sidebar shows capture health over all the data (kills, bags linked, records lost, capture
-   refused); the Drop data panel and the Today view are gone. Rules as built:
-   - **Dungeon pages** open from a dungeon's name in Mobs: drop sources, the bosses' best bag per run, and
-     possible drops by category. Possible drops are the items the catalog tags with the dungeon's origin
-     code (`ORG_*`), plus every item that dropped there. The code is inferred: the one most common among the
-     dungeon's drops, so a dungeon has none until a tagged item drops there.
-   - **Item categories** come from the catalog's labels, not RealmEye: UT, ST, tiered weapons, armor,
-     abilities and rings by tier, stat potions, other consumables, other (`ItemCategory`). Items lists
-     categories first; a category opens its items, and clicking a category on a dungeon page opens it there.
+4. **One window: the Drop rates tab (#45).** The main window has two tabs, Guard and Drop rates. Drop rates
+   widens the window to about 1100 pt and stops it floating; Guard gets its own frame and Keep on top back.
+   The tab bar shows capture health over all the data (kills, bags linked, records lost, capture refused);
+   the Drop data panel, the Today view and the separate window are gone. Three panes:
+   - **Dungeons:** every dungeon the catalog lists (a `<DungeonModTemplate>`, or one in `DropReport.dropTags`)
+     and every map with kills, with its portal sprite; played ones first. Search matches a dungeon's name or
+     an item it can drop.
+   - **Bags and drops:** the dungeon's bosses and minions as sprites (click one: only its drops), then one row
+     of item sprites per bag, by the catalog's `<BagType>` (`DropBag(bagType:)`). Possible drops are the items
+     whose `ORG_*` tag is one of the dungeon's drop tags, plus every item that dropped there; not yet dropped
+     ones are faded. Drop tags are the template labels that some item carries as its origin, except where
+     `DropReport.dropTags` names them (LOSTHALLS vs LH; The Void reuses the Lost Halls template).
+   - **Item specifics:** the selected item's chance per run, copies per kill by boss and minion, rarity of the
+     copies from the dungeon, and other dungeons it dropped in.
    - **Rarity** is a copy's enchantment count from its bag's stat 80 (`Enchantments`). A copy with no part
      in the stat (potions, stones) or a cut-short part has no rarity and counts in none.
-   - **Ask a question** (`DropReport.answer`) counts matching copies over kills, white bags (kills whose best
-     bag was white) or runs (runs with at least one). "Any white bag item" is a copy that came in a white bag;
-     "Any UT" and "Any ST robe" use the catalog labels. A chosen rarity leaves copies with no rarity out and
-     says how many.
    - Out: base rates without boosts, until loot factors are captured.
 
 ## Phases

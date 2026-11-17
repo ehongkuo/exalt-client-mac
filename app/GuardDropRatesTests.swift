@@ -216,28 +216,27 @@ enum DropRateTests {
         check(report.rarity[boss]?[588] == [0, 0, 1, 0, 0] && report.rarity[minion]?[588] == [0, 1, 0, 0, 0] &&
               report.rarityCounts(588) == [0, 1, 1, 0, 0] && report.bestEnchants(588) == 2 &&
               report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "rarity per mob and item; unread copies in none")
-        // Ask a question (issue #45). Bows: the boss's rare one (run 1), the minion's uncommon one (run 1), an unread one (map 3, no run).
-        check(report.answer(DropQuestion(item: "Bow of the Void", from: "The Void", per: .run))
-              == .init(rate: DropRate(count: 1, of: 2), unit: "runs", unread: 0), "per run: runs with at least one")
-        check(report.answer(DropQuestion(item: "Bow of the Void", rarity: .rare, mobs: .bosses))
-              == .init(rate: DropRate(count: 1, of: 2), unit: "kills", unread: 0), "per boss kill, one rarity")
-        check(report.answer(DropQuestion(item: DropQuestion.anyWhite, rarity: .uncommon, mobs: .minions, per: .white))
-              == .init(rate: DropRate(count: 1, of: 2), unit: "white bags", unread: 1), "per white bag, unread copies counted apart")
-        check(report.answer(DropQuestion(item: DropQuestion.anyUT, from: "Lost Halls")).rate.of == 0, "no kills there, no rate")
-        // Item categories (issue #45), from real catalog labels.
-        check(ItemCategory(labels: ",EQUIPMENT,WEAPON,SWORD,TIERED,LOOTABLE,T7,T7_WEAPON,TRADEABLE,") == .init(kind: .weapon, tier: 7) &&
-              ItemCategory(kind: .weapon, tier: 7).name == "T7 weapons", "a T7 sword is a T7 weapon")
-        check(ItemCategory(labels: ",EQUIPMENT,ABILITY,SHEATH,UT,TAB_UT,POWERTIER_C,ORG_ABYSS,").kind == .ut &&
-              ItemCategory(labels: ",EQUIPMENT,ABILITY,ORB,STATMOD,ST,TAB_ST,ST_ABILITY,").kind == .st &&
-              ItemCategory(labels: ",EQUIPMENT,CONSUMABLE,STATPOTION,").name == "Stat potions" &&
-              ItemCategory(labels: ",EQUIPMENT,CONSUMABLE,TIERED,LOOTABLE,T1,TRADEABLE,") == .init(kind: .consumable) &&
-              ItemCategory(labels: "").name == "Other", "UT, ST, potions and the rest")
-        check([ItemCategory(kind: .armor, tier: 5), .init(kind: .weapon, tier: 6), .init(kind: .ut), .init(kind: .weapon, tier: 7)].sorted()
-              == [.init(kind: .ut), .init(kind: .weapon, tier: 7), .init(kind: .weapon, tier: 6), .init(kind: .armor, tier: 5)], "category order")
-        // A dungeon's origin code and possible drops: tagged items, dropped or not, and anything that dropped there.
-        var tagged = report
-        tagged.origins = [588: ",VOID,", 700: ",VOID,", 701: ",SHATTERS,"]
-        check(tagged.origin(of: "The Void") == "VOID" && Set(tagged.possibleDrops("The Void")) == [9, 588, 700] &&
-              tagged.origin(of: "Lost Halls") == nil, "possible drops")
+        // Dungeons (issue #45): templated ones and maps with kills; drop tags are template labels some item carries.
+        check(rates.exec("""
+            UPDATE items SET origin = ',VOID,', bag_type = 6 WHERE type = 588;
+            INSERT INTO items(type, name, origin, bag_type) VALUES (700, 'Void Blade', ',VOID,', 6), (701, 'Shatters Robe', ',SHATTERS,', 8);
+            INSERT INTO dungeons(name, portal, texture_file, texture_index, labels) VALUES
+                ('The Void', 1500, 'portals', 3, ',ANY,VOID,'), ('Lost Halls', NULL, NULL, NULL, ',ANY,LH,'), ('Test Portal', 1501, 'portals', 4, NULL);
+            """), "dungeon rows")
+        let atlas = DropReport.load(rates)
+        let void = atlas.dungeons.first { $0.name == "The Void" }
+        check(atlas.dungeons.map(\.name) == ["Lost Halls", "The Void"] && void?.codes == ["VOID"] && void?.portal == 1500 &&
+              atlas.textures[1500] == GameTexture(file: "portals", index: 3), "templated or killed in; a portal alone is not listed")
+        check(void.map(atlas.possibleDrops) == [9, 588, 700], "possible drops: tagged, dropped or not, and anything that dropped there")
+        check(atlas.bag(700) == .white && atlas.bag(9) == .orange && DropBag(bagType: 8) == .orange && DropBag(bagType: 10) == nil,
+              "an item's bag: the catalog's, else the best it came in")
+        check(atlas.mobs(in: "The Void") == [boss, minion], "bosses first")
+        check(GameNames.dungeonTemplates(inXML: """
+            <DungeonModTemplate id="Abyss of Demons">
+              <IncludedLabels>ANY,ABYSS,SKIN_HUNTER</IncludedLabels></DungeonModTemplate>
+            <DungeonModTemplate id="No Labels"><GradeOption id="D" /></DungeonModTemplate>
+            """) == ["Abyss of Demons": ["ANY", "ABYSS", "SKIN_HUNTER"]], "template labels")
+        check(GameNames.objects(inXML: "<Object type=\"0x071b\" id=\"Abyss of Demons Portal\"><Class>Portal</Class><DungeonName>Abyss of Demons</DungeonName></Object>")
+              .first?.dungeon == "Abyss of Demons", "a portal's dungeon")
     }
 }

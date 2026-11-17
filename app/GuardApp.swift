@@ -637,7 +637,10 @@ struct GuardView: View {
             DropRatesView(model: rates, drops: drops)
         } else {
             MainLayout {
-                GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, rates: rates, source: source).content(source.snapshot, source.link, source.rate)
+                VStack(spacing: 10) {
+                    MainTabs(rates: rates)
+                    GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, source: source).content(source.snapshot, source.link, source.rate)
+                }
             }
             .frame(minWidth: 420, minHeight: 360)
             .preferredColorScheme(.dark)
@@ -722,7 +725,6 @@ struct GuardPanel {
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
     @ObservedObject var drops: DropAlerts
-    @ObservedObject var rates: DropRatesModel
     let source: LiveSource
 
     @ViewBuilder func content(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -982,18 +984,6 @@ struct GuardPanel {
             disclosure($window.partyOpen, "Party calls", value: partyValue(running)) { partyDetail(running) }
             RowDivider()
             disclosure($window.dropsOpen, "Drop alerts", value: drops.settings.enabled ? "On" : "Off") { dropDetail() }
-            RowDivider()
-            Button { rates.shown = true } label: {
-                HStack(spacing: 8) {
-                    Text("Drop rates")
-                    Spacer()
-                    Text(rates.health.refused == nil ? "\(rates.health.kills.formatted()) kills" : "Capture is off")
-                        .foregroundStyle(rates.health.refused == nil ? Color.secondary : warn).lineLimit(1)
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
-                }
-                .frame(minHeight: 32).padding(.horizontal, 12).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
             RowDivider()
             disclosure($window.diagnosticsOpen, "Diagnostics and logs", value: "") { diagnostics(running, link, rate) }
         }
@@ -1296,7 +1286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
         }
     }
-    /// The stats views (issue #45) widen the main window to about 1040 pt and stop keeping it on top; back in
+    /// The stats views (issue #45) widen the main window to about 1100 pt and stop keeping it on top; back in
     /// the guard view, the window gets its own frame and Keep on top again. Only the guard view's frame is saved.
     private func showStats(_ shown: Bool) {
         let fullScreen = window.styleMask.contains(.fullScreen)
@@ -1308,7 +1298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             guardFrame = current
             window.setFrameAutosaveName("")
             let height = max(current.height, 680)
-            let frame = statsFrame ?? NSRect(x: current.minX, y: current.maxY - height, width: 1040, height: height)
+            let frame = statsFrame ?? NSRect(x: current.minX, y: current.maxY - height, width: 1100, height: height)
             window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
         } else {
             state.setFloating(state.floating)
