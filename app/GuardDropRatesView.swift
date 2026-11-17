@@ -170,7 +170,8 @@ struct DropRatesView: View {
                             let copies = report.copies[mob] ?? [:]
                             ForEach(copies.keys.sorted { (copies[$0]!, $1) > (copies[$1]!, $0) }, id: \.self) { item in
                                 clickRow({ model.show(item: item) }) {
-                                    itemLabel(item); Spacer(); RateView(rate: .init(count: copies[item]!, of: kills), unit: "kills")
+                                    itemLabel(item, enchants: report.enchants[mob]?[item]); Spacer()
+                                    RateView(rate: .init(count: copies[item]!, of: kills), unit: "kills")
                                 }
                             }
                         }
@@ -192,7 +193,8 @@ struct DropRatesView: View {
                 TextField("Search an item", text: $model.search).textFieldStyle(.roundedBorder).padding(8)
                 List(shown, id: \.self) { item in
                     listRow(selected == item, { model.item = item }) {
-                        itemLabel(item); Spacer(); Text(report.dropped(item).formatted()).monospacedDigit().foregroundStyle(.secondary)
+                        itemLabel(item, enchants: report.bestEnchants(item)); Spacer()
+                        Text(report.dropped(item).formatted()).monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
             }
@@ -205,7 +207,7 @@ struct DropRatesView: View {
                     let dungeons = Set(sources.map(\.dungeon)).filter { (report.runs[$0] ?? 0) > 0 }.sorted()
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 10) {
-                            SpriteIcon(image: model.sprites[item], size: 40)
+                            SpriteIcon(image: model.sprites[item], size: 40).overlay(alignment: .bottomTrailing) { gems(report.bestEnchants(item), 8) }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(report.name(item)).font(.title3.weight(.semibold))
                                 Text((report.itemBag[item].map { "\($0.name) · " } ?? "") + "\(report.dropped(item).formatted()) dropped since capture started")
@@ -272,7 +274,8 @@ struct DropRatesView: View {
                         if runItems.isEmpty { row { Text("No white, red or orange bag items yet.").foregroundStyle(.secondary) } }
                         ForEach(runItems.keys.sorted { (runItems[$0]!, $1) > (runItems[$1]!, $0) }, id: \.self) { item in
                             clickRow({ model.show(item: item) }) {
-                                itemLabel(item); Spacer(); RateView(rate: .init(count: runItems[item]!, of: runs), unit: "runs")
+                                itemLabel(item, enchants: report.bestEnchants(item, dungeon: dungeon)); Spacer()
+                                RateView(rate: .init(count: runItems[item]!, of: runs), unit: "runs")
                             }
                         }
                     }
@@ -338,13 +341,17 @@ struct DropRatesView: View {
             if report.bosses.contains(type) { bossTag }
         }
     }
-    /// An item's sprite and name; a dropped copy's enchantments show as the game's rarity gems on the sprite.
+    /// The game's rarity gems for a copy's enchantments; in a row for an item type, its best copy's.
+    @ViewBuilder private func gems(_ enchants: Int?, _ size: CGFloat) -> some View {
+        if let enchants, enchants > 0 {
+            RarityGems(rarity: DropRarity(enchants: enchants), gem: size).offset(x: 2, y: 2)
+                .help("\(DropRarity(enchants: enchants).name): \(enchants) enchantment\(enchants == 1 ? "" : "s")")
+        }
+    }
+    /// An item's sprite and name, with the rarity gems of the copy (or best copy) on the sprite.
     private func itemLabel(_ type: Int, enchants: Int? = nil, size: CGFloat = 20) -> some View {
         HStack(spacing: 6) {
-            SpriteIcon(image: model.sprites[type], size: size)
-                .overlay(alignment: .bottomTrailing) {
-                    if let enchants, enchants > 0 { RarityGems(rarity: DropRarity(enchants: enchants), gem: 6).offset(x: 2, y: 2) }
-                }
+            SpriteIcon(image: model.sprites[type], size: size).overlay(alignment: .bottomTrailing) { gems(enchants, 6) }
             Text(report.name(type)).lineLimit(1)
         }
     }

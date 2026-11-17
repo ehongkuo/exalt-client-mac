@@ -466,6 +466,7 @@ struct DropReport: Equatable {
     /// dungeon → boss type (nil: any boss) → runs whose best bag from it was that colour.
     var bossBags: [String: [Int?: [DropBag: Int]]] = [:]
     var itemBag: [Int: DropBag] = [:]               // the highest bag colour each item came in
+    var enchants: [Mob: [Int: Int]] = [:]           // the most enchantments on any copy of each item from the mob
     var names: [Int: String] = [:]
     var bosses: Set<Int> = []
     var textures: [Int: GameTexture] = [:]
@@ -509,6 +510,19 @@ struct DropReport: Equatable {
             r.copies[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][item] = int($0, 3)
             if let top = bag($0, 4) { r.itemBag[item] = better(r.itemBag[item], top) }
         }
+        var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id, s.text FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map JOIN bag_stats s ON s.bag = b.id AND s.stat_type = 80
+            WHERE \(died)
+            """) {
+            let bag = int($0, 4), slot = int($0, 3)
+            let counts = decoded[bag] ?? Enchantments.counts(text($0, 5))
+            decoded[bag] = counts
+            guard slot < counts.count, let n = counts[slot] else { return }
+            let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2)
+            r.enchants[mob, default: [:]][item] = max(r.enchants[mob]?[item] ?? 0, n)
+        }
         store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
             r.runs[text($0, 0)] = int($0, 1)
         }
@@ -541,6 +555,10 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    /// The most enchantments on any copy of an item, from every mob or one dungeon's; nil when none was read.
+    func bestEnchants(_ item: Int, dungeon: String? = nil) -> Int? {
+        enchants.filter { dungeon == nil || $0.key.dungeon == dungeon }.compactMap { $0.value[item] }.max()
+    }
     /// Copies of an item from every mob.
     func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
     /// Every item dropped, by name.

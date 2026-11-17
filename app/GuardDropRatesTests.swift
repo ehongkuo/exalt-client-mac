@@ -197,6 +197,8 @@ enum DropRateTests {
             INSERT INTO bags(id, map, time, bag_type, kill) VALUES (1, 1, 1, 1292, 1), (2, 1, 1, 1287, 1), (3, 1, 2, 1296, 2),
                 (4, 2, 3, 1295, 3), (5, 3, 4, 1292, 4), (6, 4, 5, 1292, 5);
             INSERT INTO bag_items(bag, slot, item_type) VALUES (1, 0, 588), (3, 0, 588), (4, 0, 9), (5, 0, 588), (6, 0, 588);
+            -- The boss's Bow has 2 enchantments, the minion's 1.
+            INSERT INTO bag_stats(bag, stat_type, value, text) VALUES (1, 80, 0, 'AAIEcAFcBf3__f8FAA=='), (3, 80, 0, 'AAIEGgX9__3__f8FAA==');
             """), "fixture rows")
         let report = DropReport.load(rates)
         let boss = DropReport.Mob(type: 1, dungeon: "The Void"), minion = DropReport.Mob(type: 2, dungeon: "The Void")
@@ -209,5 +211,7 @@ enum DropRateTests {
         check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
               report.textures[588] == GameTexture(file: "lostHallsObjects8x8", index: 167), "names, bosses and sprites")
         check(report.dungeons == ["The Void"] && report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
+        check(report.enchants[boss]?[588] == 2 && report.enchants[minion]?[588] == 1 && report.bestEnchants(588) == 2 &&
+              report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "most enchantments per mob and item")
     }
 }
