@@ -319,7 +319,7 @@ enum LootImport {
     }
 }
 
-/// Today's capture at a glance: what the Drop data panel shows, and how a staging run is checked.
+/// Today's capture at a glance: what the Today view shows, and how a staging run is checked.
 /// Rates and the counting rules (a kill's top bag class) come with the rates view.
 struct DropDay: Equatable {
     struct Mob: Hashable { var type: Int, map: String, kills: Int, bags: [DropBag: Int] }
@@ -449,8 +449,8 @@ struct DropRate: Equatable {
     }
 }
 
-/// Everything the Drop rates window shows past Today (issue #41), from all the data kept. Every query of the
-/// window is here, so a change in the data's shape after a staging run changes this one place.
+/// Everything the drop rates views show past Today (issues #41, #45), from all the data kept. Every query of the
+/// views is here, so a change in the data's shape after a staging run changes this one place.
 /// - A kill is `DropDay.died`; its drops are the items in bags linked to it (`bags.kill`).
 /// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
 ///   second bag of the same colour adds nothing.
@@ -467,7 +467,14 @@ struct DropReport: Equatable {
     /// dungeon → boss type (nil: any boss) → runs whose best bag from it was that colour.
     var bossBags: [String: [Int?: [DropBag: Int]]] = [:]
     var itemBag: [Int: DropBag] = [:]               // the highest bag colour each item came in
-    var enchants: [Mob: [Int: Int]] = [:]           // the most enchantments on any copy of each item from the mob
+    /// mob → item → copies by `DropRarity`. A copy with no rarity counts in none: the bag's stat 80 has no part for it
+    /// (potions, stones and other items without enchantments) or the part was cut short.
+    var rarity: [Mob: [Int: [Int]]] = [:]
+    /// One copy from a kill, for Ask a question: the bag it came in, and its enchantments (nil: no rarity).
+    struct Copy: Hashable { var mob: Mob, map: Int, item: Int, bag: DropBag?, enchants: Int? }
+    var drops: [Copy] = []
+    var runMaps: Set<Int> = []                      // the map visits that are runs
+    var labels: [Int: String] = [:]                 // item labels from the catalog, wrapped in commas
     var names: [Int: String] = [:]
     var bosses: Set<Int> = []
     var textures: [Int: GameTexture] = [:]
@@ -513,19 +520,19 @@ struct DropReport: Equatable {
         }
         var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
         store.run("""
-            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id, s.text FROM bag_items i JOIN bags b ON b.id = i.bag
-            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map JOIN bag_stats s ON s.bag = b.id AND s.stat_type = 80
-            WHERE \(died)
+            SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id, k.map, b.bag_type,
+                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died)
             """) {
             let bag = int($0, 4), slot = int($0, 3)
-            let counts = decoded[bag] ?? Enchantments.counts(text($0, 5))
+            let counts = decoded[bag] ?? Enchantments.counts(text($0, 7))
             decoded[bag] = counts
-            guard slot < counts.count, let n = counts[slot] else { return }
-            let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2)
-            r.enchants[mob, default: [:]][item] = max(r.enchants[mob]?[item] ?? 0, n)
+            let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2), n = slot < counts.count ? counts[slot] : nil
+            r.drops.append(Copy(mob: mob, map: int($0, 5), item: item, bag: DropBag(id: int($0, 6)), enchants: n))
+            if let n { r.rarity[mob, default: [:]][item, default: [0, 0, 0, 0, 0]][DropRarity(enchants: n).rawValue] += 1 }
         }
-        store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
-            r.runs[text($0, 0)] = int($0, 1)
+        store.run("\(runs) SELECT runs.map, coalesce(m.name, '') FROM runs JOIN maps m ON m.id = runs.map") {
+            r.runMaps.insert(int($0, 0)); r.runs[text($0, 1), default: 0] += 1
         }
         store.run("""
             \(runs) SELECT coalesce(m.name, ''), i.item_type, count(DISTINCT k.map) FROM bag_items i JOIN bags b ON b.id = i.bag
@@ -543,12 +550,14 @@ struct DropReport: Equatable {
         }
         for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
         store.run("""
-            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index FROM objects
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index FROM items WHERE type IN (SELECT item_type FROM bag_items)
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, labels FROM items
+            WHERE type IN (SELECT item_type FROM bag_items)
             """) {
             let type = int($0, 0)
             r.names[type] = text($0, 1)
+            if sqlite3_column_type($0, 5) != SQLITE_NULL { r.labels[type] = text($0, 5) }
             if int($0, 2) != 0 { r.bosses.insert(type) }
             if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
         }
@@ -556,9 +565,43 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
-    /// The most enchantments on any copy of an item, from every mob or one dungeon's; nil when none was read.
-    func bestEnchants(_ item: Int, dungeon: String? = nil) -> Int? {
-        enchants.filter { dungeon == nil || $0.key.dungeon == dungeon }.compactMap { $0.value[item] }.max()
+    /// The best rarity (as an enchantment count) of any copy of an item, from every mob or one dungeon's; nil when none was read.
+    func bestEnchants(_ item: Int, dungeon: String? = nil, mob: Mob? = nil) -> Int? {
+        rarity.filter { (dungeon == nil || $0.key.dungeon == dungeon) && (mob == nil || $0.key == mob) }.compactMap { $0.value[item]?.lastIndex { $0 > 0 } }.max()
+    }
+    /// Copies of an item by rarity, from one mob or every mob.
+    func rarityCounts(_ item: Int, mob: Mob? = nil) -> [Int] {
+        rarity.filter { mob == nil || $0.key == mob }.compactMap { $0.value[item] }.reduce([0, 0, 0, 0, 0]) { zip($0, $1).map(+) }
+    }
+
+    /// Ask a question (issue #45): matching copies over kills, runs (runs with at least one) or white bags.
+    /// `unread`: copies that matched all but a chosen rarity, and have no rarity. A white bag item is a copy that came in one.
+    struct Answer: Equatable { var rate: DropRate, unit: String, unread: Int }
+    func answer(_ q: DropQuestion) -> Answer {
+        func matches(_ copy: Copy) -> Bool {
+            let l = labels[copy.item] ?? ""
+            switch q.item {
+            case DropQuestion.anyUT: return l.contains(",UT,")
+            case DropQuestion.anySTRobe: return l.contains(",ST,") && l.contains(",ROBE,")
+            case DropQuestion.anyWhite: return copy.bag == .white
+            default: return name(copy.item) == q.item
+            }
+        }
+        func source(_ mob: Mob) -> Bool {
+            (q.from == nil || mob.dungeon == q.from) && (q.mobs == .any || bosses.contains(mob.type) == (q.mobs == .bosses))
+        }
+        let found = drops.filter { source($0.mob) && matches($0) }
+        let hits = q.rarity.map { r in found.filter { $0.enchants.map(DropRarity.init(enchants:)) == r } } ?? found
+        let unread = q.rarity == nil ? 0 : found.filter { $0.enchants == nil }.count
+        let mobs = kills.keys.filter(source)
+        switch q.per {
+        case .kill: return Answer(rate: DropRate(count: hits.count, of: mobs.reduce(0) { $0 + kills[$1]! }), unit: "kills", unread: unread)
+        case .white:
+            return Answer(rate: DropRate(count: hits.count, of: mobs.reduce(0) { $0 + (bestBag[$1]?[.white] ?? 0) }), unit: "white bags", unread: unread)
+        case .run:
+            return Answer(rate: DropRate(count: Set(hits.map(\.map)).intersection(runMaps).count,
+                                         of: Set(mobs.map(\.dungeon)).reduce(0) { $0 + (runs[$1] ?? 0) }), unit: "runs", unread: unread)
+        }
     }
     /// Copies of an item from every mob.
     func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
@@ -566,6 +609,25 @@ struct DropReport: Equatable {
     var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
     /// Dungeons with a run, most runs first.
     var dungeons: [String] { runs.keys.sorted { (runs[$0]!, $1) > (runs[$1]!, $0) } }
+}
+
+/// A question for Ask a question: what dropped (an item's name or a kind), its rarity, from where and which mobs, per what.
+struct DropQuestion: Equatable {
+    enum Mobs: String, CaseIterable { case any = "Any mob", bosses = "Bosses", minions = "Minions" }
+    enum Per: String, CaseIterable { case kill = "Kill", run = "Run", white = "White bag" }
+    static let anyUT = "Any UT", anySTRobe = "Any ST robe", anyWhite = "Any white bag item"
+    var item: String
+    var rarity: DropRarity? = nil   // nil: any
+    var from: String? = nil         // a dungeon; nil: anywhere
+    var mobs = Mobs.any
+    var per = Per.kill
+
+    static let presets: [(String, DropQuestion)] = [
+        ("Chance of a Bow of the Void per Void run", DropQuestion(item: "Bow of the Void", from: "The Void", per: .run)),
+        ("Chance a white bag is legendary", DropQuestion(item: anyWhite, rarity: .legendary, per: .white)),
+        ("Legendary ST robe from an Abyss mob", DropQuestion(item: anySTRobe, rarity: .legendary, from: "Abyss of Demons")),
+        ("Any UT from Lost Halls bosses", DropQuestion(item: anyUT, from: "Lost Halls", mobs: .bosses)),
+    ]
 }
 
 /// The game XML RealmHound extracts (assets/xml): names by type id, and the catalog the drop views
@@ -631,13 +693,6 @@ enum GameNames {
     static func names(inXML text: String) -> [Int: String] {
         objects(inXML: text).reduce(into: [:]) { $0[$1.type] = $1.name }
     }
-    static func load(folder: URL) -> [Int: String] {
-        xmlFiles(folder).reduce(into: [:]) { names, file in
-            if let data = try? Data(contentsOf: file) {
-                names.merge(Self.names(inXML: String(decoding: data, as: UTF8.self))) { _, new in new }
-            }
-        }
-    }
 
     /// Rebuilds the `objects` and `items` tables when RealmHound's XML changed (a new game build).
     /// With no XML (RealmHound not installed) the last catalog stays. Returns whether it rebuilt.
@@ -652,7 +707,7 @@ enum GameNames {
         var stored: String?
         store.run("SELECT signature FROM catalog_source") { stored = String(cString: sqlite3_column_text($0, 0)) }
         guard stored != signature else { return false }
-        var objects: [Int: Object] = [:]   // a later file wins, as in load(folder:)
+        var objects: [Int: Object] = [:]   // a later file wins
         for file in files {
             guard let data = try? Data(contentsOf: file) else { return false }   // half a catalog is worse than an old one
             for object in Self.objects(inXML: String(decoding: data, as: UTF8.self)) { objects[object.type] = object }

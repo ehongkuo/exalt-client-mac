@@ -340,7 +340,7 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    today's kills; every other tab uses all the data kept. Each shows rates with "1 in N" and the 95 %
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
    Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
-   the window (opened from the Drop data panel). Rules as built:
+   the views. Rules as built:
    - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
      not each item's `<BagType>`), so it is a chance per kill. Item rates count copies.
    - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
@@ -349,8 +349,16 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
      `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
      (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
-4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
-   unit) and base rates without boosts once loot factors are captured.
+4. **Rarity and custom questions (#45):** one window. Today, Mobs, Items, Dungeons and Ask a question are
+   views of the main window, which widens to about 1040 pt for them and stops floating; the guard view
+   keeps its own frame and Keep on top. Today took over the Drop data panel. Rules as built:
+   - **Rarity** is a copy's enchantment count from its bag's stat 80 (`Enchantments`). A copy with no part
+     in the stat (potions, stones) or a cut-short part has no rarity and counts in none.
+   - **Ask a question** (`DropReport.answer`) counts matching copies over kills, white bags (kills whose best
+     bag was white) or runs (runs with at least one). "Any white bag item" is a copy that came in a white bag;
+     "Any UT" and "Any ST robe" use the catalog labels. A chosen rarity leaves copies with no rarity out and
+     says how many.
+   - Out: base rates without boosts, until loot factors are captured.
 
 ## Phases
 
