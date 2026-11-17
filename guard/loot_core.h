@@ -31,7 +31,7 @@ typedef struct {
     uint8_t kind, source;
     float pos[3];
     int32_t v[8];           /* kill: damage by source, max HP; bag: items; stat: type, value */
-    char text[64];
+    char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
 
 /* Single producer (game main thread), single consumer (writer thread). */

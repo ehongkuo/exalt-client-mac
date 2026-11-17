@@ -100,10 +100,45 @@ static int loot_live(void) {
     atomic_fetch_add_explicit(&loot_off_main, 1, memory_order_relaxed);
     return 0;
 }
+/* Diagnostics while kills are unproven live (the first staging run captured none): hook A calls by
+ * return address, noted every 60 s, and the first plain and kill-flagged calls in full. */
+typedef struct { uint32_t caller, calls, kills; } LootCaller;
+static LootCaller loot_callers[8];
+static int loot_traced[2];
+static uint64_t loot_next_callers;
+static void loot_trace(void *self, uintptr_t caller, int damage, int kill) {
+    for (int i = 0; i < 8; ++i) {
+        LootCaller *c = &loot_callers[i];
+        if (c->calls && c->caller != caller) continue;
+        c->caller = (uint32_t)caller; ++c->calls; c->kills += kill != 0;
+        break;
+    }
+    if (loot_traced[kill != 0] >= 8) return;
+    ++loot_traced[kill != 0];
+    int32_t id = 0;
+    il2cpp_field_get_value(self, loot_id_field, &id);
+    note("loot_trace\tcaller=0x%lx\tkill=%d\tid=%d\tdamage=%d\ttype=%u\ttracked=%d\tself=%d\tshooter=%d\tmap=%u\n",
+         (unsigned long)caller, kill, id, damage, loot_type_get(loot_types, id),
+         id && loot_hits.slot[(uint32_t)id % LOOT_HITS].id == id, loot_self_id, loot_shooter, loot_map);
+}
+static void loot_note_callers(void) {
+    uint64_t now = monotonic_ns();
+    if (now < loot_next_callers) return;
+    loot_next_callers = now + 60 * NSEC_PER_SEC;
+    char text[512] = "";
+    for (int i = 0, n = 0; i < 8 && loot_callers[i].calls; ++i)
+        n += snprintf(text + n, sizeof text - (size_t)n, "\t0x%x=%u/%u", loot_callers[i].caller, loot_callers[i].calls, loot_callers[i].kills);
+    note("loot_callers%s\n", text);
+}
+
 static void loot_damage_observed(void *self, uint8_t flag0, int damage, void *effects, uint8_t kill, void *projectile,
                                  uint8_t a, uint8_t b, const void *info) {
     /* Read before forwarding, while the mob is still whole. */
-    if (self && loot_live()) loot_hit(self, damage, kill, (uintptr_t)__builtin_return_address(0) - loot_base);
+    if (self && loot_live()) {
+        uintptr_t caller = (uintptr_t)__builtin_return_address(0) - loot_base;
+        loot_trace(self, caller, damage, kill);
+        loot_hit(self, damage, kill, caller);
+    }
     loot_damage_original(self, flag0, damage, effects, kill, projectile, a, b, info);
 }
 static void loot_message_observed(void *self, void *message, void **target, const void *info) {
@@ -182,6 +217,7 @@ static void loot_tick(void *player) {
     if (!ready || !loot_prepared) return;
     loot_install(player);
     if (!loot_installed || !player) return;
+    loot_note_callers();
     if (player != loot_player) { loot_player = player; loot_new_map(); }
     il2cpp_field_get_value(player, loot_id_field, &loot_self_id);   /* one read; set once the player arrives */
     /* Name the map once this player belongs to the connection that sends its objects, so the
@@ -214,7 +250,7 @@ static void loot_drain(int closing) {
     const char *why = atomic_load(&loot_refusal);
     if (why && !refusal_written) { refusal_written = 1; fprintf(loot_file, "status\t%.3f\trefused\t%s\n", epoch, why); }
     LootEvent e;
-    char line[256];
+    char line[512];
     while (loot_pop(&loot_ring, &e)) {
         int length = loot_format(&e, start_epoch + (double)(e.ns - start_ns) / 1e9, line, sizeof line);
         if (length > 0) fwrite(line, 1, (size_t)length < sizeof line ? (size_t)length : sizeof line - 1, loot_file);

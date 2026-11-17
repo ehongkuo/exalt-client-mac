@@ -56,7 +56,7 @@ static void test_types(void) {
 }
 
 static void test_format(void) {
-    char line[256];
+    char line[512];
     LootEvent kill = {.id = 1001, .map = 3, .type = 3340, .kind = LOOT_KILL, .source = LOOT_ABILITY,
                       .pos = {12.5f, 0, 30.25f}, .v = {900, 0, 120, 4000}};
     loot_format(&kill, 1763300000.1234, line, sizeof line);
@@ -69,6 +69,9 @@ static void test_format(void) {
     strcpy(stat.text, "AQID");
     loot_format(&stat, 1763300000.5, line, sizeof line);
     assert(!strcmp(line, "bag_stat\t1763300000.500\t3\t1002\t80\t0\tAQID\n"));
+    memset(stat.text, 'A', sizeof stat.text - 1);       /* enchants for 8 slots: kept whole */
+    stat.text[sizeof stat.text - 1] = 0;
+    assert(loot_format(&stat, 1763300000.5, line, sizeof line) < (int)sizeof line && strstr(line, stat.text));
     LootEvent map = {.map = 4, .kind = LOOT_MAP};
     strcpy(map.text, "Lost Halls");
     loot_format(&map, 1763300001, line, sizeof line);
