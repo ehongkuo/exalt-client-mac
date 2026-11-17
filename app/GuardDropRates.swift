@@ -109,6 +109,19 @@ final class DropRateStore {
         -- Your own int stats (not HP, MP or experience), each time one changes and again on each map.
         CREATE TABLE IF NOT EXISTS player_stats(map INTEGER NOT NULL, time REAL NOT NULL, stat_type INTEGER, value INTEGER);
         CREATE INDEX IF NOT EXISTS player_stats_map ON player_stats(map, stat_type);
+        -- Game catalog (issue #40), rebuilt from RealmHound's XML by GameNames.refreshCatalog. name is the
+        -- XML id; display_name the in-game name when it differs (show coalesce(display_name, name)). Labels and
+        -- origin are wrapped in commas (",UT,TAB_UT,"), so `labels LIKE '%,UT,%'` matches one label exactly.
+        -- boss: <Quest/> or BOSSFIGHT. minion_class: WEAK, MID, STRONG, HIGH or LOW, from MINION_*.
+        -- drop_source 0: an object of a class other than Character (wall, gate, pillar, portal), which
+        -- RealmHound never credits a bag to. A type missing here counts as a source: join with
+        -- coalesce(o.drop_source, 1), as RealmHound fails open on unknown types.
+        CREATE TABLE IF NOT EXISTS objects(type INTEGER PRIMARY KEY, name TEXT, display_name TEXT, class TEXT, group_name TEXT,
+            boss INTEGER NOT NULL, minion_class TEXT, drop_source INTEGER NOT NULL, labels TEXT);
+        -- origin: the ORG_* labels without the prefix (",VOID,").
+        CREATE TABLE IF NOT EXISTS items(type INTEGER PRIMARY KEY, name TEXT, display_name TEXT, bag_type INTEGER, slot_type INTEGER,
+            tier INTEGER, labels TEXT, origin TEXT);
+        CREATE TABLE IF NOT EXISTS catalog_source(signature TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -358,24 +371,111 @@ struct DropDay: Equatable {
     }
 }
 
-/// Object and item names by type id, from the game XML RealmHound extracts.
+/// The game XML RealmHound extracts (assets/xml): names by type id, and the catalog the drop views
+/// group mobs and items by (issue #40). Objects come in either attribute order: `type= id=` or `id= type=`.
 enum GameNames {
-    static func names(inXML text: String) -> [Int: String] {
-        var names: [Int: String] = [:]
-        for chunk in text.components(separatedBy: "<Object type=\"0x").dropFirst() {
-            let tag = chunk.prefix { $0 != ">" }
-            guard let end = tag.firstIndex(of: "\""), let type = Int(tag[..<end], radix: 16),
-                  let a = tag.range(of: " id=\""), let b = tag[a.upperBound...].firstIndex(of: "\"") else { continue }
-            names[type] = String(tag[a.upperBound..<b])
+    struct Object: Equatable {
+        var type: Int, name: String
+        var displayName: String? = nil   // <DisplayId>, unless it is a {translation.key}
+        var objectClass: String? = nil, group: String? = nil
+        var labels: [String] = []
+        var quest = false, item = false
+        var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
+    }
+
+    static func objects(inXML text: String) -> [Object] {
+        let xml = Array(text.utf8)
+        // memmem over the bytes: Swift's string searches take seconds over RealmHound's 60 MB.
+        func find(_ needle: String, _ from: Int, _ to: Int) -> Int? {
+            guard from < to else { return nil }
+            return xml.withUnsafeBytes { raw in
+                let hit = needle.utf8CString.withUnsafeBytes { memmem(raw.baseAddress! + from, to - from, $0.baseAddress!, $0.count - 1) }
+                return hit.map { raw.baseAddress!.distance(to: UnsafeRawPointer($0)) }
+            }
         }
-        return names
+        func value(_ start: String, _ end: String, _ from: Int, _ to: Int) -> String? {
+            guard let a = find(start, from, to), let b = find(end, a + start.utf8.count, to) else { return nil }
+            return String(decoding: xml[(a + start.utf8.count)..<b], as: UTF8.self)
+        }
+        var objects: [Object] = []
+        var next = find("<Object ", 0, xml.count)
+        while let start = next {
+            next = find("<Object ", start + 8, xml.count)
+            let limit = next ?? xml.count
+            guard let close = find(">", start, limit) else { continue }
+            let end = find("</Object>", close, limit) ?? limit
+            // From the space after "<Object", so " id=" also matches an id written first.
+            guard let hex = value(" type=\"0x", "\"", start + 7, close), let type = Int(hex, radix: 16),
+                  let name = value(" id=\"", "\"", start + 7, close) else { continue }
+            func element(_ name: String) -> String? { value("<\(name)>", "</\(name)>", close, end) }
+            func flag(_ name: String) -> Bool { find("<\(name) />", close, end) != nil || find("<\(name)/>", close, end) != nil }
+            let display = element("DisplayId")
+            objects.append(Object(
+                type: type, name: name, displayName: display?.hasPrefix("{") == true ? nil : display,
+                objectClass: element("Class"), group: element("Group"),
+                labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
+                quest: flag("Quest"), item: flag("Item"),
+                bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
+                tier: element("Tier").flatMap { Int($0) }))
+        }
+        return objects
+    }
+    static func names(inXML text: String) -> [Int: String] {
+        objects(inXML: text).reduce(into: [:]) { $0[$1.type] = $1.name }
     }
     static func load(folder: URL) -> [Int: String] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "xml" }.reduce(into: [:]) { names, file in
+        xmlFiles(folder).reduce(into: [:]) { names, file in
             if let data = try? Data(contentsOf: file) {
                 names.merge(Self.names(inXML: String(decoding: data, as: UTF8.self))) { _, new in new }
             }
         }
+    }
+
+    /// Rebuilds the `objects` and `items` tables when RealmHound's XML changed (a new game build).
+    /// With no XML (RealmHound not installed) the last catalog stays. Returns whether it rebuilt.
+    @discardableResult
+    static func refreshCatalog(_ store: DropRateStore, folder: URL) -> Bool {
+        let files = xmlFiles(folder)
+        guard !files.isEmpty else { return false }
+        let signature = files.map { file -> String in
+            let v = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            return "\(file.lastPathComponent) \(v?.fileSize ?? 0) \(v?.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+        }.joined(separator: "\n")
+        var stored: String?
+        store.run("SELECT signature FROM catalog_source") { stored = String(cString: sqlite3_column_text($0, 0)) }
+        guard stored != signature else { return false }
+        var objects: [Int: Object] = [:]   // a later file wins, as in load(folder:)
+        for file in files {
+            guard let data = try? Data(contentsOf: file) else { return false }   // half a catalog is worse than an old one
+            for object in Self.objects(inXML: String(decoding: data, as: UTF8.self)) { objects[object.type] = object }
+        }
+        guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return false }
+        store.failed = false
+        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM catalog_source")
+        for o in objects.values {
+            let labels = "," + o.labels.joined(separator: ",") + ","
+            if o.item {
+                let origins = o.labels.filter { $0.hasPrefix("ORG_") }.map { $0.dropFirst(4) }
+                store.run("""
+                    INSERT INTO items(type, name, display_name, bag_type, slot_type, tier, labels, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [o.type, o.name, o.displayName, o.bagType, o.slotType, o.tier, labels,
+                          origins.isEmpty ? nil : "," + origins.joined(separator: ",") + ","])
+            } else {
+                let minion = o.labels.first { $0.hasPrefix("MINION_") }?.dropFirst(7)
+                store.run("""
+                    INSERT INTO objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [o.type, o.name, o.displayName, o.objectClass, o.group, o.quest || o.labels.contains("BOSSFIGHT") ? 1 : 0,
+                          minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels])
+            }
+        }
+        store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
+        guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return false }
+        return true
+    }
+
+    private static func xmlFiles(_ folder: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "xml" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 }
