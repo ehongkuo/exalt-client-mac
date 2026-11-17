@@ -314,9 +314,13 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
 ### Storage for fast questions
 
 - Raw rows stay the truth; nothing is overwritten or pre-counted.
-- A **game catalog** in `drop_rates.db`, rebuilt when RealmHound's XML changes:
-  `objects(type, name, boss, minion_class, group)` and `items(type, name, bag_type, slot_type, tier, labels)`.
-  Filters like "bosses" or "ST robes" become joins instead of code.
+- A **game catalog** in `drop_rates.db`, rebuilt when RealmHound's XML changes (#40, built):
+  `objects(type, name, display_name, class, group_name, boss, minion_class, drop_source, labels)` and
+  `items(type, name, display_name, bag_type, slot_type, tier, labels, origin)`. Labels and origin
+  are comma-wrapped (`,UT,TAB_UT,`), so one label is `labels LIKE '%,UT,%'`. Filters like "bosses"
+  or "ST robes" become joins instead of code. `drop_source = 0` marks objects RealmHound never
+  credits a bag to (any class but `Character`: walls, gates, pillars); a type missing from the
+  catalog counts as a source, as RealmHound fails open on unknown types.
 - **Views:** `drops` (one row per item copy: kill, time, map, mob, bag, item) and `runs` (map visits
   with a boss kill). Every question above is one `GROUP BY` over them.
 - **Indexes:** add `kills(time)` and `maps(name)` to the ones there. A year is about 1 M kills and

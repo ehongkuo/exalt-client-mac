@@ -103,5 +103,62 @@ enum DropRateTests {
         check(LootImport.run(logs: broken, store: other, appVersion: "t", alive: { _ in true }) == 3, "retried")
         check(otherInt("SELECT count(*) FROM kills") == 1 && otherInt("SELECT count(*) FROM bag_stats") == 1, "stored on retry")
         check(GameNames.names(inXML: xml) == [0x090a: "Archdemon Malphas", 0xb05: "Robe of the Grand Sorcerer"], "names from XML")
+
+        // Game catalog: the shapes RealmHound's assets/xml has, both attribute orders included.
+        let xmlFolder = folder.appendingPathComponent("xml")
+        try! FileManager.default.createDirectory(at: xmlFolder, withIntermediateDirectories: true)
+        let abyss = """
+            <Objects>
+              <Object type="0x090a" id="Archdemon Malphas"><Group>Demons</Group><Class>Character</Class><Quest />
+                <Projectile id="0"><ObjectId>Abyss Soul Shot Projectile</ObjectId></Projectile>
+                <Labels>ENEMY,BOSS,BOSSFIGHT,QUEST,GOD</Labels></Object>
+              <Object type="0x0901" id="Malphas Flamer"><Class>Character</Class><Labels>ENEMY,MINION,MINION_WEAK,ABYSSBASE</Labels></Object>
+              <Object type="0x0902" id="Abyss Brute"><Class>Character</Class><Labels>ENEMY,MINIBOSS,BOSSFIGHT</Labels></Object>
+              <Object id="Abyss Gate Wall" type="0x0903"><Class>Wall</Class></Object>
+            </Objects>
+            """
+        let equip = """
+            <Objects>
+              <Object type="0x024c" id="Bow of the Void" collectionIcon="17"><Class>Equipment</Class><Item />
+                <SlotType>3</SlotType><BagType>6</BagType><Labels>EQUIPMENT,WEAPON,BOW,UT,TAB_UT,ORG_VOID</Labels></Object>
+              <Object id="MoonWizardST" type="0x0c10"><DisplayId>Robe of the Moon Wizard</DisplayId><Class>Equipment</Class><Item />
+                <SlotType>14</SlotType><BagType>2</BagType><Labels>EQUIPMENT,ARMOR,ROBE,ST,TAB_ST,ORG_MOONLIGHT,ORG_UMI</Labels></Object>
+              <Object type="0x0a00" id="Robe of the Grand Sorcerer"><Class>Equipment</Class><Item />
+                <SlotType>14</SlotType><Tier>13</Tier><BagType>3</BagType><Labels>EQUIPMENT,ARMOR,ROBE,TIERED,T13</Labels></Object>
+              <Object type="0x0a01" id="Void Blade Blueprint"><Class>Equipment</Class><Item /><BagType>7</BagType>
+                <Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
+            </Objects>
+            """
+        try! abyss.write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
+        try! equip.write(to: xmlFolder.appendingPathComponent("equip.xml"), atomically: false, encoding: .utf8)
+        let catalog = DropRateStore(path: folder.appendingPathComponent("catalog.db").path)!
+        check(GameNames.refreshCatalog(catalog, folder: xmlFolder) && !GameNames.refreshCatalog(catalog, folder: xmlFolder),
+              "built once, then kept while the XML is unchanged")
+        func names(_ sql: String) -> [String] {
+            var v: [String] = []; catalog.run(sql) { v.append(String(cString: sqlite3_column_text($0, 0))) }; return v
+        }
+        catalog.exec("""
+            INSERT INTO maps(id, session, generation, name) VALUES (1, 1, 1, 'Abyss of Demons'), (2, 1, 2, 'Lost Halls');
+            INSERT INTO kills(map, time, mob_type) VALUES (1, 1, 2314), (1, 2, 2305), (1, 3, 2306), (2, 4, 2314);
+            """)
+        check(names("""
+            SELECT DISTINCT o.name FROM kills k JOIN maps m ON m.id = k.map JOIN objects o ON o.type = k.mob_type
+            WHERE m.name = 'Abyss of Demons' AND o.boss ORDER BY 1
+            """) == ["Abyss Brute", "Archdemon Malphas"], "Abyss bosses: <Quest/> or BOSSFIGHT")
+        check(names("SELECT name FROM objects WHERE minion_class = 'WEAK'") == ["Malphas Flamer"], "minion strength")
+        check(names("SELECT coalesce(display_name, name) FROM items WHERE labels LIKE '%,TAB_ST,%' AND labels LIKE '%,ROBE,%'")
+              == ["Robe of the Moon Wizard"], "ST robes, by display name, id-first objects included")
+        check(names("SELECT count(*) FROM items WHERE display_name IS NULL") == ["3"], "no display name when the XML has none")
+        check(names("SELECT name FROM items WHERE origin LIKE '%,VOID,%'") == ["Bow of the Void"], "Void items, not the shiny origin")
+        check(names("SELECT name FROM items WHERE tier = 13 AND slot_type = 14 AND bag_type = 3") == ["Robe of the Grand Sorcerer"],
+              "item tier, slot and bag")
+        check(names("SELECT name FROM objects WHERE drop_source = 0") == ["Abyss Gate Wall"], "a wall is not a drop source")
+        check(names("SELECT count(*) FROM objects WHERE type IN (SELECT type FROM items)") == ["0"], "items are not objects")
+        try! (abyss + "<Object type=\"0x0904\" id=\"Malphas Egg\"><Class>Character</Class></Object>")
+            .write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
+        check(GameNames.refreshCatalog(catalog, folder: xmlFolder) && names("SELECT name FROM objects WHERE type = 2308") == ["Malphas Egg"],
+              "rebuilt when the XML changes")
+        check(!GameNames.refreshCatalog(catalog, folder: folder.appendingPathComponent("none")) &&
+              names("SELECT count(*) FROM items") == ["4"], "no XML keeps the last catalog")
     }
 }
