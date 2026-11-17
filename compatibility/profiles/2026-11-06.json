@@ -250,6 +250,20 @@
       "entry_prefix": "554889e541574156415541545350",
       "hook": "newobject",
       "constant": "NEW_OBJECT_OFFSET"
+    },
+    {
+      "namespace": "",
+      "owner": "HJMBOMEHGDJ",
+      "name": "CGOAIMCNNON",
+      "parameters": [
+        "int"
+      ],
+      "returns": "void",
+      "offset": "0x923440",
+      "id": "removeobject",
+      "entry_prefix": "554889e54157415653504189f64889fb",
+      "hook": "removeobject",
+      "constant": "REMOVE_OBJECT_OFFSET"
     }
   ],
   "fields": [

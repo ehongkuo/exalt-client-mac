@@ -10,7 +10,8 @@ struct LootKill: Equatable {
     var time: Double, generation: Int, object: Int, type: Int
     var x: Double, y: Double, z: Double
     var projectile: Int, projectileAlt: Int, ability: Int, maxHP: Int
-    var landedBy: String
+    var landedBy: String              // "removed": seen only as the server removing a mob you hit
+    var sinceHitMs: Int? = nil        // from your last hit to the kill (format 2)
 }
 struct LootBag: Equatable {
     var time: Double, generation: Int, object: Int, type: Int
@@ -40,10 +41,11 @@ enum LootLine: Equatable {
             guard let t = d(1), let g = n(2) else { return nil }
             self = .map(time: t, generation: g, name: f.count > 3 ? f[3] : "")
         case "kill":
-            guard f.count == 13, let t = d(1), let g = n(2), let o = n(3), let ty = n(4), let x = d(5), let y = d(6), let z = d(7),
-                  let p = n(8), let pa = n(9), let a = n(10), let hp = n(11) else { return nil }
+            guard f.count == 13 || f.count == 14, let t = d(1), let g = n(2), let o = n(3), let ty = n(4),
+                  let x = d(5), let y = d(6), let z = d(7), let p = n(8), let pa = n(9), let a = n(10), let hp = n(11)
+            else { return nil }
             self = .kill(LootKill(time: t, generation: g, object: o, type: ty, x: x, y: y, z: z,
-                                  projectile: p, projectileAlt: pa, ability: a, maxHP: hp, landedBy: f[12]))
+                                  projectile: p, projectileAlt: pa, ability: a, maxHP: hp, landedBy: f[12], sinceHitMs: n(13)))
         case "bag":
             let items = (7..<15).compactMap(n)
             guard f.count == 15, items.count == 8, let t = d(1), let g = n(2), let o = n(3), let ty = n(4), let x = d(5), let y = d(6)
@@ -102,7 +104,6 @@ final class DropRateStore {
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
         CREATE INDEX IF NOT EXISTS bags_map_object ON bags(map, object_id);
         CREATE INDEX IF NOT EXISTS bag_items_item ON bag_items(item_type);
-        PRAGMA user_version = 1;
         """
 
     init?(path: String) {
@@ -113,6 +114,12 @@ final class DropRateStore {
         db = handle
         sqlite3_busy_timeout(db, 2000)
         guard sqlite3_exec(db, Self.schema, nil, nil, nil) == SQLITE_OK else { return nil }
+        var version = 0
+        run("PRAGMA user_version") { version = Int(sqlite3_column_int64($0, 0)) }
+        if version < 2 {
+            guard sqlite3_exec(db, "ALTER TABLE kills ADD COLUMN since_hit_ms INTEGER; PRAGMA user_version = 2", nil, nil, nil)
+                == SQLITE_OK else { return nil }
+        }
     }
     deinit { sqlite3_close(db) }
 
@@ -224,9 +231,9 @@ enum LootImport {
                 case let .kill(k):
                     store.run("""
                         INSERT INTO kills(map, time, object_id, mob_type, x, y, z, damage_projectile, damage_projectile_alt,
-                            damage_ability, max_hp, landed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            damage_ability, max_hp, landed_by, since_hit_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, [map(k.generation, k.time), k.time, k.object, k.type, k.x, k.y, k.z,
-                              k.projectile, k.projectileAlt, k.ability, k.maxHP, k.landedBy])
+                              k.projectile, k.projectileAlt, k.ability, k.maxHP, k.landedBy, k.sinceHitMs])
                     last = k.time; firstKill = min(firstKill, k.time)
                 case let .bag(b):
                     let mapID = map(b.generation, b.time)
@@ -292,9 +299,14 @@ struct DropDay: Equatable {
 
     static let notableBags: Set<DropBag> = [.white, .orange, .red]
 
+    /// A removal soon after your last hit is a death; a later one is usually a mob that left your view.
+    // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
+    // that left one of your bags.
+    static let died = "(k.landed_by <> 'removed' OR k.since_hit_ms <= 1000)"
+
     static func load(_ store: DropRateStore, since: Double, mobLimit: Int = 20) -> DropDay {
         var day = DropDay()
-        store.run("SELECT count(*) FROM kills WHERE time >= ?", [since]) { day.kills = Int(sqlite3_column_int64($0, 0)) }
+        store.run("SELECT count(*) FROM kills k WHERE k.time >= ? AND \(died)", [since]) { day.kills = Int(sqlite3_column_int64($0, 0)) }
         store.run("SELECT count(*), count(kill) FROM bags WHERE time >= ?", [since]) {
             day.bags = Int(sqlite3_column_int64($0, 0)); day.linked = Int(sqlite3_column_int64($0, 1))
         }
@@ -304,7 +316,7 @@ struct DropDay: Equatable {
         }
         store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), count(*) FROM kills k JOIN maps m ON m.id = k.map
-            WHERE k.time >= ? GROUP BY k.mob_type, m.name ORDER BY count(*) DESC LIMIT ?
+            WHERE k.time >= ? AND \(died) GROUP BY k.mob_type, m.name ORDER BY count(*) DESC LIMIT ?
             """, [since, mobLimit]) {
             day.mobs.append(Mob(type: Int(sqlite3_column_int64($0, 0)), map: String(cString: sqlite3_column_text($0, 1)),
                                 kills: Int(sqlite3_column_int64($0, 2)), bags: [:]))

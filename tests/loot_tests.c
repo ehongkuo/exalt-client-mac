@@ -16,23 +16,22 @@ static void test_ring(void) {
 
 static void test_hits(void) {
     static LootHits t;
-    int32_t dealt[LOOT_YOURS];
-    loot_hit_add(&t, 7, LOOT_OTHER, 500);             /* someone else's hit never tracks a mob */
-    assert(!loot_hit_kill(&t, 7, dealt));
-    loot_hit_add(&t, 7, LOOT_PROJECTILE, 100);
-    loot_hit_add(&t, 7, LOOT_ABILITY, 40);
-    loot_hit_add(&t, 7, LOOT_PROJECTILE, 60);
-    assert(loot_hit_kill(&t, 7, dealt));
-    assert(dealt[LOOT_PROJECTILE] == 160 && dealt[LOOT_PROJECTILE_ALT] == 0 && dealt[LOOT_ABILITY] == 40);
-    assert(!loot_hit_kill(&t, 7, dealt));             /* local and server both report the death */
-    loot_hit_add(&t, 7, LOOT_PROJECTILE, 10);         /* a shot landing on the corpse */
-    assert(!loot_hit_kill(&t, 7, dealt));
-    loot_hit_add(&t, 9, LOOT_PROJECTILE, 1);
-    loot_hit_add(&t, 9 + LOOT_HITS, LOOT_PROJECTILE, 1);   /* a much newer mob on the same slot */
-    assert(t.evictions == 1 && !loot_hit_kill(&t, 9, dealt) && loot_hit_kill(&t, 9 + LOOT_HITS, dealt));
-    loot_hit_add(&t, 11, LOOT_PROJECTILE, 1);
+    assert(!loot_hit_add(&t, 7, LOOT_OTHER, 500, 1)); /* someone else's hit never tracks a mob */
+    assert(!loot_hit_kill(&t, 7));
+    loot_hit_add(&t, 7, LOOT_PROJECTILE, 100, 1);
+    loot_hit_add(&t, 7, LOOT_ABILITY, 40, 2);
+    assert(loot_hit_add(&t, 7, LOOT_PROJECTILE, 60, 3)->last_ns == 3);
+    const LootHit *h = loot_hit_kill(&t, 7);
+    assert(h && h->damage[LOOT_PROJECTILE] == 160 && h->damage[LOOT_PROJECTILE_ALT] == 0 && h->damage[LOOT_ABILITY] == 40);
+    assert(!loot_hit_kill(&t, 7));                    /* kill flag, then the server removing it: one kill */
+    loot_hit_add(&t, 7, LOOT_PROJECTILE, 10, 4);      /* a shot landing on the corpse */
+    assert(!loot_hit_kill(&t, 7) && h->damage[LOOT_PROJECTILE] == 160);
+    loot_hit_add(&t, 9, LOOT_PROJECTILE, 1, 5);
+    loot_hit_add(&t, 9 + LOOT_HITS, LOOT_PROJECTILE, 1, 5);   /* a much newer mob on the same slot */
+    assert(t.evictions == 1 && !loot_hit_kill(&t, 9) && loot_hit_kill(&t, 9 + LOOT_HITS));
+    loot_hit_add(&t, 11, LOOT_PROJECTILE, 1, 6);
     loot_hits_clear(&t);                              /* new map */
-    assert(!loot_hit_kill(&t, 11, dealt));
+    assert(!loot_hit_kill(&t, 11));
 }
 
 static void test_source(void) {
@@ -58,9 +57,12 @@ static void test_types(void) {
 static void test_format(void) {
     char line[512];
     LootEvent kill = {.id = 1001, .map = 3, .type = 3340, .kind = LOOT_KILL, .source = LOOT_ABILITY,
-                      .pos = {12.5f, 0, 30.25f}, .v = {900, 0, 120, 4000}};
+                      .pos = {12.5f, 0, 30.25f}, .v = {900, 0, 120, 4000, 0}};
     loot_format(&kill, 1763300000.1234, line, sizeof line);
-    assert(!strcmp(line, "kill\t1763300000.123\t3\t1001\t3340\t12.50\t0.00\t30.25\t900\t0\t120\t4000\tability\n"));
+    assert(!strcmp(line, "kill\t1763300000.123\t3\t1001\t3340\t12.50\t0.00\t30.25\t900\t0\t120\t4000\tability\t0\n"));
+    kill.source = LOOT_REMOVED; kill.v[4] = 240;
+    loot_format(&kill, 1763300000.1234, line, sizeof line);
+    assert(strstr(line, "\t4000\tremoved\t240\n"));
     LootEvent bag = {.id = 1002, .map = 3, .type = 1295, .kind = LOOT_BAG, .pos = {12.5f, 30.25f},
                      .v = {2856, 2856, -1, -1, -1, -1, -1, -1}};
     loot_format(&bag, 1763300000.5, line, sizeof line);
@@ -78,7 +80,7 @@ static void test_format(void) {
     assert(!strcmp(line, "map\t1763300001.000\t4\tLost Halls\n"));
     LootEvent odd = {.kind = LOOT_KILL, .source = 200};
     loot_format(&odd, 0, line, sizeof line);
-    assert(strstr(line, "\tunknown\n"));
+    assert(strstr(line, "\tunknown\t0\n"));
 }
 
 int main(void) {

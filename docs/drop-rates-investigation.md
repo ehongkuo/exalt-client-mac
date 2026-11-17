@@ -57,10 +57,18 @@ From the dump, confirmed against the installed binary where noted:
 | Object id, type props, position | `KJMONHENJEN`: props `+0x18`, id `+0x34`, position `+0x68` | Field types; position is already in the profile. The id field shares its obfuscated name with the Damage message's shooter field. |
 | Item slots | `LKHPPBEGNOM` `int[]` at `+0x250` | Used for player equipment; expected to hold bag contents too |
 
-So one hook on the base damage method sees every enemy death in view: yours (client-predicted) and
-other players' (from the server). The **return address** says which: the Damage handler's call site
-means another player's hit, the `hit_handler` call sites mean yours. The guard already tells
-callers apart this way.
+One hook on the base damage method sees every hit in view: yours and other players' (from the
+server). The **return address** says which: the Damage handler's call site means another player's
+hit, the `hit_handler` call sites mean yours. The guard already tells callers apart this way.
+
+**The kill flag misses most of your kills (staging run 1).** For your shots, `BJDEACACFBD` sets the
+flag only when one shot's damage is at least the mob's HP (`+0x20C`), and the client never lowers
+that HP itself: all 11 writes are in the server's stat handlers. So the flag is set only when the
+server's last HP is already below one shot. Run 1 logged 0 kill flags while RealmHound saw 7 boss
+kills and 25 of your bags. The death the client can be sure of is the server removing the mob:
+the `Update` message's removed ids (`+0x30`), each passed to `HJMBOMEHGDJ.CGOAIMCNNON` (`0x923440`)
+from `0x93606D`. Leaving your view removes a mob the same way, so the time since your last hit
+tells the two apart.
 
 ## 3. Capture layer and store
 
@@ -84,10 +92,17 @@ game hit ─▶ guard hook ─▶ ring ─▶ writer (10 Hz) ─▶ logs/loot-<s
    (abilities the server resolves). A pet is its own object, so its hits don't match. The shooter
    is in the message, not in hook A's arguments, so **hook C** on the Damage handler (`0x926410`)
    stores it in a variable that hook A reads during the same call.
-2. If the kill flag is set and the target is in the "your damage" table and not yet marked killed:
-   push a `kill` event and mark it, so a death reported twice (your client and the server) counts
-   once.
-3. Call the original.
+2. Note where and when you last hit it, and its max HP: removal (hook D) only has the id.
+3. If the kill flag is set and the target is in the "your damage" table and not yet marked killed:
+   push a `kill` event and mark it, so a death reported twice (flag, server, removal) counts once.
+4. Call the original.
+
+**Hook D: remove object (`HJMBOMEHGDJ.CGOAIMCNNON`, `0x923440`).** Only for the `Update` handler's
+call (return address `0x936072`; other callers remove projectiles by a different key): a removed id
+that is in the "your damage" table and not yet killed becomes a `kill` with source `removed` and
+the milliseconds since your last hit. The bag arrives in the same message just before (new objects
+are handled before removed ids), and the importer links a kill up to 0.25 s after its bag. The app
+counts a removal as a death when it comes within 1 s of your last hit (to be set from run 2).
 
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
 thread calls this method (the guard already asserts that for its other hooks).
@@ -302,8 +317,9 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
   connection object or your player object changes. Confirm a new connection per map in staging.
 - **Second projectile path (`0x17d1430`):** it never carries a kill flag; its damage is stored
   apart so a staging run can show whose hits it is.
-- **Kill flag trust:** your own kills are the client's prediction. Live test against RealmHound's
-  boss kills.
+- **Kill flag trust:** answered by run 1: the flag almost never fires for your kills (see above).
+  Run 2 checks hook D against RealmHound: every bag of yours should link to a `removed` kill, and
+  those kills' time since your last hit sets the 1 s cut-off.
 - **Mob type id:** confirm the object type the guard reads equals RealmHound's `mob_type`.
 - **Abilities and pets:** confirm in staging that ability hits arrive either as your projectiles or as
   Damage messages with your id as shooter, and that pet hits carry the pet's id.

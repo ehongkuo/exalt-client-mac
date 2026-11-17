@@ -6,23 +6,30 @@
  *   A  damage method (base, enemies only): your hits and kill flags
  *   B  new object: bags and their contents, and each object's type
  *   C  Damage message: who the server says shot (abilities)
+ *   D  remove object, from the server's Update: a mob you hit is gone. The kill flag alone misses
+ *      most kills: the game sets it only when one shot outdoes the HP the server last sent, and it
+ *      never lowers a mob's HP itself (staging run 1: 0 kill flags over 32 kills RealmHound saw).
  */
 #include "loot_core.h"
 
 typedef void (*LootMessageFunction)(void *, void *, void **, const void *);
 typedef void (*LootObjectFunction)(void *, void *, const void *);
+typedef void (*LootRemoveFunction)(void *, int32_t, const void *);
 static NotifyFunction loot_damage_original;
 static LootMessageFunction loot_message_original;
 static LootObjectFunction loot_object_original;
-static NativeHook loot_hooks[3];
-/* Return address of the Damage handler's call into the damage method (checked at install). */
+static LootRemoveFunction loot_remove_original;
+static NativeHook loot_hooks[4];
+/* Return addresses (checked at install): the Damage handler's call into the damage method, and the
+ * Update handler's call into remove-object for each dropped id. Other callers remove projectiles. */
 #define LOOT_DAMAGE_CALLER 0x92658fUL
+#define LOOT_DROP_CALLER 0x936072UL
 
 static LootRing loot_ring;
 static LootHits loot_hits;
 static LootType loot_types[LOOT_TYPES];
 static FILE *loot_file;
-static const void *loot_methods[3];
+static const void *loot_methods[4];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
             *loot_pos_field, *loot_stats_field, *loot_x_field, *loot_y_field,
             *loot_stat_type_field, *loot_stat_int_field, *loot_stat_text_field;
@@ -53,8 +60,12 @@ static void loot_prepare(const void *game) {
     loot_methods[0] = find_method_named(character, ENEMY_DAMAGE_OFFSET_NAME, 7, "System.Boolean");
     loot_methods[1] = find_method_named(handler, DAMAGE_MESSAGE_OFFSET_NAME, 2, "MMDLNDNCGMA");
     loot_methods[2] = find_method_named(receiver, NEW_OBJECT_OFFSET_NAME, 1, "KBGIJJLLFFD");
+    loot_methods[3] = find_method_named(il2cpp_class_from_name(game, REMOVE_OBJECT_OFFSET_NAMESPACE, REMOVE_OBJECT_OFFSET_OWNER),
+                                        REMOVE_OBJECT_OFFSET_NAME, 1, "System.Int32");
     if (!at_offset(loot_methods[0], ENEMY_DAMAGE_OFFSET) || !at_offset(loot_methods[1], DAMAGE_MESSAGE_OFFSET) ||
-        !at_offset(loot_methods[2], NEW_OBJECT_OFFSET)) { loot_refuse("method_offsets_differ"); return; }
+        !at_offset(loot_methods[2], NEW_OBJECT_OFFSET) || !at_offset(loot_methods[3], REMOVE_OBJECT_OFFSET)) {
+        loot_refuse("method_offsets_differ"); return;
+    }
     loot_id_field = typed_field(entity, "HHPOJBFICAH", "System.Int32");
     loot_shooter_field = typed_field(message, "HHPOJBFICAH", "System.Int32");
     loot_type_field = typed_field(data, "JHIKGCPGEDB", "System.UInt16");
@@ -81,19 +92,25 @@ static void loot_prepare(const void *game) {
 /* Ids restart with each map, so damage is forgotten on a new connection or a new player object. */
 static void loot_new_map(void) { ++loot_map; loot_hits_clear(&loot_hits); }
 
+static void loot_kill(const LootHit *h, int source, uint64_t now) {
+    LootEvent e = {.ns = now, .id = h->id, .map = loot_map, .type = loot_type_get(loot_types, h->id), .kind = LOOT_KILL,
+                   .source = (uint8_t)source, .pos = {h->pos[0], h->pos[1], h->pos[2]},
+                   .v = {h->damage[0], h->damage[1], h->damage[2], h->max, (int32_t)((now - h->last_ns) / 1000000)}};
+    if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
+}
 static void loot_hit(void *self, int damage, int kill, uintptr_t caller) {
     int source = loot_source(caller, NOTIFY_CALLER, NOTIFY_CALLER_ALT, LOOT_DAMAGE_CALLER, loot_shooter, loot_self_id);
     if (source >= LOOT_YOURS && !kill) return;   /* the common case: someone else's hit */
-    int32_t id = 0, dealt[LOOT_YOURS];
+    int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
-    loot_hit_add(&loot_hits, id, source, damage);
-    if (!kill || !loot_hit_kill(&loot_hits, id, dealt)) return;
-    LootEvent e = {.ns = monotonic_ns(), .id = id, .map = loot_map, .type = loot_type_get(loot_types, id),
-                   .kind = LOOT_KILL, .source = (uint8_t)source};
-    memcpy(e.v, dealt, sizeof dealt);
-    il2cpp_field_get_value(self, max_field, &e.v[3]);
-    il2cpp_field_get_value(self, position_field, e.pos);
-    if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
+    uint64_t now = monotonic_ns();
+    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, now);
+    if (kill) h = loot_hit_kill(&loot_hits, id);
+    if (!h) return;
+    /* Where it was when you last hit it: removal comes later, when only its id is known. */
+    if (!h->max) il2cpp_field_get_value(self, max_field, &h->max);
+    il2cpp_field_get_value(self, position_field, h->pos);
+    if (kill) loot_kill(h, source, now);
 }
 static int loot_live(void) {
     if (pthread_main_np()) return !atomic_load_explicit(&finished, memory_order_relaxed);
@@ -184,6 +201,13 @@ static void loot_object_observed(void *self, void *data, const void *info) {
     if (data && loot_live()) loot_object(self, data);
     loot_object_original(self, data, info);
 }
+static void loot_remove_observed(void *self, int32_t id, const void *info) {
+    if ((uintptr_t)__builtin_return_address(0) - loot_base == LOOT_DROP_CALLER && loot_live()) {
+        LootHit *h = loot_hit_kill(&loot_hits, id);
+        if (h) loot_kill(h, LOOT_REMOVED, monotonic_ns());
+    }
+    loot_remove_original(self, id, info);
+}
 
 /* Same rule as the death guard's hooks: install once, in the Nexus, on the main thread. */
 static void loot_install(void *player) {
@@ -193,16 +217,23 @@ static void loot_install(void *player) {
     static const unsigned char via_rax[] = {0xff, 0x90, 0x28, 6, 0, 0}, via_rbx[] = {0xff, 0x93, 0x28, 6, 0, 0};
     if (memcmp((void *)(loot_base + NOTIFY_CALLER - 6), via_rax, 6) || memcmp((void *)(loot_base + NOTIFY_CALLER_ALT - 6), via_rbx, 6) ||
         memcmp((void *)(loot_base + LOOT_DAMAGE_CALLER - 6), via_rbx, 6)) { loot_refuse("caller_bytes"); return; }
-    const unsigned char *bytes[] = {enemydamage_prologue, damagemessage_prologue, newobject_prologue};
-    size_t lengths[] = {sizeof enemydamage_prologue, sizeof damagemessage_prologue, sizeof newobject_prologue};
-    void *replacements[] = {(void *)loot_damage_observed, (void *)loot_message_observed, (void *)loot_object_observed};
-    void **originals[] = {(void **)&loot_damage_original, (void **)&loot_message_original, (void **)&loot_object_original};
-    void *entries[3];
-    for (int i = 0; i < 3; ++i) {
+    const unsigned char *drop_call = (const unsigned char *)(loot_base + LOOT_DROP_CALLER - 5);   /* call rel32 */
+    int32_t relative;
+    memcpy(&relative, drop_call + 1, sizeof relative);
+    if (drop_call[0] != 0xe8 || LOOT_DROP_CALLER + (intptr_t)relative != REMOVE_OBJECT_OFFSET) { loot_refuse("caller_bytes"); return; }
+    const unsigned char *bytes[] = {enemydamage_prologue, damagemessage_prologue, newobject_prologue, removeobject_prologue};
+    size_t lengths[] = {sizeof enemydamage_prologue, sizeof damagemessage_prologue, sizeof newobject_prologue,
+                        sizeof removeobject_prologue};
+    void *replacements[] = {(void *)loot_damage_observed, (void *)loot_message_observed, (void *)loot_object_observed,
+                            (void *)loot_remove_observed};
+    void **originals[] = {(void **)&loot_damage_original, (void **)&loot_message_original, (void **)&loot_object_original,
+                          (void **)&loot_remove_original};
+    void *entries[4];
+    for (int i = 0; i < 4; ++i) {
         entries[i] = *(void *const *)loot_methods[i];
         if (memcmp(entries[i], bytes[i], lengths[i])) { loot_refuse("entry_bytes"); return; }
     }
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         int result = native_hook_install(&loot_hooks[i], entries[i], replacements[i], bytes[i], lengths[i], originals[i]);
         if (result != HOOK_OK) {
             for (int j = i - 1; j >= 0; --j) if (native_hook_remove(&loot_hooks[j]) != HOOK_OK) __builtin_trap();

@@ -16,6 +16,9 @@ enum DropRateTests {
                            items: [2856, 2856, -1, -1, -1, -1, -1, -1])), "bag line")
         check(LootLine("map\t1.0\t4\tLost Halls") == .map(time: 1, generation: 4, name: "Lost Halls"), "map line")
         check(LootLine("status\t2.0\trefused\tentry_bytes") == .status(time: 2, text: "refused\tentry_bytes"), "refusal")
+        check(LootLine("kill\t1.0\t3\t1001\t3340\t1.00\t0.00\t2.00\t0\t0\t0\t4000\tremoved\t240") ==
+              .kill(LootKill(time: 1, generation: 3, object: 1001, type: 3340, x: 1, y: 0, z: 2, projectile: 0,
+                             projectileAlt: 0, ability: 0, maxHP: 4000, landedBy: "removed", sinceHitMs: 240)), "removal kill line")
         check(LootLine("kill\t1\t2\t3") == nil && LootLine("bag\tx") == nil && LootLine("guard_map\tNexus") == nil, "bad lines")
 
         // Linking: the nearest kill just before the bag, whichever float3 axis is the tile's y.
@@ -37,6 +40,7 @@ enum DropRateTests {
             map\t1763300010.000\t2\tShatters
             kill\t1763300020.000\t2\t500\t3340\t10.00\t0.00\t20.00\t900\t0\t120\t4000\tprojectile
             kill\t1763300020.000\t2\t501\t3341\t30.00\t0.00\t20.00\t50\t0\t0\t300\tother
+            kill\t1763300020.100\t2\t503\t3341\t90.00\t0.00\t90.00\t50\t0\t0\t300\tremoved\t3000
             bag\t1763300020.400\t2\t600\t1295\t10.10\t20.10\t2856\t2856\t-1\t-1\t-1\t-1\t-1\t-1
             bag_stat\t1763300020.400\t2\t600\t80\t0\tAQID
             bag\t1763300020.400\t2\t601\t1287\t50.00\t50.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
@@ -47,15 +51,16 @@ enum DropRateTests {
         try! first.write(to: file, atomically: false, encoding: .utf8)
         let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
         var running = true
-        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 10, "whole lines only")
+        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 11, "whole lines only")
         func int(_ sql: String) -> Int64 { var v: Int64 = -1; store.run(sql) { v = sqlite3_column_int64($0, 0) }; return v }
-        check(int("SELECT count(*) FROM kills") == 2 && int("SELECT count(*) FROM maps") == 2, "kills and maps")
+        check(int("SELECT count(*) FROM kills") == 3 && int("SELECT count(*) FROM maps") == 2, "kills and maps")
+        check(int("SELECT since_hit_ms FROM kills WHERE object_id = 503") == 3000, "time since your last hit is kept")
         check(int("SELECT b.kill = k.id FROM bags b JOIN kills k ON k.object_id = 500 WHERE b.object_id = 600") == 1, "bag linked to its kill")
         check(int("SELECT kill IS NULL FROM bags WHERE object_id = 601") == 1, "a bag with no kill stays unlinked")
         check(int("SELECT count(*) FROM bag_items WHERE item_type = 2856") == 2, "two copies count as two items")
         check(int("SELECT count(*) FROM bag_stats WHERE text = 'AQID'") == 1, "other bag stats are kept raw")
         check(int("SELECT lost FROM capture_gaps") == 3, "ring overflow is a gap")
-        check(int("SELECT count(*) FROM maps m JOIN kills k ON k.map = m.id WHERE m.name = 'Shatters'") == 2, "kills carry their map")
+        check(int("SELECT count(*) FROM maps m JOIN kills k ON k.map = m.id WHERE m.name = 'Shatters'") == 3, "kills carry their map")
         check(FileManager.default.fileExists(atPath: file.path), "a running game's file stays")
 
         let handle = try! FileHandle(forWritingTo: file)
@@ -63,7 +68,7 @@ enum DropRateTests {
         handle.write(".000\t2\t502\t3340\t1.00\t0.00\t1.00\t10\t0\t0\t100\tprojectile\nloot_summary\t1763300030.000\tkills=3\n".data(using: .utf8)!)
         try! handle.close()
         check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 2, "the cut line completes")
-        check(int("SELECT count(*) FROM kills") == 3 && int("SELECT count(*) FROM sessions") == 1, "resumed, not re-read")
+        check(int("SELECT count(*) FROM kills") == 4 && int("SELECT count(*) FROM sessions") == 1, "resumed, not re-read")
         check(int("SELECT k.object_id FROM bags b JOIN kills k ON k.id = b.kill WHERE b.object_id = 602") == 502,
               "a kill imported after its bag still links")
         running = false
@@ -73,7 +78,7 @@ enum DropRateTests {
 
         // Today's summary, as the Drop data panel shows it.
         let day = DropDay.load(store, since: 0)
-        check(day.kills == 3 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals")
+        check(day.kills == 3 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals: a removal 3 s after your last hit is not a kill")
         check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
         check(day.notable == [DropDay.Notable(time: 1763300020.4, bag: .orange, mob: 3340, items: [2856, 2856])], "notable bags only")
         let xml = "<Object type=\"0x090a\" id=\"Archdemon Malphas\">\n<Group>Demons</Group></Object>" +

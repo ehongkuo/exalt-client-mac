@@ -8,11 +8,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define LOOT_FORMAT 1
+#define LOOT_FORMAT 2
 enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP };
-/* Who dealt a hit. The first three are you; only they put a mob in the damage table. */
-enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN };
-static const char *const loot_source_names[] = {"projectile", "projectile_alt", "ability", "other", "unknown"};
+/* Who dealt a hit. The first three are you; only they put a mob in the damage table. A kill seen
+ * only as the server removing the mob (no kill flag) is "removed". */
+enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
+static const char *const loot_source_names[] = {"projectile", "projectile_alt", "ability", "other", "unknown", "removed"};
 /* Who dealt a hit into the damage method, from where it was called (an offset in the game) and, for a
  * Damage message, the shooter the server named. A pet is its own object, so its hits are "other". */
 static inline int loot_source(uintptr_t caller, uintptr_t projectile, uintptr_t projectile_alt, uintptr_t message,
@@ -30,7 +31,7 @@ typedef struct {
     uint16_t type;
     uint8_t kind, source;
     float pos[3];
-    int32_t v[8];           /* kill: damage by source, max HP; bag: items; stat: type, value */
+    int32_t v[8];           /* kill: damage by source, max HP, ms since your last hit; bag: items; stat: type, value */
     char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
 
@@ -58,29 +59,32 @@ static inline int loot_pop(LootRing *r, LootEvent *e) {
     return 1;
 }
 
-/* Your damage per mob. Direct-mapped by object id: the server hands out ids in order, so a slot
- * is reused only when a much newer mob you also hit lands on it (counted as an eviction). */
+/* Your damage per mob, with where and when you last hit it. Direct-mapped by object id: the server
+ * hands out ids in order, so a slot is reused only when a much newer mob you also hit lands on it
+ * (counted as an eviction). */
 #define LOOT_HITS 4096
-typedef struct { int32_t id, killed, damage[LOOT_YOURS]; } LootHit;
+typedef struct { int32_t id, killed, damage[LOOT_YOURS], max; float pos[3]; uint64_t last_ns; } LootHit;
 typedef struct { LootHit slot[LOOT_HITS]; uint64_t evictions; } LootHits;
 static inline void loot_hits_clear(LootHits *t) { memset(t->slot, 0, sizeof t->slot); }
-static inline void loot_hit_add(LootHits *t, int32_t id, int source, int32_t damage) {
-    if (!id || source < 0 || source >= LOOT_YOURS) return;
+/* Returns the mob's entry for your hit, or NULL for anyone else's. */
+static inline LootHit *loot_hit_add(LootHits *t, int32_t id, int source, int32_t damage, uint64_t ns) {
+    if (!id || source < 0 || source >= LOOT_YOURS) return NULL;
     LootHit *h = &t->slot[(uint32_t)id % LOOT_HITS];
     if (h->id != id) {
         if (h->id && !h->killed) ++t->evictions;
         *h = (LootHit){.id = id};
     }
     if (!h->killed && damage > 0) h->damage[source] += damage;
+    h->last_ns = ns;
+    return h;
 }
-/* A kill counts once, and only for a mob you hit: the second report of a death (local and
- * server) finds it already killed. */
-static inline int loot_hit_kill(LootHits *t, int32_t id, int32_t damage[LOOT_YOURS]) {
+/* A kill counts once, and only for a mob you hit: a later report of the same death (kill flag,
+ * server Damage, removal) finds it already killed. */
+static inline LootHit *loot_hit_kill(LootHits *t, int32_t id) {
     LootHit *h = &t->slot[(uint32_t)id % LOOT_HITS];
-    if (!id || h->id != id || h->killed) return 0;
+    if (!id || h->id != id || h->killed) return NULL;
     h->killed = 1;
-    memcpy(damage, h->damage, sizeof h->damage);
-    return 1;
+    return h;
 }
 
 /* Object type by id, from each new object the server sends. Never cleared: every id that can be
@@ -110,9 +114,9 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
     const int32_t *v = e->v;
     switch (e->kind) {
     case LOOT_KILL:
-        return snprintf(out, size, "kill\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%s\n",
+        return snprintf(out, size, "kill\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%s\t%d\n",
                         epoch, e->map, e->id, e->type, e->pos[0], e->pos[1], e->pos[2], v[0], v[1], v[2], v[3],
-                        loot_source_names[e->source <= LOOT_UNKNOWN ? e->source : LOOT_UNKNOWN]);
+                        loot_source_names[e->source <= LOOT_REMOVED ? e->source : LOOT_UNKNOWN], v[4]);
     case LOOT_BAG:
         return snprintf(out, size, "bag\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
                         epoch, e->map, e->id, e->type, e->pos[0], e->pos[1], v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
