@@ -1,8 +1,9 @@
 # Drop rates: investigation and capture design (issue #38)
 
 Goal: estimate the true base drop rate of every item from every mob type, converging as data grows.
-This issue builds the **capture layer and the persistent store**. How rates are calculated and shown
-is designed here (section 4) but built later.
+This issue builds the **capture layer and the persistent store**: every kill, every drop and every
+loot factor that was active. How rates are calculated and shown is the next phase (section 4 has the
+design).
 
 Data checked on 2026-11-16: RealmHound's files, opened read-only on a copy
 (`~/Library/Application Support/RealmHound/accounts/<uuid>/databases/`), about 4 days of play
@@ -15,7 +16,9 @@ current compatibility profile covers).
 |---|---|
 | Kill source | Our own guard hook, for bosses and ordinary mobs alike |
 | Drop source | Our own capture in the guard, independent of RealmHound and its filters |
-| What counts as a kill | A mob you hit that then died |
+| What counts as a kill | A mob you damaged directly (projectiles and abilities) that then died. Pet damage doesn't count. |
+| Loot factors | Captured with every kill: character boosts (loot potions, seasonal, crucible, blood ritual, exaltations, loot enchants), dungeon factors (modifiers, hard or exalted versions) and server-wide loot events |
+| Also captured | Map, time and character per kill; your damage and the mob's max HP; every bag, linked or not; game build, guard version and capture gaps |
 | Kill and drop counts | True counts, incrementing forever from rollout; never weighted or altered |
 | Grouping | Mob type is a bucket; mob class = bosses or minions of a dungeon (boss list from RealmHound's fights first, the game's own data later). Bag colour is the drop class; boosted bag variants count as their colour. |
 | Default view | Orange and white bags (all colours captured) |
@@ -75,10 +78,15 @@ game hit ─▶ guard hook ─▶ shared event ring ─▶ app poller (4 Hz) ─
 
 **Hook A: base damage method (`0x11291F0`).** On every enemy hit:
 
-1. If the hit is yours (`hit_handler` return address): mark the target's object id in a small
-   "hit by you" set (open-addressed, 1,024 ids, cleared on map change).
-2. If the kill flag is set and the id isn't in the recent-kill set (256 ids, so a death reported
-   twice counts once): push a `kill` event and remember the id.
+1. If the hit is yours, add its damage to the target's entry in a small "your damage" table
+   (open-addressed, 1,024 object ids, cleared on map change). Yours means: a `hit_handler` return
+   address (your projectiles), or a server Damage message whose shooter (`+0x2C`) is your object id
+   (abilities the server resolves). A pet is its own object, so its hits don't match. The shooter
+   is in the message, not in hook A's arguments, so **hook C** on the Damage handler (`0x926410`)
+   stores it in a variable that hook A reads during the same call.
+2. If the kill flag is set, the target is in the "your damage" table, and the id isn't in the
+   recent-kill set (256 ids, so a death reported twice counts once): push a `kill` event and
+   remember the id.
 3. Call the original.
 
 Cost: a flag test and a hash probe per hit, no allocation, no il2cpp calls. Only the game's main
@@ -108,11 +116,12 @@ the live state):
 
 | Event | Fields |
 |---|---|
-| `kill` | time, map instance, object id, object type, x, y, by-you, damage handler (yours / server) |
+| `kill` | time, map instance, object id, object type, x, y, your damage, mob max HP, who landed the kill (you / server) |
 | `bag` | time, map instance, object id, bag type, x, y, up to 8 item ids |
 | `bag_stat` | bag object id, stat type, int value, first 40 bytes of the string value (one per non-item stat, so enchant data is kept raw for later) |
-| `map` | time, map instance, map name (on every map change) |
-| `boost` | reserved for the boost issue: time, packed boost state, only when it changes |
+| `map` | time, map instance, map name, character id and class (on every map change) |
+| `factors` | time, packed loot factors (character boosts and dungeon factors), only when they change |
+| `announce` | time, first 48 bytes of a server announcement that mentions loot (from the chat the guard already reads) |
 
 Ring: 4,096 records (256 KB). At 2,000 kills an hour, bursts of a few hundred in a second still fit
 before a 250 ms poll. On overflow the guard counts the lost records; the app stores the count as a
@@ -135,8 +144,10 @@ mode, opened only by the app.
 | Table | Columns | Notes |
 |---|---|---|
 | `sessions` | id, started, ended, game build, guard version | Provenance; lets a bad build's data be excluded |
-| `maps` | id, session, instance, name, entered | One row per map visit; gives the dungeon |
-| `kills` | id, map, time, object id, mob type, by_you, by_server, boost | One row per death you saw; `boost` null until the boost issue lands |
+| `maps` | id, session, instance, name, entered, character id, class | One row per map visit; gives the dungeon and character |
+| `factor_states` | id, potions, seasonal, crucible, blood ritual, exaltation, loot enchant %, dungeon modifiers | One row per distinct combination |
+| `kills` | id, map, time, object id, mob type, your damage, max HP, landed by you, factors | One row per death of a mob you damaged |
+| `announcements` | session, time, text | Server-wide loot events |
 | `bags` | id, map, time, object id, bag type, kill (nullable), x, y | Every bag, every colour |
 | `bag_items` | bag, slot, item type | Contents when the bag appeared |
 | `bag_stats` | bag, stat type, value, text | Every other stat the bag arrived with, raw (enchants are decoded later) |
@@ -145,8 +156,18 @@ mode, opened only by the app.
 Indexes: `kills(mob_type)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
 `GROUP BY` over a year of rows is milliseconds, and raw rows keep every later question open.
 
-Size: about 50 bytes per kill and 100 per bag with items. 500 hours a year at 2,000 kills an hour
-is about 1 M kills, roughly 60 MB a year.
+Size: about 70 bytes per kill and 100 per bag with items; factor, map and announcement rows are
+rare. 500 hours a year at 2,000 kills an hour is about 1 M kills, roughly 80 MB a year.
+
+Kills of mobs you didn't damage aren't stored (they never count), but their bags are, unlinked.
+
+### Loot factors
+
+The guard reads them on its existing timer, not per kill, and sends `factors` only when something
+changes; each kill points at the current factor row. Candidate names in the game's code:
+`BoostLoot`, `AddLootBonus`, `lootMult`, `BloodRitual`, `CruciblesManager`, `Seasonal`. Finding the
+exact fields is part of this issue's reverse engineering. Boosted bag types (the 17xx variants) and
+RealmHound's per-drop boost flags check the reading.
 
 ### Checking the capture
 
@@ -183,13 +204,12 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
 | + unboosted kill, ring | 80,001 | 401 | 267.67 | 0.334579 % |
 | + kill at ×2.25, ring | 80,001 | 401 | 267.11 | 0.333885 % |
 
-## Proposed split
+## Phases
 
-1. **#38: capture layer and store** (this design): hook A, bag capture, event ring, app poller,
-   `drop_rates.db`, the RealmHound cross-check. Needs the profile change and staging live tests.
-2. **Boost state capture** (new issue, drafted): the guard reads the active boosts and emits `boost`
-   events; kills get their boost state. Kills before it ships stay "boost unknown".
-3. **Rates calculator and view** (new issue): section 4 plus the display.
+1. **#38: capture and store** (this design): hooks A, B and C, loot factors, the event ring, the app
+   poller, `drop_rates.db` and the RealmHound cross-check. Needs the profile change and staging live
+   tests.
+2. **Next phase: rates calculator and view** (section 4 plus the display). Filed once capture runs.
 
 ## Open questions
 
@@ -204,6 +224,8 @@ Worked example (Ring of the Inferno, Abyss minions, base 0.3333 %):
 - **Kill flag trust:** your own kills are the client's prediction. Live test against RealmHound's
   boss kills.
 - **Mob type id:** confirm the object type the guard reads equals RealmHound's `mob_type`.
-- **Abilities and pets:** hits without a projectile may not mark "hit by you". Check whether they
-  reach hook A through another caller.
-- **Profile:** approve adding hooks A and B to the reviewed profile. Auditing it is your decision.
+- **Abilities and pets:** confirm in staging that ability hits arrive either as your projectiles or as
+  Damage messages with your id as shooter, and that pet hits carry the pet's id.
+- **Dungeon and server factors:** which dungeon modifiers and server events affect loot, and where
+  the game holds them. Needs your game knowledge as well as the dump.
+- **Profile:** approve adding hooks A, B and C to the reviewed profile. Auditing it is your decision.
