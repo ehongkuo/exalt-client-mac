@@ -267,6 +267,15 @@ static void loot_newtick_observed(void *self, void *message, const void *info) {
 static void loot_install(void *player) {
     if (loot_attempted || !loot_prepared || !loot_file || !guard_ok) return;
     if (!in_nexus || !map_ok || map_unknown_logged || !player) return;
+    /* NewTick is the death guard's update method (0x936da0). With the death guard on, let it hook first
+     * and run ours inside its hook: a second patch on the same entry would fail the prologue check. */
+    int chain = 0;
+#ifdef EXALT_CLIENT_FATAL
+    if (config.death && !probe_attempted) return;
+    chain = probe_installed && probe_hooks[6].entry == *(void *const *)loot_methods[5];
+    /* shortcut: with death off at install, turning it on later makes the death guard refuse (entry_bytes
+     * index=6) until the game restarts; share one hook between both if that toggle turns out common. */
+#endif
     loot_attempted = 1;
     static const unsigned char via_rax[] = {0xff, 0x90, 0x28, 6, 0, 0}, via_rbx[] = {0xff, 0x93, 0x28, 6, 0, 0};
     if (memcmp((void *)(loot_base + NOTIFY_CALLER - 6), via_rax, 6) || memcmp((void *)(loot_base + NOTIFY_CALLER_ALT - 6), via_rbx, 6) ||
@@ -284,19 +293,26 @@ static void loot_install(void *player) {
     void **originals[] = {(void **)&loot_damage_original, (void **)&loot_message_original, (void **)&loot_object_original,
                           (void **)&loot_remove_original, (void **)&loot_status_original, (void **)&loot_newtick_original};
     void *entries[LOOT_HOOK_COUNT];
-    for (int i = 0; i < LOOT_HOOK_COUNT; ++i) {
+    int native = chain ? LOOT_HOOK_COUNT - 1 : LOOT_HOOK_COUNT;
+    for (int i = 0; i < native; ++i) {
         entries[i] = *(void *const *)loot_methods[i];
         if (memcmp(entries[i], bytes[i], lengths[i])) { loot_refuse("entry_bytes"); return; }
     }
-    for (int i = 0; i < LOOT_HOOK_COUNT; ++i) {
+    for (int i = 0; i < native; ++i) {
         int result = native_hook_install(&loot_hooks[i], entries[i], replacements[i], bytes[i], lengths[i], originals[i]);
         if (result != HOOK_OK) {
             for (int j = i - 1; j >= 0; --j) if (native_hook_remove(&loot_hooks[j]) != HOOK_OK) __builtin_trap();
             loot_refuse("redirect_error"); return;
         }
     }
+#ifdef EXALT_CLIENT_FATAL
+    if (chain) {   /* death guard's hook -> ours -> the game's tick; set ours before publishing it */
+        loot_newtick_original = (LootTickFunction)update_original;
+        __atomic_store_n(&update_original, (UpdateFunction)loot_newtick_observed, __ATOMIC_RELEASE);
+    }
+#endif
     loot_installed = 1;
-    note("loot_ready\tformat=%d\n", LOOT_FORMAT);
+    note("loot_ready\tformat=%d\tnewtick=%s\n", LOOT_FORMAT, chain ? "chained" : "native");
 }
 
 static void loot_tick(void *player) {
