@@ -983,12 +983,12 @@ struct GuardPanel {
             RowDivider()
             disclosure($window.dropsOpen, "Drop alerts", value: drops.settings.enabled ? "On" : "Off") { dropDetail() }
             RowDivider()
-            Button { rates.show(.today) } label: {
+            Button { rates.shown = true } label: {
                 HStack(spacing: 8) {
                     Text("Drop rates")
                     Spacer()
-                    Text(rates.day.refused == nil ? "\(rates.day.kills) kills today" : "Capture is off")
-                        .foregroundStyle(rates.day.refused == nil ? Color.secondary : warn).lineLimit(1)
+                    Text(rates.health.refused == nil ? "\(rates.health.kills.formatted()) kills" : "Capture is off")
+                        .foregroundStyle(rates.health.refused == nil ? Color.secondary : warn).lineLimit(1)
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
                 }
                 .frame(minHeight: 32).padding(.horizontal, 12).contentShape(Rectangle())
@@ -1270,27 +1270,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var alertTimer: Timer?
     private var lootTimer: Timer?
     private var lootBusy = false
-    private var lootDay = 0.0   // the day whose numbers the Today view shows
+    private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
     /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
     private func importLoot() {
         let logs = GuardPaths.logs(data: dataURL)
-        let today = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
-        // With no loot file and today's numbers already shown, there is nothing to do.
+        // With no loot file and the health already shown, there is nothing to do.
         let pending = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).contains { $0.hasPrefix("loot-") }
-        guard !lootBusy, pending || lootDay != today else { return }
+        guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         lootQueue.async {
-            var day: DropDay?
+            var health: CaptureHealth?
             if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
                 GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
                 LootImport.run(logs: logs, store: store, appVersion: version)
-                day = DropDay.load(store, since: today, mobLimit: 500)
+                health = CaptureHealth.load(store)
             }
             DispatchQueue.main.async {
-                if let day { self.rates.update(day: day); self.lootDay = today }
+                if let health { self.rates.update(health: health); self.healthLoaded = true }
                 self.lootBusy = false
                 // All-time queries are heavier, so the shown stats views refresh at most every 30 s.
                 if self.rates.shown, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }

@@ -82,16 +82,14 @@ enum DropRateTests {
         check(!FileManager.default.fileExists(atPath: file.path), "an ended game's file is removed")
         check(int("SELECT ended > started FROM sessions") == 1, "session times")
 
-        // Today's summary, as the Today view shows it.
-        let day = DropDay.load(store, since: 0)
-        check(day.kills == 2 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals: not a removal 3 s after the last hit, nor a mob only others hit")
-        check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
-        check(day.notable == [DropDay.Notable(time: 1763300020.0, bag: .orange, mob: 3340, items: [2856, 2856], enchants: [nil, nil])],
-              "notable bags only; no enchantments from text that does not decode")
+        // Capture health, as the drop rates sidebar shows it.
+        let health = CaptureHealth.load(store)
+        check(health.kills == 2 && health.bags == 3 && health.linked == 2 && health.lost == 3 && health.refused == nil,
+              "totals: not a removal 3 s after the last hit, nor a mob only others hit")
         _ = store.run("INSERT INTO sessions(file, started, status) VALUES ('r', 1763300040, 'refused\tentry_bytes')", [])
-        check(DropDay.load(store, since: 0).refused == "refused\tentry_bytes", "the latest game's refusal shows")
+        check(CaptureHealth.load(store).refused == "refused\tentry_bytes", "the latest game's refusal shows")
         _ = store.run("INSERT INTO sessions(file, started) VALUES ('ok', 1763300050)", [])
-        check(DropDay.load(store, since: 0).refused == nil, "an earlier game's refusal clears once a later one captures")
+        check(CaptureHealth.load(store).refused == nil, "an earlier game's refusal clears once a later one captures")
         // Enchantments: real stat 80 parts from staging run 1 (0, 1 and 2 enchantments), an empty slot, a cut-off part.
         check(Enchantments.counts("AAIE_f_9__3__f8FAA==,AAIEGgX9__3__f8FAA==,AAIEcAFcBf3__f8FAA==,,AAIE_f_9") == [0, 1, 2, nil, nil],
               "enchantments per slot")
@@ -214,7 +212,7 @@ enum DropRateTests {
               "best bag from the bosses, per run")
         check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
               report.textures[588] == GameTexture(file: "lostHallsObjects8x8", index: 167), "names, bosses and sprites")
-        check(report.dungeons == ["The Void"] && report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
+        check(report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
         check(report.rarity[boss]?[588] == [0, 0, 1, 0, 0] && report.rarity[minion]?[588] == [0, 1, 0, 0, 0] &&
               report.rarityCounts(588) == [0, 1, 1, 0, 0] && report.bestEnchants(588) == 2 &&
               report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "rarity per mob and item; unread copies in none")
@@ -226,5 +224,20 @@ enum DropRateTests {
         check(report.answer(DropQuestion(item: DropQuestion.anyWhite, rarity: .uncommon, mobs: .minions, per: .white))
               == .init(rate: DropRate(count: 1, of: 2), unit: "white bags", unread: 1), "per white bag, unread copies counted apart")
         check(report.answer(DropQuestion(item: DropQuestion.anyUT, from: "Lost Halls")).rate.of == 0, "no kills there, no rate")
+        // Item categories (issue #45), from real catalog labels.
+        check(ItemCategory(labels: ",EQUIPMENT,WEAPON,SWORD,TIERED,LOOTABLE,T7,T7_WEAPON,TRADEABLE,") == .init(kind: .weapon, tier: 7) &&
+              ItemCategory(kind: .weapon, tier: 7).name == "T7 weapons", "a T7 sword is a T7 weapon")
+        check(ItemCategory(labels: ",EQUIPMENT,ABILITY,SHEATH,UT,TAB_UT,POWERTIER_C,ORG_ABYSS,").kind == .ut &&
+              ItemCategory(labels: ",EQUIPMENT,ABILITY,ORB,STATMOD,ST,TAB_ST,ST_ABILITY,").kind == .st &&
+              ItemCategory(labels: ",EQUIPMENT,CONSUMABLE,STATPOTION,").name == "Stat potions" &&
+              ItemCategory(labels: ",EQUIPMENT,CONSUMABLE,TIERED,LOOTABLE,T1,TRADEABLE,") == .init(kind: .consumable) &&
+              ItemCategory(labels: "").name == "Other", "UT, ST, potions and the rest")
+        check([ItemCategory(kind: .armor, tier: 5), .init(kind: .weapon, tier: 6), .init(kind: .ut), .init(kind: .weapon, tier: 7)].sorted()
+              == [.init(kind: .ut), .init(kind: .weapon, tier: 7), .init(kind: .weapon, tier: 6), .init(kind: .armor, tier: 5)], "category order")
+        // A dungeon's origin code and possible drops: tagged items, dropped or not, and anything that dropped there.
+        var tagged = report
+        tagged.origins = [588: ",VOID,", 700: ",VOID,", 701: ",SHATTERS,"]
+        check(tagged.origin(of: "The Void") == "VOID" && Set(tagged.possibleDrops("The Void")) == [9, 588, 700] &&
+              tagged.origin(of: "Lost Halls") == nil, "possible drops")
     }
 }

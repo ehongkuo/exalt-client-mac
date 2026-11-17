@@ -319,76 +319,24 @@ enum LootImport {
     }
 }
 
-/// Today's capture at a glance: what the Today view shows, and how a staging run is checked.
-/// Rates and the counting rules (a kill's top bag class) come with the rates view.
-struct DropDay: Equatable {
-    struct Mob: Hashable { var type: Int, map: String, kills: Int, bags: [DropBag: Int] }
-    struct Notable: Hashable {
-        var time: Double, bag: DropBag, mob: Int?, items: [Int]
-        var enchants: [Int?] = []   // per item; nil where the bag's enchantment text is missing or cut short
-    }
+/// Capture health over all the data kept (issue #45): kills, bags and how many were linked to a kill, records lost,
+/// and whether the latest game refused capture. The drop rates sidebar and the guard's Drop rates row show it.
+struct CaptureHealth: Equatable {
     var kills = 0, bags = 0, linked = 0, lost = 0
     var refused: String?
-    var mobs: [Mob] = []
-    var notable: [Notable] = []
 
-    static let notableBags: Set<DropBag> = [.white, .orange, .red]
-
-    /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
-    /// that left your view.
-    // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
-    // that left a bag.
-    static let died = """
-        (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
-        AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
-        """
-
-    static func load(_ store: DropRateStore, since: Double, mobLimit: Int = 20) -> DropDay {
-        var day = DropDay()
-        store.run("SELECT count(*) FROM kills k WHERE k.time >= ? AND \(died)", [since]) { day.kills = Int(sqlite3_column_int64($0, 0)) }
-        store.run("SELECT count(*), count(kill) FROM bags WHERE time >= ?", [since]) {
-            day.bags = Int(sqlite3_column_int64($0, 0)); day.linked = Int(sqlite3_column_int64($0, 1))
+    static func load(_ store: DropRateStore) -> CaptureHealth {
+        var h = CaptureHealth()
+        store.run("SELECT count(*) FROM kills k WHERE \(DropReport.died)") { h.kills = Int(sqlite3_column_int64($0, 0)) }
+        store.run("SELECT count(*), count(kill) FROM bags") {
+            h.bags = Int(sqlite3_column_int64($0, 0)); h.linked = Int(sqlite3_column_int64($0, 1))
         }
-        store.run("SELECT coalesce(sum(lost), 0) FROM capture_gaps WHERE time >= ?", [since]) { day.lost = Int(sqlite3_column_int64($0, 0)) }
-        // Only the latest game counts: a refusal from an earlier game today is gone once a later one captures.
-        store.run("SELECT status FROM (SELECT status FROM sessions WHERE started >= ? ORDER BY id DESC LIMIT 1) WHERE status LIKE 'refused%'", [since - 86400]) {
-            day.refused = String(cString: sqlite3_column_text($0, 0))
+        store.run("SELECT coalesce(sum(lost), 0) FROM capture_gaps") { h.lost = Int(sqlite3_column_int64($0, 0)) }
+        // Only the latest game counts: an earlier refusal is gone once a later game captures.
+        store.run("SELECT status FROM (SELECT status FROM sessions ORDER BY id DESC LIMIT 1) WHERE status LIKE 'refused%'") {
+            h.refused = String(cString: sqlite3_column_text($0, 0))
         }
-        store.run("""
-            SELECT k.mob_type, coalesce(m.name, ''), count(*) FROM kills k JOIN maps m ON m.id = k.map
-            WHERE k.time >= ? AND \(died) GROUP BY k.mob_type, m.name ORDER BY count(*) DESC LIMIT ?
-            """, [since, mobLimit]) {
-            day.mobs.append(Mob(type: Int(sqlite3_column_int64($0, 0)), map: String(cString: sqlite3_column_text($0, 1)),
-                                kills: Int(sqlite3_column_int64($0, 2)), bags: [:]))
-        }
-        // Kills that left a bag of each colour (an overflow second bag of the same colour counts once).
-        store.run("""
-            SELECT k.mob_type, coalesce(m.name, ''), b.bag_type, count(DISTINCT k.id) FROM bags b
-            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE k.time >= ? GROUP BY 1, 2, 3
-            """, [since]) {
-            let type = Int(sqlite3_column_int64($0, 0)), map = String(cString: sqlite3_column_text($0, 1))
-            guard let bag = DropBag(id: Int(sqlite3_column_int64($0, 2))),
-                  let i = day.mobs.firstIndex(where: { $0.type == type && $0.map == map }) else { return }
-            day.mobs[i].bags[bag, default: 0] += Int(sqlite3_column_int64($0, 3))
-        }
-        store.run("""
-            SELECT b.time, b.bag_type, k.mob_type, group_concat(i.slot || ':' || i.item_type),
-                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bags b
-            LEFT JOIN kills k ON k.id = b.kill LEFT JOIN bag_items i ON i.bag = b.id
-            WHERE b.time >= ? GROUP BY b.id ORDER BY b.time DESC
-            """, [since]) {
-            guard day.notable.count < 10, let bag = DropBag(id: Int(sqlite3_column_int64($0, 1))), notableBags.contains(bag) else { return }
-            let slots = (sqlite3_column_text($0, 3).map { String(cString: $0) } ?? "").split(separator: ",")
-                .compactMap { pair -> (Int, Int)? in
-                    let p = pair.split(separator: ":").compactMap { Int($0) }
-                    return p.count == 2 ? (p[0], p[1]) : nil
-                }.sorted { $0.0 < $1.0 }
-            let enchants = Enchantments.counts(sqlite3_column_text($0, 4).map { String(cString: $0) } ?? "")
-            day.notable.append(Notable(time: sqlite3_column_double($0, 0), bag: bag,
-                                       mob: sqlite3_column_type($0, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64($0, 2)),
-                                       items: slots.map(\.1), enchants: slots.map { $0.0 < enchants.count ? enchants[$0.0] : nil }))
-        }
-        return day
+        return h
     }
 }
 
@@ -451,7 +399,7 @@ struct DropRate: Equatable {
 
 /// Everything the drop rates views show past Today (issues #41, #45), from all the data kept. Every query of the
 /// views is here, so a change in the data's shape after a staging run changes this one place.
-/// - A kill is `DropDay.died`; its drops are the items in bags linked to it (`bags.kill`).
+/// - A kill is `died`; its drops are the items in bags linked to it (`bags.kill`).
 /// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
 ///   second bag of the same colour adds nothing.
 /// - A run is a map visit in which a boss (catalog `boss`) died; per-run rates count runs with at least one.
@@ -475,9 +423,19 @@ struct DropReport: Equatable {
     var drops: [Copy] = []
     var runMaps: Set<Int> = []                      // the map visits that are runs
     var labels: [Int: String] = [:]                 // item labels from the catalog, wrapped in commas
+    var origins: [Int: String] = [:]                // item → the catalog's origin codes (",ABYSS,"), for every tagged item
     var names: [Int: String] = [:]
     var bosses: Set<Int> = []
     var textures: [Int: GameTexture] = [:]
+
+    /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
+    /// that left your view.
+    // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
+    // that left a bag.
+    static let died = """
+        (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
+        AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
+        """
 
     /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
     static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
@@ -486,7 +444,7 @@ struct DropReport: Equatable {
 
     static func load(_ store: DropRateStore) -> DropReport {
         var r = DropReport()
-        let died = DropDay.died, rank = Self.rank
+        let died = Self.died, rank = Self.rank
         let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
         func int(_ s: OpaquePointer, _ i: Int32) -> Int { Int(sqlite3_column_int64(s, i)) }
         func text(_ s: OpaquePointer, _ i: Int32) -> String { sqlite3_column_text(s, i).map { String(cString: $0) } ?? "" }
@@ -550,14 +508,15 @@ struct DropReport: Equatable {
         }
         for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
         store.run("""
-            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL FROM objects
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, labels FROM items
-            WHERE type IN (SELECT item_type FROM bag_items)
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, labels, origin FROM items
+            WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL
             """) {
             let type = int($0, 0)
             r.names[type] = text($0, 1)
             if sqlite3_column_type($0, 5) != SQLITE_NULL { r.labels[type] = text($0, 5) }
+            if sqlite3_column_type($0, 6) != SQLITE_NULL { r.origins[type] = text($0, 6) }
             if int($0, 2) != 0 { r.bosses.insert(type) }
             if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
         }
@@ -607,8 +566,48 @@ struct DropReport: Equatable {
     func dropped(_ item: Int) -> Int { copies.values.reduce(0) { $0 + ($1[item] ?? 0) } }
     /// Every item dropped, by name.
     var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
-    /// Dungeons with a run, most runs first.
-    var dungeons: [String] { runs.keys.sorted { (runs[$0]!, $1) > (runs[$1]!, $0) } }
+    func category(_ item: Int) -> ItemCategory { ItemCategory(labels: labels[item] ?? "") }
+
+    /// The catalog origin code of a dungeon: the one most common among the items that dropped there.
+    // shortcut: inferred from drops, so a dungeon has none until a tagged item drops there; a hand table of
+    // map names to codes would cover dungeons with no tagged drop yet.
+    func origin(of dungeon: String) -> String? {
+        var counts: [String: Int] = [:]
+        for copy in drops where copy.mob.dungeon == dungeon {
+            for code in (origins[copy.item] ?? "").split(separator: ",") { counts[String(code), default: 0] += 1 }
+        }
+        return counts.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key
+    }
+    /// A dungeon's possible drops: items the catalog tags with its origin, and every item that dropped there.
+    func possibleDrops(_ dungeon: String) -> [Int] {
+        let tagged = origin(of: dungeon).map { code in origins.filter { $0.value.contains(",\(code),") }.keys } ?? [:].keys
+        let dropped = drops.filter { $0.mob.dungeon == dungeon }.map(\.item)
+        return Set(tagged).union(dropped).sorted { (category($0), name($0)) < (category($1), name($1)) }
+    }
+}
+
+/// An item group for the Items view and the dungeon pages (issue #45), from the catalog's labels: UTs, STs, tiered
+/// weapons, armor, abilities and rings by tier, stat potions, other consumables, and everything else.
+struct ItemCategory: Hashable, Comparable {
+    enum Kind: Int { case ut, st, weapon, armor, ability, ring, statPotion, consumable, other }
+    var kind: Kind
+    var tier: Int?   // tiered weapons, armor, abilities and rings
+
+    init(kind: Kind, tier: Int? = nil) { self.kind = kind; self.tier = tier }
+    init(labels: String) {
+        let set = Set(labels.split(separator: ",").map(String.init))
+        let tier = set.lazy.compactMap { $0.hasPrefix("T") ? Int($0.dropFirst()) : nil }.first
+        let kind: Kind = set.contains("UT") ? .ut : set.contains("ST") ? .st : set.contains("STATPOTION") ? .statPotion
+            : set.contains("WEAPON") ? .weapon : set.contains("ARMOR") ? .armor : set.contains("ABILITY") ? .ability
+            : set.contains("RING") ? .ring : set.contains("CONSUMABLE") ? .consumable : .other
+        self.init(kind: kind, tier: [.weapon, .armor, .ability, .ring].contains(kind) ? tier : nil)
+    }
+    var name: String {
+        let kind = ["Untiered (UT)", "Set tier (ST)", "weapons", "armor", "abilities", "rings", "Stat potions", "Consumables", "Other"][self.kind.rawValue]
+        return tier.map { "T\($0) \(kind)" } ?? (kind.first!.isLowercase ? kind.prefix(1).uppercased() + kind.dropFirst() : kind)
+    }
+    /// UT and ST first, then each kind by tier, highest first.
+    static func < (a: Self, b: Self) -> Bool { (a.kind.rawValue, -(a.tier ?? -1)) < (b.kind.rawValue, -(b.tier ?? -1)) }
 }
 
 /// A question for Ask a question: what dropped (an item's name or a kind), its rarity, from where and which mobs, per what.

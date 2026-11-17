@@ -349,9 +349,17 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
      `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
      (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
-4. **Rarity and custom questions (#45):** one window. Today, Mobs, Items, Dungeons and Ask a question are
-   views of the main window, which widens to about 1040 pt for them and stops floating; the guard view
-   keeps its own frame and Keep on top. Today took over the Drop data panel. Rules as built:
+4. **Rarity and custom questions (#45):** one window. Mobs, Items and Ask a question are views of the main
+   window, which widens to about 1040 pt for them and stops floating; the guard view keeps its own frame and
+   Keep on top. The sidebar shows capture health over all the data (kills, bags linked, records lost, capture
+   refused); the Drop data panel and the Today view are gone. Rules as built:
+   - **Dungeon pages** open from a dungeon's name in Mobs: drop sources, the bosses' best bag per run, and
+     possible drops by category. Possible drops are the items the catalog tags with the dungeon's origin
+     code (`ORG_*`), plus every item that dropped there. The code is inferred: the one most common among the
+     dungeon's drops, so a dungeon has none until a tagged item drops there.
+   - **Item categories** come from the catalog's labels, not RealmEye: UT, ST, tiered weapons, armor,
+     abilities and rings by tier, stat potions, other consumables, other (`ItemCategory`). Items lists
+     categories first; a category opens its items, and clicking a category on a dungeon page opens it there.
    - **Rarity** is a copy's enchantment count from its bag's stat 80 (`Enchantments`). A copy with no part
      in the stat (potions, stones) or a cut-short part has no rarity and counts in none.
    - **Ask a question** (`DropReport.answer`) counts matching copies over kills, white bags (kills whose best
