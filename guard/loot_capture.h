@@ -33,6 +33,10 @@ static NativeHook loot_hooks[LOOT_HOOK_COUNT];
  * Update handler's call into remove-object for each dropped id. Other callers remove projectiles. */
 #define LOOT_DAMAGE_CALLER 0x92658fUL
 #define LOOT_DROP_CALLER 0x936072UL
+/* Mobs' damage method is an override (0x980ac0) that calls the base one we hook from here, so the
+ * real caller (your shot, the Damage handler) is one frame up. */
+#define LOOT_OVERRIDE 0x980ac0UL
+#define LOOT_OVERRIDE_CALLER 0x980aecUL
 
 static LootRing loot_ring;
 static LootHits loot_hits;
@@ -155,7 +159,12 @@ static int loot_live(void) {
 static void loot_damage_observed(void *self, uint8_t flag0, int damage, void *effects, uint8_t kill, void *projectile,
                                  uint8_t a, uint8_t b, const void *info) {
     /* Read before forwarding, while the mob is still whole. */
-    if (self && loot_live()) loot_hit(self, damage, (uintptr_t)__builtin_return_address(0) - loot_base);
+    if (self && loot_live()) {
+        uintptr_t caller = (uintptr_t)__builtin_return_address(0) - loot_base;
+        /* The override keeps a frame pointer (checked at install), so one frame up is its caller. */
+        if (caller == LOOT_OVERRIDE_CALLER) caller = (uintptr_t)(*(void *const *const *)__builtin_frame_address(0))[1] - loot_base;
+        loot_hit(self, damage, caller);
+    }
     loot_damage_original(self, flag0, damage, effects, kill, projectile, a, b, info);
 }
 static void loot_message_observed(void *self, void *message, void **target, const void *info) {
@@ -292,6 +301,11 @@ static void loot_install(void *player) {
     int32_t relative;
     memcpy(&relative, drop_call + 1, sizeof relative);
     if (drop_call[0] != 0xe8 || LOOT_DROP_CALLER + (intptr_t)relative != REMOVE_OBJECT_OFFSET) { loot_refuse("caller_bytes"); return; }
+    static const unsigned char frame[] = {0x55, 0x48, 0x89, 0xe5};   /* push rbp; mov rbp, rsp */
+    const unsigned char *base_call = (const unsigned char *)(loot_base + LOOT_OVERRIDE_CALLER - 5);
+    memcpy(&relative, base_call + 1, sizeof relative);
+    if (memcmp((void *)(loot_base + LOOT_OVERRIDE), frame, sizeof frame) || base_call[0] != 0xe8 ||
+        LOOT_OVERRIDE_CALLER + (intptr_t)relative != ENEMY_DAMAGE_OFFSET) { loot_refuse("override_bytes"); return; }
     const unsigned char *bytes[] = {enemydamage_prologue, damagemessage_prologue, newobject_prologue, removeobject_prologue,
                                     statusapply_prologue, newtick_prologue};
     size_t lengths[] = {sizeof enemydamage_prologue, sizeof damagemessage_prologue, sizeof newobject_prologue,
