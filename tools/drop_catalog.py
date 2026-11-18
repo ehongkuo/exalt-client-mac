@@ -137,8 +137,9 @@ def dungeon_mobs(html):
     html = wiki(html)
     start = html.find('<h2 id="enemies"')
     if start < 0: return []
-    end = next((m.start() for m in re.finditer(r'<h2\b(?: id="([^"]*)")?', html[start:])
-                if m.start() > 0 and m.group(1) not in ('boss', 'roomboss')), len(html) - start)
+    # The mobs run to the first heading after Enemies that isn't a boss's ("Boss", "Treasure Room Boss").
+    end = next((m.start() for m in re.finditer(r'<h2\b[^>]*>(.*?)</h2>', html[start:])
+                if m.start() > 0 and 'boss' not in m.group(1).casefold()), len(html) - start)
     parts = re.split(r'<h[234][^>]*>(.*?)</h[234]>', html[start:start + end])
     mobs = []
     for heading, body in zip(parts[1::2], parts[2::2]):
@@ -362,8 +363,9 @@ def self_test():
            '<a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"><br>Den Rat</a>'
            '<h3>Environmental Hazards</h3><a href="/wiki/den-lava"><img alt="Den Lava" src="/s/v.png"></a>'
            '<h2 id="boss">Boss</h2><a href="/wiki/den-king"><img alt="Den King" title="Den King" src="/s/k.png"></a>'
+           '<h2>Treasure Room Boss</h2><a href="/wiki/den-idol"><img alt="Den Idol" src="/s/i.png"></a>'
            '<h2 id="interest">Drops of Interest</h2><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></div>')
-    assert dungeon_mobs(den) == [('den-rat', 'Den Rat'), ('den-king', 'Den King')], dungeon_mobs(den)
+    assert dungeon_mobs(den) == [('den-rat', 'Den Rat'), ('den-king', 'Den King'), ('den-idol', 'Den Idol')], dungeon_mobs(den)
     king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><p>Base HP: 100</p>'
             '<h3 id="drops">Drops</h3><table><tr><td><img alt="Purple Bag" src="/s/b.png"></td>'
             '<td><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></td><td><a href="/wiki/den-sword">Den Sword</a>'
@@ -405,7 +407,7 @@ def self_test():
                                     drops=['0x0020']), c['mobs'][0]
         assert {(e['kind'], e['realmeye']) for e in c['unmatched']} == {('dungeon', 'Oryx’s Nook'), ('drop', 'Pet Eggs')}, c['unmatched']
         assert c['sprites'] == {'0x0013': '0x0013.png'} and open(os.path.join(art, '0x0013.png')).read() == 'PNG'
-        assert [p for p, _ in fetch.missing] == []   # a dungeon the game lacks isn't fetched
+        assert [p for p, _ in fetch.missing] == ['/wiki/den-idol']   # a dungeon the game lacks isn't fetched
         assert diff({}, c)[:2] == [f'+ dungeon {REALM}', '+ dungeon Test Den'] and diff(c, c) == []
 
         db = os.path.join(folder, 'drop_rates.db')
