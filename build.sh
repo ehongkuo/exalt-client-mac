@@ -2,7 +2,7 @@
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
 # Usage: ./build.sh               (tests + build + install; the game must be closed)
-#        ./build.sh --stage       (tests + build "Exalt Client Mac Staging.app" into build/, never
+#        ./build.sh --stage       (tests + build "Exalt Client Mac Staging <issue>.app" into build/, never
 #                                  installs: live-test a PR with its own data folder and settings)
 #        ./build.sh --app-only --sync-capture (temporary observation-only app)
 #        ./build.sh --test-only
@@ -24,9 +24,14 @@ done
 src="${0:A:h}"
 out="$src/build"
 cache="$src/module-cache"
-# The staged app gets its own name, bundle id (so its own defaults) and data folder (the app
-# names its Application Support folder after CFBundleName).
-if (( stage )); then app_name='Exalt Client Mac Staging'; bundle_id=local.exalt.clientmac.staging
+# Each worktree's staged app gets its own name, bundle id (so its own defaults) and data folder (the
+# app names its Application Support folder after CFBundleName), tagged with the branch's issue number
+# (feature/49-... -> "Exalt Client Mac Staging 49"), so several can be open at once (issue #49).
+if (( stage )); then
+    branch="$(git -C "$src" branch --show-current 2>/dev/null || true)"
+    tag="${${branch:t}%%-*}"
+    [[ "$tag" == <-> ]] || tag="${${src:t}//[^A-Za-z0-9-]/-}"   # no issue number: the worktree's folder name
+    app_name="Exalt Client Mac Staging $tag"; bundle_id="local.exalt.clientmac.staging.$tag"
 else app_name='Exalt Client Mac'; bundle_id=local.exalt.clientmac; fi
 app="$out/$app_name.app"
 installed="$HOME/Applications/Exalt Client Mac.app"
@@ -56,6 +61,7 @@ python3 "$src/tools/drop_check.py" --self-test
 python3 "$src/tools/drop_backfill.py" --self-test
 python3 "$src/tools/drop_catalog.py" --self-test
 python3 "$src/tools/drop_catalog.py" check
+python3 "$src/tools/drop_merge.py" --self-test
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
 "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"

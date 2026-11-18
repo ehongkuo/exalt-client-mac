@@ -3,7 +3,7 @@
 
     tools/drop_check.py [--db PATH] [--realmhound DIR] [--session N]
 
-Compares one capture session in drop_rates.db (default: the staging app's, latest session) with
+Compares one capture session in drop_rates.db (default: the shared one both apps use, latest session) with
 RealmHound's loot and boss-fight records for the same time window, and prints what a staging run
 has to answer: do your bags match, is each bag counted once, does each link to a kill of the right
 mob, how long after the last hit removal kills come, how far bags land from their kills, and which
@@ -17,7 +17,7 @@ import sqlite3
 import statistics
 import sys
 
-STAGING_DB = '~/Library/Application Support/Exalt Client Mac Staging/drop_rates.db'
+DROP_DB = '~/Library/Application Support/Exalt Client Mac/drop_rates.db'   # shared by both apps (issue #49)
 REALMHOUND = '~/Library/Application Support/RealmHound/accounts'
 FACTORS = ('fame', 'is_seasonal', 'exalt_bonus', 'loot_drop_active', 'loot_tier_active', 'char_id', 'class_id')
 
@@ -166,7 +166,7 @@ def self_test():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--db', default=STAGING_DB)
+    parser.add_argument('--db', default=DROP_DB)
     parser.add_argument('--realmhound', default=REALMHOUND)
     parser.add_argument('--session', type=int, help='capture session id (default: latest)')
     parser.add_argument('--self-test', action='store_true')

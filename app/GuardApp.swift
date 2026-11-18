@@ -8,7 +8,7 @@ import UserNotifications
 private let ok = Color.green, warn = Color.orange, bad = Color.red
 private let panelBackground = Color(white: 0.15)
 
-/// "Exalt Client Mac Staging" for ./build.sh --stage: its own data folder and defaults, marked in the UI.
+/// "Exalt Client Mac Staging <issue>" for ./build.sh --stage: each worktree's own data folder and defaults, marked in the UI.
 private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? GuardPaths.prodName
 private let isStaging = appName != GuardPaths.prodName
 
@@ -16,6 +16,7 @@ private let isStaging = appName != GuardPaths.prodName
 private let liveURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_LIVE_FILE"] ?? "/dev/null")
 private let settingsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_SETTINGS_FILE"] ?? "/dev/null")
 private let dataURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_DATA_DIR"] ?? "/nonexistent")
+private let dropsURL = dataURL
 #else
 private let dataURL: URL = {
     let home = FileManager.default.homeDirectoryForCurrentUser, prod = GuardPaths.dataFolder(home: home)
@@ -26,6 +27,12 @@ private let dataURL: URL = {
         for (key, value) in defaults { UserDefaults.standard.set(value, forKey: key) }
     }
     return staging
+}()
+/// One drop_rates.db for the installed and staging apps (issue #49): it lives in the installed app's data folder.
+private let dropsURL: URL = {
+    let prod = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
+    try? FileManager.default.createDirectory(at: prod, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    return prod
 }()
 private let liveURL = GuardPaths.liveFile(data: dataURL)
 private let settingsURL = GuardPaths.settingsFile(data: dataURL)
@@ -789,7 +796,7 @@ struct GuardPanel {
         return HStack(spacing: 8) {
             Circle().fill(dot).frame(width: 7, height: 7)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            if isStaging { Pill(text: "STAGING", color: .blue) }
+            if isStaging { Pill(text: appName.dropFirst(GuardPaths.prodName.count + 1).uppercased(), color: .blue) }   // "STAGING 49"
             Spacer()
             Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
                 .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
@@ -1273,7 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         lootQueue.async {
             var health: CaptureHealth?
-            if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
+            if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)   // and the bundled drop catalog
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
@@ -1311,8 +1318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private func loadRates() {
         ratesLoaded = Date().timeIntervalSince1970
         lootQueue.async {
-            guard let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) else {
-                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db) in the app's data folder can't be opened." }
+            guard let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) else {
+                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
                 return
             }
             let report = DropReport.load(store)

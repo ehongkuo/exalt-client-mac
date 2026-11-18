@@ -144,7 +144,7 @@ final class DropRateStore {
             sqlite3_close(handle); return nil
         }
         db = handle
-        sqlite3_busy_timeout(db, 2000)
+        sqlite3_busy_timeout(db, 5000)   // the installed and staging apps share the file (issue #49)
         guard sqlite3_exec(db, Self.schema, nil, nil, nil) == SQLITE_OK else { return nil }
         var version = 0
         run("PRAGMA user_version") { version = Int(sqlite3_column_int64($0, 0)) }
