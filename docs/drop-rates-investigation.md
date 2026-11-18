@@ -200,7 +200,7 @@ offset it stored) in one SQLite transaction per file, and deletes a file once it
 
 ### Store
 
-`~/Library/Application Support/Exalt Client Mac/drop_rates.db` (staging uses its own folder), WAL
+`~/Library/Application Support/Exalt Client Mac/drop_rates.db` (the staging app shares this file, issue #49), WAL
 mode, opened only by the app.
 
 | Table | Columns | Notes |

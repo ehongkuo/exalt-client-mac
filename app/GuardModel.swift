@@ -3,7 +3,8 @@ import Foundation
 
 /// Where things live. The guard and the build check ship inside the app, so the app can be
 /// moved anywhere; settings and logs go to ~/Library/Application Support/<app name>, so a staging
-/// build ("Exalt Client Mac Staging", from ./build.sh --stage) never touches the installed app's.
+/// build ("Exalt Client Mac Staging <issue>", from ./build.sh --stage) never touches the installed app's or another's.
+/// The one exception is drop_rates.db, which both apps share in the installed app's folder (issue #49).
 enum GuardPaths {
     static let prodName = "Exalt Client Mac"
     static func dataFolder(home: URL, name: String = prodName) -> URL { home.appendingPathComponent("Library/Application Support/\(name)") }
@@ -252,6 +253,30 @@ enum JoinPopupRules {
         if now - shownAt >= timeout || !live { return true }
         if let s = snapshot, !WaitingMaps.contains(s) { return true }
         return status == .sent && now - statusSince >= afterJoin
+    }
+}
+
+/// Which window is up: the main window or the compact strip. Hiding the last regular window counts as
+/// "last window closed", which would quit the app, so the strip shows first and quitting waits while it
+/// is up. A full-screen main window leaves full screen first, or hiding it leaves an empty space behind.
+struct WindowMode {
+    enum Step: Equatable { case leaveFullScreen, showStrip, hideMain, showMain, hideStrip, activate }
+    private(set) var compact = false
+    private var compactAfterFullScreen = false
+    var quitsWhenLastWindowCloses: Bool { !compact }
+    mutating func toCompact(fullScreen: Bool) -> [Step] {
+        if fullScreen { compactAfterFullScreen = true; return [.leaveFullScreen] }
+        compact = true
+        return [.showStrip, .hideMain]
+    }
+    mutating func didLeaveFullScreen() -> [Step] {
+        guard compactAfterFullScreen else { return [] }
+        compactAfterFullScreen = false
+        return toCompact(fullScreen: false)
+    }
+    mutating func toFull() -> [Step] {
+        compact = false
+        return [.showMain, .hideStrip, .activate]
     }
 }
 
