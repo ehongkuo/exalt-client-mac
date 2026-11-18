@@ -544,6 +544,7 @@ struct DropReport: Equatable {
             SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
+                OR name IN (SELECT name || ' Shiny' FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
             """) {
             let type = int($0, 0)
             r.names[type] = text($0, 1)
@@ -607,7 +608,7 @@ struct DropReport: Equatable {
     /// Items of one tier and slot family, which share a tile: T12 weapons, T5 rings. Untiered items (UTs, STs,
     /// whites) have no group.
     struct Group: Hashable {
-        enum Family: Int, CaseIterable { case weapons, armors, abilities, rings }
+        enum Family: Int, CaseIterable { case weapons, abilities, armors, rings }
         var tier: Int, family: Family
         var name: String { "T\(tier) \(family)" }
     }
@@ -633,23 +634,22 @@ struct DropReport: Equatable {
         case group(Group, [Int])
         var items: [Int] { switch self { case .item(let i): return [i]; case .group(_, let items): return items } }
     }
-    /// Items as tiles by bag (nil: no bag known). Shinies fold into their base; groups come first (best tier first),
-    /// then items that `dropped`, then the rest, each by name.
-    func tiles(_ items: Set<Int>, dropped: Set<Int>) -> [DropBag?: [Tile]] {
+    /// Items as tiles by bag (nil: no bag known). Shinies fold into their base. Sorted weapons, abilities, armors, rings,
+    /// then everything else (potions, eggs, …); within each, untiered (UTs, STs) first, then best tier, then by name.
+    func tiles(_ items: Set<Int>) -> [DropBag?: [Tile]] {
         let bases = Set(items.map(base))
-        let dropped = Set(dropped.map(base))
+        func key(_ tile: Tile) -> (Int, Int, String) {
+            let first = tile.items[0], tier = tiers[first]
+            let family = slots[first].flatMap(Self.family)?.rawValue ?? Group.Family.allCases.count
+            return (family, tier.map { -$0 } ?? Int.min, name(first))
+        }
         return Dictionary(grouping: bases) { bag($0) }.mapValues { inBag in
             let byGroup = Dictionary(grouping: inBag) { group($0) }
             var groups: [Tile] = [], singles: [Int] = []
             for (g, members) in byGroup {
                 if let g, members.count > 1 { groups.append(.group(g, members.sorted { name($0) < name($1) })) } else { singles += members }
             }
-            groups.sort {
-                guard case .group(let a, _) = $0, case .group(let b, _) = $1 else { return false }
-                return (a.family.rawValue, -a.tier) < (b.family.rawValue, -b.tier)
-            }
-            singles.sort { (dropped.contains($0) ? 0 : 1, name($0)) < (dropped.contains($1) ? 0 : 1, name($1)) }
-            return groups + singles.map(Tile.item)
+            return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }
     }
 

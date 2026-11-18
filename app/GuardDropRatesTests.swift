@@ -255,9 +255,9 @@ enum DropRateTests {
               "a shiny's base, and its group")
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
-        let row = tiled.tiles([800, 801, 802, 803], dropped: [801])[.cyan]
-        check(row == [.group(weapons, [801, 800]), .item(803)] && weapons.name == "T12 weapons",
-              "one tile per tier group, shinies folded in, a lone member stays an item")
+        let row = tiled.tiles([9, 800, 801, 802, 803])
+        check(row[.cyan] == [.group(weapons, [801, 800]), .item(803)] && weapons.name == "T12 weapons",
+              "one tile per tier group, shinies folded in, a lone member stays an item; weapons before armors")
         let sources = tiled.sources(tiled.variants(800))
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
