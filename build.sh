@@ -54,6 +54,7 @@ clang -Wall -Wextra -Werror "$src/tests/loot_tests.c" -o "$tests/loot-tests"
 "$tests/loot-tests"
 python3 "$src/tools/drop_check.py" --self-test
 python3 "$src/tools/drop_backfill.py" --self-test
+python3 "$src/tools/drop_merge.py" --self-test
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
 "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"
