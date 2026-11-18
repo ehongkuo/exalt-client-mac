@@ -183,6 +183,39 @@ flowchart LR
 
 Every box is a real file on your Mac, except the server. Green is installed by this project, amber is DECA's (installed by their launcher), blue is data the app and guard write. The guard's file sits in the app, but it runs inside the game once the launcher starts it.
 
+### Drop data
+
+```mermaid
+flowchart LR
+    game["<b>RotMG Exalt</b><br/>guard injected at launch<br/>one game at a time"]
+    subgraph apps["Apps: own settings and logs/ each"]
+        direction TB
+        prod["<b>Exalt Client Mac</b><br/>installed"]
+        s47["<b>Exalt Client Mac Staging 47</b><br/>a worktree's staging build"]
+        s49["<b>Exalt Client Mac Staging 49</b><br/>another worktree's"]
+    end
+    xml["<b>RealmHound game XML</b><br/>read only"]
+    db[("<b>drop_rates.db</b><br/>in the Exalt Client Mac data folder<br/>shared by every build")]
+    game -. "loot-#lt;started#gt;-#lt;pid#gt;.tsv<br/>into the launching app's logs/" .-> apps
+    prod -- imports --> db
+    s47 -- imports --> db
+    s49 -- imports --> db
+    xml -- "item, mob and dungeon names" --> db
+
+    classDef ours fill:#e1f2ee,stroke:#1f8a78,color:#1b2124
+    classDef deca fill:#f8eedc,stroke:#b7791f,color:#1b2124
+    classDef shared fill:#e6e9f7,stroke:#4f63b8,color:#1b2124
+    class prod,s47,s49 ours
+    class game,xml deca
+    class db shared
+```
+
+Every build, the installed app and each worktree's staging app, saves drops into one `drop_rates.db`, so a kill
+captured from any of them shows in all. Each app imports only the loot logs in its own `logs/` folder; a loot file
+is one game, imported once and deleted when the game has ended. The database runs in WAL mode with a 5 s busy
+timeout, so several apps can be open at once. `tools/drop_merge.py TARGET SOURCE` joins two drop databases, each
+game once.
+
 ## Validation and limits
 
 Live tests have demonstrated predicted-death escapes both in the standalone diagnostic and in the integrated app with potions disabled. Tested cases include low-HP crossings and rapid multi-shot bursts. The integrated app has automated coverage for Armed, Dry Run, toggle off, HP resets, denied requests, exceptions, changing settings during escape, and legacy settings without any percentage Nexus fallback.
@@ -202,6 +235,19 @@ diagnostic under `build/damage-diagnostic/`, with isolated session bundles and n
 ./build.sh --app-only    # builds and installs without running tests
 ./build.sh --stage       # tests + "Exalt Client Mac Staging <issue>.app" in build/, not installed
 ```
+
+```mermaid
+flowchart LR
+    issue["Issue"] --> wt["Worktree + branch<br/>feature/49-shared-drop-db"]
+    wt --> stage["./build.sh --stage<br/>tests + Exalt Client Mac Staging 49.app"]
+    stage --> live["Live test<br/>STAGING 49 badge"]
+    live --> merge["Merge the PR"]
+    merge --> install["./build.sh on main<br/>installs to ~/Applications"]
+```
+
+Each staging build is named after its branch's issue number, with its own bundle id, data folder and settings, so
+builds from different worktrees can be open side by side. Its first run copies the installed app's settings. Only
+`./build.sh` on main installs to ~/Applications.
 
 The automated tests use a simulated game/runtime and do not act on the real game. Close the game before running the UI checks. A running client must be closed before installing its replacement; a running game can keep its existing integration until the next launch.
 
