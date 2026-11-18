@@ -82,16 +82,14 @@ enum DropRateTests {
         check(!FileManager.default.fileExists(atPath: file.path), "an ended game's file is removed")
         check(int("SELECT ended > started FROM sessions") == 1, "session times")
 
-        // Today's summary, as the Drop data panel shows it.
-        let day = DropDay.load(store, since: 0)
-        check(day.kills == 2 && day.bags == 3 && day.linked == 2 && day.lost == 3, "day totals: not a removal 3 s after the last hit, nor a mob only others hit")
-        check(day.mobs.first == DropDay.Mob(type: 3340, map: "Shatters", kills: 2, bags: [.orange: 1, .purple: 1]), "kills by mob, with bag colours")
-        check(day.notable == [DropDay.Notable(time: 1763300020.0, bag: .orange, mob: 3340, items: [2856, 2856], enchants: [nil, nil])],
-              "notable bags only; no enchantments from text that does not decode")
+        // Capture health, as the drop rates sidebar shows it.
+        let health = CaptureHealth.load(store)
+        check(health.kills == 2 && health.bags == 3 && health.linked == 2 && health.lost == 3 && health.refused == nil,
+              "totals: not a removal 3 s after the last hit, nor a mob only others hit")
         _ = store.run("INSERT INTO sessions(file, started, status) VALUES ('r', 1763300040, 'refused\tentry_bytes')", [])
-        check(DropDay.load(store, since: 0).refused == "refused\tentry_bytes", "the latest game's refusal shows")
+        check(CaptureHealth.load(store).refused == "refused\tentry_bytes", "the latest game's refusal shows")
         _ = store.run("INSERT INTO sessions(file, started) VALUES ('ok', 1763300050)", [])
-        check(DropDay.load(store, since: 0).refused == nil, "an earlier game's refusal clears once a later one captures")
+        check(CaptureHealth.load(store).refused == nil, "an earlier game's refusal clears once a later one captures")
         // Enchantments: real stat 80 parts from staging run 1 (0, 1 and 2 enchantments), an empty slot, a cut-off part.
         check(Enchantments.counts("AAIE_f_9__3__f8FAA==,AAIEGgX9__3__f8FAA==,AAIEcAFcBf3__f8FAA==,,AAIE_f_9") == [0, 1, 2, nil, nil],
               "enchantments per slot")
@@ -181,10 +179,12 @@ enum DropRateTests {
 
         // Rates (issue #41): 1 in N, and a 95% range from the drop count (exact Poisson values).
         let ten = DropRate(count: 10, of: 1000)
-        check(abs(ten.range.lowerBound - 0.0047954) < 1e-6 && abs(ten.range.upperBound - 0.0183904) < 1e-6 && !ten.rough,
+        check(abs(ten.range.lowerBound - 0.0047954) < 1e-6 && abs(ten.range.upperBound - 0.0183904) < 1e-6,
               "exact range at 10 drops")
         let none = DropRate(count: 0, of: 100)
-        check(none.range.lowerBound == 0 && abs(none.range.upperBound - 0.0368888) < 1e-6 && none.rough, "no drops still has a range")
+        check(none.range.lowerBound == 0 && abs(none.range.upperBound - 0.0368888) < 1e-6, "no drops still has a range")
+        check(DropRate(count: 3, of: 9).precision == nil && abs(DropRate(count: 4, of: 9).precision! - 0.98) < 1e-9 &&
+              abs(DropRate(count: 100, of: 900).precision! - 0.196) < 1e-9, "precision: ±1.96/√drops, none under 4 drops")
         check(abs(DropRate.poissonRange(1).0 - 0.0253178) < 1e-6 && abs(DropRate.poissonRange(400).0 - 361.756) < 0.01 &&
               abs(DropRate.poissonRange(400).1 - 441.187) < 0.01, "exact below 50 drops, Byar above")
         check(DropRate(count: 3, of: 0).range == 0...0 && DropRate(count: 3, of: 0).rate == 0, "no kills, no rate")
@@ -210,15 +210,67 @@ enum DropRateTests {
         let report = DropReport.load(rates)
         let boss = DropReport.Mob(type: 1, dungeon: "The Void"), minion = DropReport.Mob(type: 2, dungeon: "The Void")
         check(report.runs == ["The Void": 2], "runs: visits where the boss died")
-        check(report.runsWith["The Void"]?[588] == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
+        check(report.runsWith("The Void", [588]) == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
         check(report.kills == [boss: 2, minion: 2] && report.copies[minion]?[588] == 2, "kills and copies by mob")
         check(report.bestBag[boss] == [.white: 1, .orange: 1], "best bag per kill: white over purple")
         check(report.bossBags["The Void"]?[nil] == [.white: 1, .orange: 1] && report.bossBags["The Void"]?[1] == [.white: 1, .orange: 1],
               "best bag from the bosses, per run")
         check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
               report.textures[588] == GameTexture(file: "lostHallsObjects8x8", index: 167), "names, bosses and sprites")
-        check(report.dungeons == ["The Void"] && report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
-        check(report.enchants[boss]?[588] == 2 && report.enchants[minion]?[588] == 1 && report.bestEnchants(588) == 2 &&
-              report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "most enchantments per mob and item")
+        check(report.dropped(588) == 3 && report.items == [9, 588], "lists for the tabs")
+        check(report.rarity[boss]?[588] == [0, 0, 1, 0, 0] && report.rarity[minion]?[588] == [0, 1, 0, 0, 0] &&
+              report.rarityCounts(588) == [0, 1, 1, 0, 0] && report.bestEnchants(588) == 2 &&
+              report.bestEnchants(588, dungeon: "Lost Halls") == nil && report.bestEnchants(9) == nil, "rarity per mob and item; unread copies in none")
+        // Dungeons (issue #45): templated ones and maps with kills; drop tags are template labels some item carries.
+        check(rates.exec("""
+            UPDATE items SET origin = ',VOID,', bag_type = 6 WHERE type = 588;
+            INSERT INTO items(type, name, origin, bag_type) VALUES (700, 'Void Blade', ',VOID,', 6), (701, 'Shatters Robe', ',SHATTERS,', 8);
+            INSERT INTO dungeons(name, portal, texture_file, texture_index, labels) VALUES
+                ('The Void', 1500, 'portals', 3, ',ANY,VOID,'), ('Lost Halls', NULL, NULL, NULL, ',ANY,LH,'), ('Test Portal', 1501, 'portals', 4, NULL);
+            """), "dungeon rows")
+        let atlas = DropReport.load(rates)
+        let void = atlas.dungeons.first { $0.name == "The Void" }
+        check(atlas.dungeons.map(\.name) == ["Lost Halls", "The Void"] && void?.codes == ["VOID"] && void?.portal == 1500 &&
+              atlas.textures[1500] == GameTexture(file: "portals", index: 3), "templated or killed in; a portal alone is not listed")
+        check(void.map(atlas.possibleDrops) == [9, 588, 700], "possible drops: tagged, dropped or not, and anything that dropped there")
+        check(atlas.bag(700) == .white && atlas.bag(9) == .orange && DropBag(bagType: 8) == .orange && DropBag(bagType: 10) == nil,
+              "an item's bag: the catalog's, else the best it came in")
+        check(atlas.mobs(in: "The Void") == [boss, minion], "bosses first")
+        check(GameNames.dungeonTemplates(inXML: """
+            <DungeonModTemplate id="Abyss of Demons">
+              <IncludedLabels>ANY,ABYSS,SKIN_HUNTER</IncludedLabels></DungeonModTemplate>
+            <DungeonModTemplate id="No Labels"><GradeOption id="D" /></DungeonModTemplate>
+            """) == ["Abyss of Demons": ["ANY", "ABYSS", "SKIN_HUNTER"]], "template labels")
+        check(GameNames.objects(inXML: "<Object type=\"0x071b\" id=\"Abyss of Demons Portal\"><Class>Portal</Class><DungeonName>Abyss of Demons</DungeonName></Object>")
+              .first?.dungeon == "Abyss of Demons", "a portal's dungeon")
+
+        // Tiles and sources (issue #45): shinies fold into their base, a tier and slot family share a tile, and any-of
+        // counts a run once. Run 1 drops the sword, its shiny and the dagger; run 2 the dagger.
+        check(rates.exec("""
+            INSERT INTO items(type, name, origin, bag_type, tier, slot_type) VALUES (800, 'Test Sword', ',VOID,', 4, 12, 1),
+                (801, 'Test Dagger', ',VOID,', 4, 12, 2), (802, 'Test Sword Shiny', NULL, 4, NULL, 1), (803, 'Test Robe', ',VOID,', 4, 12, 14);
+            INSERT INTO bags(id, map, time, bag_type, kill) VALUES (7, 1, 1, 1292, 1), (8, 2, 3, 1292, 3);
+            INSERT INTO bag_items(bag, slot, item_type) VALUES (7, 0, 800), (7, 1, 802), (7, 2, 801), (8, 0, 801);
+            """), "tile rows")
+        let tiled = DropReport.load(rates)
+        let weapons = DropReport.Group(tier: 12, family: .weapons)
+        check(tiled.base(802) == 800 && tiled.variants(800) == [800, 802] && tiled.group(802) == weapons && tiled.group(9) == nil,
+              "a shiny's base, and its group")
+        check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
+              "any-of: a run with the sword and its shiny, or with two of a group, counts once")
+        let row = tiled.tiles([9, 800, 801, 802, 803])
+        check(row[.cyan] == [.group(weapons, [800, 801]), .item(803)] && weapons.name == "T12 weapons",
+              "one tile per tier group in rotation order (sword, dagger), shinies folded in, a lone member stays an item; weapons before armors")
+        check(tiled.rotation(801)! == (1, 6) && tiled.rotation(803)! == (2, 3) && tiled.rotation(9) == nil, "rotation places: dagger 2nd of 6, robe 3rd of 3")
+        check(tiled.kinds([803, 801, 802, 800, 9]) == [[800, 802], [801], [803], [9]],
+              "kinds in rotation order; two items of one kind share a turn; unplaced last")
+        var alt = tiled; alt.slots[801] = 1; alt.subtypes = [800]   // two swords, 800 the alternate
+        check(alt.kinds([800, 801, 802]) == [[801], [800, 802]], "a slot's base type before its alternate, the shiny with its base")
+        check(tiled.members[weapons] == [800, 801] && tiled.tierItems("We12 Ar12,13 Xx1") == [800, 801, 803],
+              "a tier group holds every catalog item of it; RealmEye codes expand to their groups")
+        let sources = tiled.sources(tiled.variants(800))
+        check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
+              "an item's sources: per dungeon, runs with one, copies by mob")
+        check(tiled.rarityCounts([588, 800]) == [0, 1, 1, 0, 0], "rarity over a set of items")
     }
 }
