@@ -272,8 +272,11 @@ enum DropRateTests {
         check(tiled.kills[boss] == 2 && tiled.mobRuns[boss] == 2 && tiled.mobRuns[minion] == 1,
               "runs a mob died in: the minion's map-3 kill had no boss, so it is not a run")
         let mobTiles = tiled.tiles(of: boss)
-        check(mobTiles[.cyan] == [.group(weapons, [800, 801])] && mobTiles[.white] == [.item(588)] && mobTiles[.orange] == [.item(9)]
-              && mobTiles.count == 3, "a mob's drops as the grid's tiles, by bag; the shiny folds into its sword")
+        check(mobTiles[.cyan] == [.group(weapons, [800, 801]), .item(803)] && mobTiles[.white] == [.item(588), .item(700)] &&
+              mobTiles[.orange] == [.item(9)] && mobTiles.count == 3,
+              "a boss's tiles: its drops (the shiny folded into its sword) and its dungeon's tagged items not dropped yet")
+        check(tiled.possibleDrops(minion) == [588] && tiled.killsWith(boss, [.item(700)]) == 0,
+              "a minion gets only its own drops and RealmEye tiers, not the dungeon's tags; an undropped item has no kills")
         check(tiled.killsWith(boss, [.group(weapons, [800, 801])]) == 2 && tiled.killsWith(boss, [.item(800)]) == 1 &&
               tiled.killsWith(boss, [.item(588), .item(9)]) == 2 && tiled.killsWith(minion, [.item(588)]) == 2,
               "kills with at least one: the sword and its shiny in one kill count once; a bag or group counts a kill once")

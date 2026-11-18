@@ -503,7 +503,7 @@ struct DropRatesView: View {
 
 /// A mob's page (issue #50), laid out like the dungeon's grid: a row per bag with the bag's total, then a cell per
 /// untiered item with its drop chance per kill, drops/kills and ±, then a full-width row per tier group that opens in
-/// place to the items it dropped. An item opens its item page.
+/// place to its items. Items it can drop but hasn't yet are faded at 0/N. An item opens its item page.
 struct MobPage: View {
     @ObservedObject var model: DropRatesModel
     var mob: DropReport.Mob
@@ -549,7 +549,7 @@ struct MobPage: View {
                                     VStack(alignment: .leading, spacing: 6) {
                                         cell(tile, kills: kills)
                                         if model.openGroups.contains(group) {
-                                            grid(items.filter { report.killsWith(mob, [.item($0)]) > 0 }.map(DropReport.Tile.item), kills: kills)
+                                            grid(items.map(DropReport.Tile.item), kills: kills)
                                                 .padding([.horizontal, .bottom], 6)
                                         }
                                     }
@@ -562,7 +562,7 @@ struct MobPage: View {
                     Divider()
                 }
             }
-            Text("Drop chance: the share of kills that dropped at least one. A tier group opens the items it dropped; an item opens its page. Esc steps back.")
+            Text("Drop chance: the share of kills that dropped at least one. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). A tier group opens its items; an item opens its page. Esc steps back.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -596,7 +596,7 @@ struct MobPage: View {
                         GroupTile(sprites: model.rotation(items, first: first), tier: group.tier)
                     }
                 }
-                .frame(width: 32, height: 32)
+                .frame(width: 32, height: 32).opacity(n > 0 ? 1 : 0.35)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     numbers(n, of: kills, stacked: false)
@@ -609,13 +609,15 @@ struct MobPage: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills")
+        .help(n > 0 ? "\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills" : "\(name): not dropped by this mob yet")
         .accessibilityLabel("\(name), \(DropRate(count: n, of: kills).percent) per kill")
     }
 
-    /// "45%" over "9/20 · ±65%" ("too few" under 4 drops), faded when looser than ±50% as elsewhere in the tab.
+    /// "45%" over "9/20 · ±65%" ("too few" under 4 drops, "under 18%" with none), faded when looser than ±50% as elsewhere in the tab.
     private func numbers(_ n: Int, of kills: Int, stacked: Bool) -> some View {
-        let rate = DropRate(count: n, of: kills), counts = "\(n.formatted())/\(kills.formatted())", detail = rate.plusMinus ?? "too few"
+        let rate = DropRate(count: n, of: kills), counts = "\(n.formatted())/\(kills.formatted())"
+        // None yet: the top of the 95% range, as "rarer than 1 in N" reads elsewhere in the tab.
+        let detail = n == 0 ? "under \(DropRate.percent(rate.range.upperBound))" : rate.plusMinus ?? "too few"
         return VStack(alignment: stacked ? .center : .leading, spacing: 0) {
             Text(rate.percent).font(.system(size: 14, weight: .semibold))
             if stacked { Text(counts); Text(detail) } else { Text("\(counts) · \(detail)") }

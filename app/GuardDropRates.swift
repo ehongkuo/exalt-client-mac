@@ -409,7 +409,8 @@ struct DropRate: Equatable {
     /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
     var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
     /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
-    var percent: String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
+    var percent: String { Self.percent(rate) }
+    static func percent(_ rate: Double) -> String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
     static func oneIn(_ rate: Double) -> String {
         rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
     }
@@ -688,9 +689,18 @@ struct DropReport: Equatable {
     /// A dungeon's possible drops: items the catalog tags with one of its drop tags, its mobs' tiered loot by RealmEye,
     /// and every item that dropped there.
     func possibleDrops(_ dungeon: Dungeon) -> Set<Int> {
-        let tagged = origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys
-        return Set(tagged).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
+        tagged(dungeon).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
             .union(kills.keys.filter { $0.dungeon == dungeon.name }.flatMap(tierItems))
+    }
+    /// Items the catalog tags with one of a dungeon's drop tags.
+    func tagged(_ dungeon: Dungeon) -> Set<Int> {
+        Set(origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys)
+    }
+    /// A mob's possible drops: what it dropped and its tiered loot by RealmEye; a boss also gets its dungeon's tagged
+    /// items, which the catalog lists per dungeon, not per mob (so a minion doesn't).
+    func possibleDrops(_ mob: Mob) -> Set<Int> {
+        let dungeon = bosses.contains(mob.type) ? dungeons.first { $0.name == mob.dungeon } : nil
+        return Set((copies[mob] ?? [:]).keys).union(tierItems(mob)).union(dungeon.map(tagged) ?? [])
     }
     /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
     func base(_ item: Int) -> Int { shinyOf[item] ?? item }
@@ -796,8 +806,8 @@ struct DropReport: Equatable {
         return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
     }
 
-    /// A mob's drops as the grid's tiles, by bag, for its page.
-    func tiles(of mob: Mob) -> [DropBag?: [Tile]] { tiles(Set((copies[mob] ?? [:]).keys)) }
+    /// A mob's possible drops as the grid's tiles, by bag, for its page.
+    func tiles(of mob: Mob) -> [DropBag?: [Tile]] { tiles(possibleDrops(mob)) }
     /// A mob's kills that dropped at least one of the tiles' items (or their shinies): the mob page's drop chance.
     func killsWith(_ mob: Mob, _ tiles: [Tile]) -> Int {
         tiles.flatMap(\.items).reduce(into: Set<Int>()) { kills, item in
