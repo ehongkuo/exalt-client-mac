@@ -357,7 +357,7 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    - **Dungeons and search:** every dungeon the catalog lists (a `<DungeonModTemplate>`, or one in
      `DropReport.dropTags`) and every map with kills, with its portal sprite; played ones first. Search shows
      two groups, Items (opens the item page) and Dungeons.
-   - **Bags and drops:** a breadcrumb (dungeon › mob › group › item, each a step back; Esc steps back too), one
+   - **Bags and drops:** a breadcrumb (dungeon › mob › group › item, each a step back; Esc steps back too),
      BOSSES and MINIONS rows of mob chips (a mob shows only its drops; Esc or the breadcrumb shows all), then one row of tiles per bag,
      by the catalog's `<BagType>` (`DropBag(bagType:)`). Shinies ("X Shiny" by id) fold into their base item.
      Items of one `<Tier>` and slot family (weapons, armors, abilities, rings by `<SlotType>`) share a tile,
