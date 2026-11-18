@@ -129,7 +129,7 @@ struct DropRatesView: View {
     }
 
     private var report: DropReport { model.report }
-    private func kills(in dungeon: String) -> Int { report.mobs(in: dungeon).reduce(0) { $0 + report.kills[$1]! } }
+    private func kills(in dungeon: String) -> Int { report.mobs(in: dungeon).reduce(0) { $0 + (report.kills[$1] ?? 0) } }
     /// The picked dungeon, or the one with the most kills.
     private var dungeon: DropReport.Dungeon? {
         report.dungeons.first { $0.name == model.dungeon } ?? report.dungeons.max { kills(in: $0.name) < kills(in: $1.name) }
@@ -228,7 +228,7 @@ struct DropRatesView: View {
         let mobs = report.mobs(in: d.name)
         let runs = report.runs[d.name] ?? 0
         let dropped = Set(mobs.flatMap { (report.copies[$0] ?? [:]).keys })
-        let shown = model.mob.map { Set((report.copies[$0] ?? [:]).keys).union(report.tierItems($0)) } ?? report.possibleDrops(d)
+        let shown = model.mob.map { Set((report.copies[$0] ?? [:]).keys).union(report.catalogDrops($0)) } ?? report.possibleDrops(d)
         let rows = report.tiles(shown)
         return VStack(alignment: .leading, spacing: 12) {
             breadcrumb(d)
@@ -299,7 +299,7 @@ struct DropRatesView: View {
             Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
-                let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob]!
+                let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob] ?? 0
                 chip(selected: model.mob == mob, { model.group = nil; model.mob = model.mob == mob ? nil : mob }) {
                     SpriteIcon(image: model.sprites[mob.type], size: 20)
                     Text(name).lineLimit(1)

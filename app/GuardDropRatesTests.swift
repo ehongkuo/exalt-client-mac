@@ -263,11 +263,35 @@ enum DropRateTests {
               "kinds in rotation order; two items of one kind share a turn; unplaced last")
         var alt = tiled; alt.slots[801] = 1; alt.subtypes = [800]   // two swords, 800 the alternate
         check(alt.kinds([800, 801, 802]) == [[801], [800, 802]], "a slot's base type before its alternate, the shiny with its base")
-        check(tiled.members[weapons] == [800, 801] && tiled.tierItems("We12 Ar12,13 Xx1") == [800, 801, 803],
-              "a tier group holds every catalog item of it; RealmEye codes expand to their groups")
+        check(tiled.members[weapons] == [800, 801], "a tier group holds every catalog item of it")
         let sources = tiled.sources(tiled.variants(800))
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
         check(tiled.rarityCounts([588, 800]) == [0, 1, 1, 0, 0], "rarity over a set of items")
+
+        // The drop catalog (issue #51): loaded with the game catalog, it lists a dungeon's mobs before any kill, and each
+        // mob's tier groups and named drops.
+        let catalogFile = folder.appendingPathComponent("drop_catalog.json")
+        try! """
+            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]}],
+             "mobs": [{"name": "Den Rat", "types": ["0x0003"], "tiers": {"weapon": [12], "armor": [12, 13], "wand": [1]},
+                       "drops": ["0x02bc"]}]}
+            """.write(to: catalogFile, atomically: false, encoding: .utf8)
+        check(GameNames.dropCatalog(Data("[]".utf8)) == nil, "not a catalog")
+        check(GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile), "catalog file loaded with the game catalog")
+        check(rates.exec("""
+            INSERT INTO items(type, name, bag_type, tier, slot_type) VALUES (800, 'Test Sword', 4, 12, 1), (801, 'Test Dagger', 4, 12, 2),
+                (803, 'Test Robe', 4, 12, 14), (700, 'Void Blade', 6, NULL, 1);
+            """), "items again: the rebuild replaced them with the XML's")
+        let cataloged = DropReport.load(rates)
+        let rat = DropReport.Mob(type: 3, dungeon: "The Void")
+        check(cataloged.catalogDrops(rat) == [700, 800, 801, 803, 2560], "a mob's drops: its tier groups (unknown families skipped) and named drops")
+        check(cataloged.mobs(in: "The Void").contains(rat) && cataloged.mobs(in: "New Den") == [DropReport.Mob(type: 3, dungeon: "New Den")],
+              "a cataloged mob shows with no kills")
+        let den = cataloged.dungeons.first { $0.name == "New Den" }
+        check(den.map(cataloged.possibleDrops) == [700, 800, 801, 803, 2560], "a dungeon never run is listed with its mobs' drops")
+        try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
+        check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
+              DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")
     }
 }

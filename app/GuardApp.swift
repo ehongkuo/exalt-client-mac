@@ -1274,7 +1274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         lootQueue.async {
             var health: CaptureHealth?
             if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
-                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)   // and the bundled drop catalog
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
             }

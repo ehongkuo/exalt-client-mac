@@ -54,6 +54,8 @@ clang -Wall -Wextra -Werror "$src/tests/loot_tests.c" -o "$tests/loot-tests"
 "$tests/loot-tests"
 python3 "$src/tools/drop_check.py" --self-test
 python3 "$src/tools/drop_backfill.py" --self-test
+python3 "$src/tools/drop_catalog.py" --self-test
+python3 "$src/tools/drop_catalog.py" check
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
 "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"
@@ -148,6 +150,7 @@ clang -arch x86_64 -O2 -Wall -Wextra -Werror -dynamiclib "${guard_flags[@]}" "$s
 # The app carries its own copy of the guard and the build record, so it works from anywhere.
 cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resources/"
 cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" "$app/Contents/Resources/compatibility-profile.json"
+cp "$src/data/drop_catalog.json" "$app/Contents/Resources/"   # the drop catalog (issue #51)
 
 print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \

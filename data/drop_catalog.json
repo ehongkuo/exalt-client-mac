@@ -1,0 +1,1528 @@
+{
+ "source": {
+  "site": "RealmEye",
+  "url": "https://www.realmeye.com",
+  "note": "Dungeons, mobs and drops from RealmEye; ids and sprites from the game data.",
+  "built": "2026-11-17"
+ },
+ "dungeons": [
+  {
+   "name": "Abyss of Demons",
+   "portal": "0x071b",
+   "realmeye": "abyss-of-demons",
+   "mobs": [
+    "0x090a"
+   ]
+  },
+  {
+   "name": "Ancient Ruins",
+   "portal": "0x25b9",
+   "realmeye": "ancient-ruins",
+   "mobs": [
+    "0x25be",
+    "0x25bf",
+    "0x70c3",
+    "0x70c7",
+    "0x70c9",
+    "0x70f3"
+   ]
+  },
+  {
+   "name": "Cave of A Thousand Treasures",
+   "portal": "0x5e2e",
+   "realmeye": "cave-of-a-thousand-treasures",
+   "mobs": []
+  },
+  {
+   "name": "Forbidden Jungle",
+   "portal": "0x0733",
+   "realmeye": "forbidden-jungle",
+   "mobs": []
+  },
+  {
+   "name": "Forest Maze",
+   "portal": "0x5f34",
+   "realmeye": "forest-maze",
+   "mobs": [
+    "0x5e4c",
+    "0x5e4d",
+    "0x5e60",
+    "0x5e61",
+    "0x5e62",
+    "0x5e63"
+   ]
+  },
+  {
+   "name": "Magic Woods",
+   "portal": "0x087c",
+   "realmeye": "magic-woods",
+   "mobs": [
+    "0x0850",
+    "0x0851",
+    "0x0853",
+    "0x0854",
+    "0x0856",
+    "0x0857",
+    "0x0859",
+    "0x085d",
+    "0x085f",
+    "0x0860",
+    "0x0862",
+    "0x0863",
+    "0x0865",
+    "0x0866",
+    "0x0868",
+    "0x0869",
+    "0x086b",
+    "0x086c",
+    "0x086e",
+    "0x0871",
+    "0x0874",
+    "0x0875",
+    "0x0877",
+    "0x0878",
+    "0x087a",
+    "0x087b"
+   ]
+  },
+  {
+   "name": "Pirate Cave",
+   "portal": "0x0717",
+   "realmeye": "pirate-cave",
+   "mobs": [
+    "0x0683",
+    "0x0684",
+    "0x0685",
+    "0x0686",
+    "0x0687",
+    "0x0688",
+    "0x0689",
+    "0x068a",
+    "0x068b",
+    "0x068c",
+    "0x068d",
+    "0x068e",
+    "0x068f"
+   ]
+  },
+  {
+   "name": "Snake Pit",
+   "portal": "0x0718",
+   "realmeye": "snake-pit",
+   "mobs": [
+    "0x0223",
+    "0x0224",
+    "0x0225",
+    "0x0226",
+    "0x0227",
+    "0x0228",
+    "0x0229",
+    "0x0917",
+    "0x0918",
+    "0x0919",
+    "0x0e26"
+   ]
+  },
+  {
+   "name": "Spider Den",
+   "portal": "0x0719",
+   "realmeye": "spider-den",
+   "mobs": []
+  },
+  {
+   "name": "Sprite World",
+   "portal": "0x070c",
+   "realmeye": "sprite-world",
+   "mobs": [
+    "0x0d00",
+    "0x0d01",
+    "0x0d02",
+    "0x0d03",
+    "0x0d04",
+    "0x0d05",
+    "0x0d06",
+    "0xc05b",
+    "0xc061",
+    "0xc063",
+    "0xc064",
+    "0xc065",
+    "0xc066",
+    "0xc067"
+   ]
+  },
+  {
+   "name": "The Hive",
+   "portal": "0x011d",
+   "realmeye": "the-hive",
+   "mobs": []
+  }
+ ],
+ "mobs": [
+  {
+   "name": "Archdemon Malphas",
+   "types": [
+    "0x090a"
+   ],
+   "realmeye": "archdemon-malphas",
+   "tiers": {
+    "ability": [
+     3,
+     4
+    ],
+    "armor": [
+     6,
+     8,
+     9
+    ],
+    "ring": [
+     3,
+     4
+    ],
+    "weapon": [
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a20",
+    "0x0a34",
+    "0x0c01",
+    "0x1e27",
+    "0x3439",
+    "0x38e1",
+    "0x39e2",
+    "0x39f1",
+    "0x39f2",
+    "0x39f3",
+    "0x39f4",
+    "0x39f5",
+    "0x39f6",
+    "0x39f7",
+    "0x39f8",
+    "0x39f9",
+    "0x39fa",
+    "0x3a1c",
+    "0x4b42",
+    "0x4b44",
+    "0x767c",
+    "0xea67"
+   ]
+  },
+  {
+   "name": "Armored Squirrel",
+   "types": [
+    "0x5e60"
+   ],
+   "realmeye": "armored-squirrel",
+   "tiers": {
+    "armor": [
+     3,
+     4
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     3,
+     4
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0c80"
+   ]
+  },
+  {
+   "name": "Brown Python",
+   "types": [
+    "0x0226"
+   ],
+   "realmeye": "brown-python",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a3f"
+   ]
+  },
+  {
+   "name": "Cactus",
+   "types": [
+    "0x25be",
+    "0x25bf"
+   ],
+   "realmeye": "cactus",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x70e5"
+   ]
+  },
+  {
+   "name": "Cave Pirate Brawler",
+   "types": [
+    "0x0687"
+   ],
+   "realmeye": "cave-pirate-brawler",
+   "tiers": {
+    "weapon": [
+     1
+    ]
+   },
+   "drops": [
+    "0x0a22"
+   ]
+  },
+  {
+   "name": "Cave Pirate Cabin Boy",
+   "types": [
+    "0x068f"
+   ],
+   "realmeye": "cave-pirate-cabin-boy",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Hunchback",
+   "types": [
+    "0x068e"
+   ],
+   "realmeye": "cave-pirate-hunchback",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Macaw",
+   "types": [
+    "0x068c"
+   ],
+   "realmeye": "cave-pirate-macaw",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Moll",
+   "types": [
+    "0x068a"
+   ],
+   "realmeye": "cave-pirate-moll",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Monkey",
+   "types": [
+    "0x068d"
+   ],
+   "realmeye": "cave-pirate-monkey",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Parrot",
+   "types": [
+    "0x068b"
+   ],
+   "realmeye": "cave-pirate-parrot",
+   "tiers": {
+    "ability": [
+     1
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Cave Pirate Sailor",
+   "types": [
+    "0x0688"
+   ],
+   "realmeye": "cave-pirate-sailor",
+   "tiers": {
+    "weapon": [
+     1
+    ]
+   },
+   "drops": [
+    "0x0a22"
+   ]
+  },
+  {
+   "name": "Cave Pirate Veteran",
+   "types": [
+    "0x0689"
+   ],
+   "realmeye": "cave-pirate-veteran",
+   "tiers": {
+    "weapon": [
+     1
+    ]
+   },
+   "drops": [
+    "0x0a22"
+   ]
+  },
+  {
+   "name": "Craig the Intern",
+   "types": [
+    "0xc05b",
+    "0xc061"
+   ],
+   "realmeye": "craig-the-intern",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Deyst",
+   "types": [
+    "0x086c"
+   ],
+   "realmeye": "deyst",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Drac",
+   "types": [
+    "0x0868"
+   ],
+   "realmeye": "drac",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Eango",
+   "types": [
+    "0x0860"
+   ],
+   "realmeye": "eango",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Eati",
+   "types": [
+    "0x087b"
+   ],
+   "realmeye": "eati",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Ehoni",
+   "types": [
+    "0x0866"
+   ],
+   "realmeye": "ehoni",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Fire Python",
+   "types": [
+    "0x0225"
+   ],
+   "realmeye": "fire-python",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a3f"
+   ]
+  },
+  {
+   "name": "Forest Goblin",
+   "types": [
+    "0x5e4c"
+   ],
+   "realmeye": "forest-goblin",
+   "tiers": {
+    "armor": [
+     3,
+     4
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     3,
+     4
+    ]
+   },
+   "drops": [
+    "0x0a23",
+    "0x0c80"
+   ]
+  },
+  {
+   "name": "Forest Goblin Mage",
+   "types": [
+    "0x5e4d"
+   ],
+   "realmeye": "forest-goblin-mage",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3,
+     4
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     3
+    ]
+   },
+   "drops": [
+    "0x0a23",
+    "0x0c80"
+   ]
+  },
+  {
+   "name": "Gharr",
+   "types": [
+    "0x0850"
+   ],
+   "realmeye": "gharr",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Greater Pit Snake",
+   "types": [
+    "0x0228"
+   ],
+   "realmeye": "greater-pit-snake",
+   "tiers": {
+    "ring": [
+     2
+    ]
+   },
+   "drops": [
+    "0x0a3f"
+   ]
+  },
+  {
+   "name": "Greater Pit Viper",
+   "types": [
+    "0x0229"
+   ],
+   "realmeye": "greater-pit-viper",
+   "tiers": {
+    "ring": [
+     2
+    ]
+   },
+   "drops": [
+    "0x0a3f"
+   ]
+  },
+  {
+   "name": "Iatho",
+   "types": [
+    "0x0853"
+   ],
+   "realmeye": "iatho",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Iawa",
+   "types": [
+    "0x0878"
+   ],
+   "realmeye": "iawa",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Issz",
+   "types": [
+    "0x086b"
+   ],
+   "realmeye": "issz",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Laen",
+   "types": [
+    "0x0857"
+   ],
+   "realmeye": "laen",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Lauk",
+   "types": [
+    "0x086e"
+   ],
+   "realmeye": "lauk",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Limon the Sprite Goddess",
+   "types": [
+    "0x0d06"
+   ],
+   "realmeye": "limon-the-sprite-goddess",
+   "tiers": {
+    "ability": [
+     3,
+     4,
+     5
+    ],
+    "armor": [
+     5,
+     6
+    ],
+    "ring": [
+     3
+    ],
+    "weapon": [
+     7,
+     8
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a20",
+    "0x0a4b",
+    "0x0a4c",
+    "0x0a5a",
+    "0x0c03",
+    "0x19bc",
+    "0x1e2f",
+    "0x2833",
+    "0x3439",
+    "0x4bb8"
+   ]
+  },
+  {
+   "name": "Lorz",
+   "types": [
+    "0x087a"
+   ],
+   "realmeye": "lorz",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Magic Lamp",
+   "types": [
+    "0x70c3",
+    "0x70f3"
+   ],
+   "realmeye": "genie",
+   "tiers": {
+    "ability": [
+     4
+    ],
+    "armor": [
+     7,
+     8,
+     9
+    ],
+    "ring": [
+     3,
+     4
+    ],
+    "weapon": [
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x2488",
+    "0x25bb",
+    "0x25bc",
+    "0x25bd",
+    "0x52c3",
+    "0x52c6"
+   ]
+  },
+  {
+   "name": "Mama Megamoth",
+   "types": [
+    "0x5e62"
+   ],
+   "realmeye": "mama-megamoth",
+   "tiers": {
+    "ability": [
+     1,
+     2
+    ],
+    "armor": [
+     3,
+     4,
+     5,
+     6
+    ],
+    "ring": [
+     2,
+     3
+    ],
+    "weapon": [
+     3,
+     4,
+     5
+    ]
+   },
+   "drops": [
+    "0x0c80",
+    "0x17fc",
+    "0x2380",
+    "0x2381",
+    "0x7673"
+   ]
+  },
+  {
+   "name": "Mini Megamoth",
+   "types": [
+    "0x5e61"
+   ],
+   "realmeye": "mini-megamoth",
+   "tiers": {},
+   "drops": [
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Native Darkness Sprite",
+   "types": [
+    "0x0d04"
+   ],
+   "realmeye": "native-darkness-sprite",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Native Fire Sprite",
+   "types": [
+    "0x0d00"
+   ],
+   "realmeye": "native-fire-sprite",
+   "tiers": {
+    "weapon": [
+     5
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Native Greater Darkness Sprite",
+   "types": [
+    "0xc067"
+   ],
+   "realmeye": "native-greater-darkness-sprite",
+   "tiers": {},
+   "drops": [
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Greater Fire Sprite",
+   "types": [
+    "0xc063"
+   ],
+   "realmeye": "native-greater-fire-sprite",
+   "tiers": {
+    "weapon": [
+     6
+    ]
+   },
+   "drops": [
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Greater Ice Sprite",
+   "types": [
+    "0xc064"
+   ],
+   "realmeye": "native-greater-ice-sprite",
+   "tiers": {
+    "ring": [
+     3
+    ]
+   },
+   "drops": [
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Greater Magic Sprite",
+   "types": [
+    "0xc065"
+   ],
+   "realmeye": "native-greater-magic-sprite",
+   "tiers": {
+    "ability": [
+     3
+    ]
+   },
+   "drops": [
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Greater Nature Sprite",
+   "types": [
+    "0xc066"
+   ],
+   "realmeye": "native-greater-nature-sprite",
+   "tiers": {
+    "armor": [
+     6
+    ]
+   },
+   "drops": [
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Ice Sprite",
+   "types": [
+    "0x0d01"
+   ],
+   "realmeye": "native-ice-sprite",
+   "tiers": {
+    "ring": [
+     2
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Native Magic Sprite",
+   "types": [
+    "0x0d02"
+   ],
+   "realmeye": "native-magic-sprite",
+   "tiers": {
+    "ability": [
+     2
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Nature Sprite",
+   "types": [
+    "0x0d03"
+   ],
+   "realmeye": "native-nature-sprite",
+   "tiers": {
+    "armor": [
+     5
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a4b"
+   ]
+  },
+  {
+   "name": "Native Sprite God",
+   "types": [
+    "0x0d05"
+   ],
+   "realmeye": "native-sprite-god",
+   "tiers": {
+    "ability": [
+     3,
+     4
+    ],
+    "armor": [
+     5,
+     6,
+     7,
+     8
+    ],
+    "ring": [
+     3,
+     4
+    ],
+    "weapon": [
+     6,
+     7,
+     8
+    ]
+   },
+   "drops": [
+    "0x0a1f",
+    "0x19bc"
+   ]
+  },
+  {
+   "name": "Odaru",
+   "types": [
+    "0x0869"
+   ],
+   "realmeye": "odaru",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Orothi",
+   "types": [
+    "0x0862"
+   ],
+   "realmeye": "orothi",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Pirate Admiral",
+   "types": [
+    "0x0686"
+   ],
+   "realmeye": "pirate-admiral",
+   "tiers": {
+    "armor": [
+     0,
+     1
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     2,
+     3
+    ]
+   },
+   "drops": [
+    "0x0a50"
+   ]
+  },
+  {
+   "name": "Pirate Captain",
+   "types": [
+    "0x0685"
+   ],
+   "realmeye": "pirate-captain",
+   "tiers": {
+    "armor": [
+     0,
+     1
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     2,
+     3
+    ]
+   },
+   "drops": [
+    "0x0a50"
+   ]
+  },
+  {
+   "name": "Pirate Commander",
+   "types": [
+    "0x0684"
+   ],
+   "realmeye": "pirate-commander",
+   "tiers": {
+    "armor": [
+     0,
+     1
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     2,
+     3
+    ]
+   },
+   "drops": [
+    "0x0a50"
+   ]
+  },
+  {
+   "name": "Pirate Lieutenant",
+   "types": [
+    "0x0683"
+   ],
+   "realmeye": "pirate-lieutenant",
+   "tiers": {
+    "armor": [
+     0,
+     1
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     2,
+     3
+    ]
+   },
+   "drops": [
+    "0x0a50"
+   ]
+  },
+  {
+   "name": "Pit Snake",
+   "types": [
+    "0x0223"
+   ],
+   "realmeye": "pit-snake",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Pit Viper",
+   "types": [
+    "0x0224"
+   ],
+   "realmeye": "pit-viper",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Radph",
+   "types": [
+    "0x085f"
+   ],
+   "realmeye": "radph",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Ril",
+   "types": [
+    "0x0856"
+   ],
+   "realmeye": "ril",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Rilr",
+   "types": [
+    "0x085d"
+   ],
+   "realmeye": "rilr",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Risrr",
+   "types": [
+    "0x0863"
+   ],
+   "realmeye": "risrr",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Sandstone Titan",
+   "types": [
+    "0x70c7",
+    "0x70c9"
+   ],
+   "realmeye": "sandstone-titan",
+   "tiers": {
+    "ability": [
+     4
+    ],
+    "armor": [
+     7,
+     8,
+     9
+    ],
+    "ring": [
+     3,
+     4
+    ],
+    "weapon": [
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x2488",
+    "0x25bb",
+    "0x25bc",
+    "0x25bd",
+    "0x3439",
+    "0x52c3",
+    "0x52c6",
+    "0x70d0",
+    "0xe07f"
+   ]
+  },
+  {
+   "name": "SayIt",
+   "types": [
+    "0x0854"
+   ],
+   "realmeye": "sayit",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Scheev",
+   "types": [
+    "0x0875"
+   ],
+   "realmeye": "scheev",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Sek",
+   "types": [
+    "0x0877"
+   ],
+   "realmeye": "sek",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Serl",
+   "types": [
+    "0x0874"
+   ],
+   "realmeye": "serl",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Seus",
+   "types": [
+    "0x0871"
+   ],
+   "realmeye": "seus",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Snakepit Guard",
+   "types": [
+    "0x0e26"
+   ],
+   "realmeye": "snakepit-guard",
+   "tiers": {
+    "armor": [
+     6,
+     8
+    ],
+    "weapon": [
+     7,
+     9
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a21",
+    "0x0a3e",
+    "0x0a40",
+    "0x0a41",
+    "0x0c04",
+    "0x14bf",
+    "0x4dee",
+    "0x928f"
+   ]
+  },
+  {
+   "name": "Stheno Pet",
+   "types": [
+    "0x0918"
+   ],
+   "realmeye": "stheno-pet",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Stheno Swarm",
+   "types": [
+    "0x0919"
+   ],
+   "realmeye": "stheno-swarm",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Stheno the Snake Queen",
+   "types": [
+    "0x0917"
+   ],
+   "realmeye": "stheno-the-snake-queen",
+   "tiers": {
+    "ability": [
+     2,
+     4
+    ],
+    "armor": [
+     8,
+     9,
+     10
+    ],
+    "weapon": [
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a21",
+    "0x0a3e",
+    "0x0a40",
+    "0x0a41",
+    "0x0c04",
+    "0x14bf",
+    "0x16d8",
+    "0x1e3b",
+    "0x2ae9",
+    "0x3439",
+    "0x4c16",
+    "0x4dee",
+    "0x928f"
+   ]
+  },
+  {
+   "name": "Tal",
+   "types": [
+    "0x0859"
+   ],
+   "realmeye": "tal",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Tiar",
+   "types": [
+    "0x0851"
+   ],
+   "realmeye": "tiar",
+   "tiers": {},
+   "drops": [
+    "0x083c"
+   ]
+  },
+  {
+   "name": "Ultimate Squirrel",
+   "types": [
+    "0x5e63"
+   ],
+   "realmeye": "ultimate-squirrel",
+   "tiers": {
+    "armor": [
+     2,
+     3
+    ],
+    "ring": [
+     1
+    ],
+    "weapon": [
+     3,
+     4
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0c80"
+   ]
+  },
+  {
+   "name": "Uoro",
+   "types": [
+    "0x0865"
+   ],
+   "realmeye": "uoro",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Yellow Python",
+   "types": [
+    "0x0227"
+   ],
+   "realmeye": "yellow-python",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a3f"
+   ]
+  }
+ ],
+ "unmatched": [
+  {
+   "kind": "drop",
+   "realmeye": "Celestial Forest Blueprint",
+   "mob": "Limon the Sprite Goddess",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Common Pet Eggs",
+   "mob": "Mama Megamoth",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Common Pet Eggs",
+   "mob": "Native Sprite God",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Demon Frog Pet Skin",
+   "mob": "Archdemon Malphas",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Pet Eggs",
+   "mob": "Archdemon Malphas",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Pet Eggs",
+   "mob": "Limon the Sprite Goddess",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Pet Eggs",
+   "mob": "Stheno the Snake Queen",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Stat Increase Potions",
+   "mob": "Magic Lamp",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Stat Increase Potions",
+   "mob": "Sandstone Titan",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Uncommon Pet Eggs",
+   "mob": "Native Sprite God",
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "Mad God Mayhem",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "Oryx’s Kitchen",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "Oryxmania",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "Santa’s Workshop",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "The Trials of Cronus",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "dungeon",
+   "realmeye": "Tutorial",
+   "why": "no portal with this <DungeonName>"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Zhiar",
+   "why": "no Character object with this name"
+  }
+ ],
+ "ambiguous": [
+  {
+   "kind": "drop",
+   "realmeye": "Adamantine Ingot",
+   "types": [
+    "0x39f1",
+    "0x39f2",
+    "0x39f3",
+    "0x39f4",
+    "0x39f5",
+    "0x39f6",
+    "0x39f7",
+    "0x39f8",
+    "0x39f9",
+    "0x39fa"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Snakeskin Armor",
+   "types": [
+    "0x0a3e",
+    "0x14bf"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Snakeskin Shield",
+   "types": [
+    "0x0a40",
+    "0x928f"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Cactus",
+   "types": [
+    "0x25be",
+    "0x25bf"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Craig the Intern",
+   "types": [
+    "0xc05b",
+    "0xc061"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Magic Lamp",
+   "types": [
+    "0x70c3",
+    "0x70f3"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Sandstone Titan",
+   "types": [
+    "0x70c7",
+    "0x70c9"
+   ]
+  }
+ ],
+ "sprites": {}
+}

@@ -3,6 +3,7 @@
 
     tools/drop_catalog.py build [--offline] [--refresh] [--db PATH]...
     tools/drop_catalog.py fetch PATH...     fetch single RealmEye pages into the cache, e.g. /wiki/dungeons
+    tools/drop_catalog.py check             check data/drop_catalog.json against the game data (./build.sh runs it)
     tools/drop_catalog.py --self-test
 
 build reads RealmEye's dungeon list, each dungeon's page and each of its mobs' pages, matches every
@@ -127,9 +128,15 @@ def dungeon_list(html):
 
 
 def image_links(html):
-    """(slug, name) of each image link, the way mobs are shown."""
-    found = re.findall(r'<a href="/wiki/([^"#]+)"><img [^>]*?alt="([^"]*)"', html)
-    return list(dict.fromkeys((slug, htmllib.unescape(name).strip()) for slug, name in found))
+    """(slug, name) of each image link, the way mobs are shown: the name is the image's alt text, else the
+    caption after it (a boss's image may have no alt)."""
+    found = re.findall(r'<a href="/wiki/([^"#]+)"><img ([^>]*)>(?:\s*<br>\s*([^<]+))?', html)
+    out = []
+    for slug, attrs, caption in found:
+        alt = re.search(r'\balt="([^"]*)"', attrs)
+        name = htmllib.unescape(alt[1] if alt and alt[1] else caption).strip()
+        if name: out.append((slug, name))
+    return list(dict.fromkeys(out))
 
 
 def dungeon_mobs(html):
@@ -148,7 +155,7 @@ def dungeon_mobs(html):
 
 
 def is_mob(html):
-    return 'Base HP' in html
+    return 'id="stats"' in html   # a mob's page opens with its stats (HP, DEF, EXP)
 
 
 def mob_drops(html):
@@ -214,6 +221,32 @@ class Game:
 
 
 def hexid(t): return f'0x{t:04x}'
+
+
+# Catalog entries the game data draws nothing for and RealmEye has no image of, with why. Empty so far.
+NO_SPRITE = {}
+
+
+def check(catalog, game, sprites=SPRITES):
+    """Problems with a catalog: an id the game data lacks or gives the wrong kind, or an entry with no sprite (no
+    texture in the game data, no RealmEye image in data/sprites, no reason in NO_SPRITE)."""
+    problems = []
+    def look(hexes, want, what):
+        for h in hexes:
+            o = game.objects.get(int(h, 16))
+            if o is None: problems.append(f'{what}: {h} is not in the game data'); continue
+            if want == 'mob' and o['cls'] != 'Character' or want == 'item' and not o['item'] or want == 'portal' and o['cls'] != 'Portal':
+                problems.append(f'{what}: {h} ({o["name"]}) is not a {want}')
+            elif not o['texture'] and h not in catalog.get('sprites', {}) and h not in NO_SPRITE:
+                problems.append(f'{what}: {h} ({o["name"]}) has no sprite')
+    for d in catalog['dungeons']:
+        look([d['portal']] if d.get('portal') else [], 'portal', d['name'])
+        look(d['mobs'], 'mob', d['name'])
+    for m in catalog['mobs']:
+        look(m['types'], 'mob', m['name'])
+        look(m['drops'], 'item', m['name'])
+    problems += [f'sprite {h}: {f} is missing' for h, f in catalog.get('sprites', {}).items() if not os.path.exists(os.path.join(sprites, f))]
+    return problems
 
 
 def build(fetch, game, sprites=SPRITES):
@@ -362,11 +395,11 @@ def self_test():
            '<h2 id="enemies">Enemies and Environmental Hazards</h2><h3>Enemies</h3>'
            '<a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"><br>Den Rat</a>'
            '<h3>Environmental Hazards</h3><a href="/wiki/den-lava"><img alt="Den Lava" src="/s/v.png"></a>'
-           '<h2 id="boss">Boss</h2><a href="/wiki/den-king"><img alt="Den King" title="Den King" src="/s/k.png"></a>'
+           '<h2 id="boss">Boss</h2><a href="/wiki/den-king"><img src="/s/k.png"><br>Den King</a>'
            '<h2>Treasure Room Boss</h2><a href="/wiki/den-idol"><img alt="Den Idol" src="/s/i.png"></a>'
            '<h2 id="interest">Drops of Interest</h2><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></div>')
     assert dungeon_mobs(den) == [('den-rat', 'Den Rat'), ('den-king', 'Den King'), ('den-idol', 'Den Idol')], dungeon_mobs(den)
-    king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><p>Base HP: 100</p>'
+    king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><h3 id="stats">Stats</h3><p>HP: 100</p>'
             '<h3 id="drops">Drops</h3><table><tr><td><img alt="Purple Bag" src="/s/b.png"></td>'
             '<td><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></td><td><a href="/wiki/den-sword">Den Sword</a>'
             '<sup><abbr title="Guaranteed">G</abbr></sup></td><td><a href="/wiki/weapons#tier-7">Tier 7 Weapons</a></td>'
@@ -390,7 +423,7 @@ def self_test():
         assert game.match('Den King', 'mob') == [0x11]       # the XML id wins over a display name
         assert game.match('Den Sword', 'item') == [0x20]     # a skin (no <BagType>) isn't loot
         assert game.match('den rat', 'mob') == [0x13] and game.match('Den Lava', 'mob') == []
-        rat = '<div class="wiki-page"><img alt="Den Rat" src="/s/r.png"><p>Base HP: 5</p></div>'
+        rat = '<div class="wiki-page"><img alt="Den Rat" src="/s/r.png"><h3 id="stats">Stats</h3></div>'
         pages = {'wiki/dungeons': listing, 'wiki/test-den': den, 'wiki/den-king': king, 'wiki/den-rat': rat,
                  'wiki/the-realm-enemies': '<div class="wiki-page"><a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"></a></div>',
                  's/r.png': 'PNG'}
@@ -409,6 +442,11 @@ def self_test():
         assert c['sprites'] == {'0x0013': '0x0013.png'} and open(os.path.join(art, '0x0013.png')).read() == 'PNG'
         assert [p for p, _ in fetch.missing] == ['/wiki/den-idol']   # a dungeon the game lacks isn't fetched
         assert diff({}, c)[:2] == [f'+ dungeon {REALM}', '+ dungeon Test Den'] and diff(c, c) == []
+        assert check(c, game, art) == [], check(c, game, art)
+        bad = json.loads(json.dumps(c)); bad['mobs'][0]['drops'] += ['0x0013', '0x0999']; bad['sprites'] = {}
+        assert sorted(check(bad, game, art)) == sorted(['Den King: 0x0013 (Den Rat) is not a item', 'Den King: 0x0999 is not in the game data',
+                                                        f'{REALM}: 0x0013 (Den Rat) has no sprite', 'Test Den: 0x0013 (Den Rat) has no sprite',
+                                                        'Den Rat: 0x0013 (Den Rat) has no sprite']), check(bad, game, art)
 
         db = os.path.join(folder, 'drop_rates.db')
         con = sqlite3.connect(db)
@@ -435,8 +473,16 @@ def main():
     b = sub.add_parser('build', help='build data/drop_catalog.json')
     b.add_argument('--db', action='append', help=f'drop_rates.db to check for gaps (default: {", ".join(DBS)})')
     b.add_argument('--out', default=OUT)
+    sub.add_parser('check', help='check data/drop_catalog.json against the game data')
     args = parser.parse_args()
     if args.self_test: return self_test()
+    if args.command == 'check':
+        if not glob.glob(os.path.join(XML, '*.xml')):
+            print('drop_catalog check skipped: no RealmHound XML'); return 0
+        with open(OUT, encoding='utf-8') as fh: catalog = json.load(fh)
+        problems = check(catalog, Game())
+        print('\n'.join(problems) if problems else f'drop_catalog check passed: {len(catalog["dungeons"])} dungeons, {len(catalog["mobs"])} mobs')
+        return 1 if problems else 0
     f = Fetcher(refresh=args.refresh, offline=args.offline)
     if args.command == 'fetch':
         for p in args.paths:
