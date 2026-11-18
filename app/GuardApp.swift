@@ -8,7 +8,7 @@ import UserNotifications
 private let ok = Color.green, warn = Color.orange, bad = Color.red
 private let panelBackground = Color(white: 0.15)
 
-/// "Exalt Client Mac Staging" for ./build.sh --stage: its own data folder and defaults, marked in the UI.
+/// "Exalt Client Mac Staging <issue>" for ./build.sh --stage: each worktree's own data folder and defaults, marked in the UI.
 private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? GuardPaths.prodName
 private let isStaging = appName != GuardPaths.prodName
 
@@ -796,7 +796,7 @@ struct GuardPanel {
         return HStack(spacing: 8) {
             Circle().fill(dot).frame(width: 7, height: 7)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            if isStaging { Pill(text: "STAGING", color: .blue) }
+            if isStaging { Pill(text: appName.dropFirst(GuardPaths.prodName.count + 1).uppercased(), color: .blue) }   // "STAGING 49"
             Spacer()
             Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
                 .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
