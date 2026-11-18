@@ -1515,6 +1515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showFull(); return true }
 }
 
+#if !GUARD_RENDER   // render_page.swift has its own main
 @main struct Main {
     static func main() {
         let app = NSApplication.shared
@@ -1524,3 +1525,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         withExtendedLifetime(delegate) {}
     }
 }
+#endif

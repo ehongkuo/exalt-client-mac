@@ -406,6 +406,10 @@ struct DropRate: Equatable {
     }
 
     /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
+    /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
+    var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
+    /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
+    var percent: String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
     static func oneIn(_ rate: Double) -> String {
         rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
     }
@@ -425,6 +429,9 @@ struct DropReport: Equatable {
     var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
     var runs: [String: Int] = [:]                   // by dungeon
     var mobRuns: [Mob: Int] = [:]                   // runs the mob died in
+    /// mob → item → the kills (ids) with at least one copy. Sets, so any-of counts (a bag, a tier group, an item and
+    /// its shiny) count a kill once.
+    var killsWith: [Mob: [Int: Set<Int>]] = [:]
     /// dungeon → item → the runs (map ids) with at least one copy. Sets, so any-of counts (base and shiny, a tier
     /// group) count a run once.
     var runMaps: [String: [Int: Set<Int>]] = [:]
@@ -589,7 +596,7 @@ struct DropReport: Equatable {
         var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
         store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id,
-                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bag_items i JOIN bags b ON b.id = i.bag
+                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80), k.id FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died)
             """) {
             let bag = int($0, 4), slot = int($0, 3)
@@ -597,6 +604,7 @@ struct DropReport: Equatable {
             decoded[bag] = counts
             let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2), n = slot < counts.count ? counts[slot] : nil
             r.drops.append(Copy(mob: mob, item: item, enchants: n))
+            r.killsWith[mob, default: [:]][item, default: []].insert(int($0, 6))
             if let n { r.rarity[mob, default: [:]][item, default: [0, 0, 0, 0, 0]][DropRarity(enchants: n).rawValue] += 1 }
         }
         store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
@@ -788,12 +796,13 @@ struct DropReport: Equatable {
         return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
     }
 
-    /// A mob's drops for its page: base items (shinies folded in) by bag, surest per kill first, then by name.
-    func drops(of mob: Mob) -> [DropBag?: [Int]] {
-        let kills = kills[mob] ?? 0
-        func low(_ item: Int) -> Double { DropRate(count: copies(mob, variants(item)), of: kills).range.lowerBound }
-        return Dictionary(grouping: Set((copies[mob] ?? [:]).keys.map(base))) { bag($0) }
-            .mapValues { $0.sorted { (low($0), name($1)) > (low($1), name($0)) } }
+    /// A mob's drops as the grid's tiles, by bag, for its page.
+    func tiles(of mob: Mob) -> [DropBag?: [Tile]] { tiles(Set((copies[mob] ?? [:]).keys)) }
+    /// A mob's kills that dropped at least one of the tiles' items (or their shinies): the mob page's drop chance.
+    func killsWith(_ mob: Mob, _ tiles: [Tile]) -> Int {
+        tiles.flatMap(\.items).reduce(into: Set<Int>()) { kills, item in
+            for v in variants(item) { kills.formUnion(killsWith[mob]?[v] ?? []) }
+        }.count
     }
 
     /// The mobs killed in a dungeon, bosses first, then most kills.
@@ -964,6 +973,7 @@ final class DropRatesModel: ObservableObject {
     @Published var mob: DropReport.Mob? { didSet { resetOrders() } }   // its page on the right; the grid stays dungeon-wide
     @Published var group: DropReport.Group? { didSet { resetOrders() } }
     @Published var item: Int? { didSet { resetOrders() } }
+    @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
@@ -992,7 +1002,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.
     func pick(mob: DropReport.Mob) {
-        item = nil; group = nil; self.mob = self.mob == mob ? nil : mob
+        item = nil; group = nil; openGroups = []; self.mob = self.mob == mob ? nil : mob
     }
     /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
     func back() {

@@ -271,17 +271,21 @@ enum DropRateTests {
         // The mob page (issue #50): kills, runs it died in, and its drops by bag with copies per kill.
         check(tiled.kills[boss] == 2 && tiled.mobRuns[boss] == 2 && tiled.mobRuns[minion] == 1,
               "runs a mob died in: the minion's map-3 kill had no boss, so it is not a run")
-        let mobDrops = tiled.drops(of: boss)
-        check(mobDrops[.cyan] == [801, 800] && mobDrops[.white] == [588] && mobDrops[.orange] == [9] && mobDrops.count == 3,
-              "a mob's drops by bag; the shiny folds into its sword; ties by name")
-        check(tiled.copies(boss, tiled.variants(800)) == 2 && tiled.copies(boss, tiled.variants(9)) == 1,
-              "copies per kill: the sword and its shiny count together")
-        check(tiled.drops(of: minion) == [.white: [588]] && tiled.drops(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
+        let mobTiles = tiled.tiles(of: boss)
+        check(mobTiles[.cyan] == [.group(weapons, [800, 801])] && mobTiles[.white] == [.item(588)] && mobTiles[.orange] == [.item(9)]
+              && mobTiles.count == 3, "a mob's drops as the grid's tiles, by bag; the shiny folds into its sword")
+        check(tiled.killsWith(boss, [.group(weapons, [800, 801])]) == 2 && tiled.killsWith(boss, [.item(800)]) == 1 &&
+              tiled.killsWith(boss, [.item(588), .item(9)]) == 2 && tiled.killsWith(minion, [.item(588)]) == 2,
+              "kills with at least one: the sword and its shiny in one kill count once; a bag or group counts a kill once")
+        check(tiled.tiles(of: minion) == [.white: [.item(588)]] && tiled.tiles(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
               "a minion's own drops; an unknown mob has none")
+        check(DropRate(count: 9, of: 20).percent == "45%" && DropRate(count: 1, of: 20).percent == "5%" &&
+              DropRate(count: 9, of: 20).plusMinus == "±65%" && DropRate(count: 3, of: 20).plusMinus == nil, "percent and ±")
         // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
         let tab = DropRatesModel()
-        tab.item = 588; tab.pick(mob: boss)
-        check(tab.mob == boss && tab.item == nil && tab.group == nil, "a mob click opens its page over an open item")
+        tab.item = 588; tab.openGroups = [weapons]; tab.pick(mob: boss)
+        check(tab.mob == boss && tab.item == nil && tab.group == nil && tab.openGroups.isEmpty,
+              "a mob click opens its page over an open item, with its groups closed")
         tab.item = 800; tab.back()
         check(tab.mob == boss && tab.item == nil, "esc from an item on the mob page goes back to the mob page")
         tab.group = weapons; tab.back()
