@@ -117,8 +117,15 @@ def key(name):
 
 
 def wiki(html):
+    """The page's own content: from the wiki-page div up to the sidebar (whose links lead everywhere)."""
     i = html.find('<div class="wiki-page"')
-    return html[i:] if i >= 0 else html
+    j = html.find('wiki-sidebar', max(i, 0))
+    return html[max(i, 0):j if j >= 0 else len(html)]
+
+
+def biome_pages(html):
+    """The Realm's enemy list is one page per biome: their slugs (beach-enemies, …)."""
+    return list(dict.fromkeys(re.findall(r'<a href="/wiki/([^"#]+-enemies)">', wiki(html))))
 
 
 def dungeon_list(html):
@@ -266,7 +273,10 @@ def build(fetch, game, sprites=SPRITES):
             continue
         html = fetch.page(f'/wiki/{slug}')
         if html is None: continue
-        listed = image_links(wiki(html)) if name == REALM else dungeon_mobs(html)
+        if name == REALM:
+            listed = [m for biome in biome_pages(html) if (page := fetch.page(f'/wiki/{biome}')) for m in image_links(wiki(page))]
+        else:
+            listed = dungeon_mobs(html)
         types = set()
         for mob_slug, mob_name in listed:
             if mob_slug not in mobs:
@@ -425,7 +435,9 @@ def self_test():
         assert game.match('den rat', 'mob') == [0x13] and game.match('Den Lava', 'mob') == []
         rat = '<div class="wiki-page"><img alt="Den Rat" src="/s/r.png"><h3 id="stats">Stats</h3></div>'
         pages = {'wiki/dungeons': listing, 'wiki/test-den': den, 'wiki/den-king': king, 'wiki/den-rat': rat,
-                 'wiki/the-realm-enemies': '<div class="wiki-page"><a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"></a></div>',
+                 'wiki/the-realm-enemies': '<div class="wiki-page"><a href="/wiki/beach-enemies">Beach Enemies</a></div>'
+                                           '<div class="col-md-3 wiki-sidebar"><a href="/wiki/test-den-enemies">Not the Realm</a></div>',
+                 'wiki/beach-enemies': '<div class="wiki-page"><a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"></a></div>',
                  's/r.png': 'PNG'}
         for path, body in pages.items():
             os.makedirs(os.path.dirname(cache_path(path, cache)), exist_ok=True)
