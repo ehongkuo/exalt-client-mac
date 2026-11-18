@@ -261,6 +261,8 @@ enum DropRateTests {
         check(tiled.rotation(801)! == (1, 6) && tiled.rotation(803)! == (2, 3) && tiled.rotation(9) == nil, "rotation places: dagger 2nd of 6, robe 3rd of 3")
         check(tiled.kinds([803, 801, 802, 800, 9]) == [[800, 802], [801], [803], [9]],
               "kinds in rotation order; two items of one kind share a turn; unplaced last")
+        var alt = tiled; alt.slots[801] = 1; alt.subtypes = [800]   // two swords, 800 the alternate
+        check(alt.kinds([800, 801, 802]) == [[801], [800, 802]], "a slot's base type before its alternate, the shiny with its base")
         check(tiled.members[weapons] == [800, 801] && tiled.tierItems("We12 Ar12,13 Xx1") == [800, 801, 803],
               "a tier group holds every catalog item of it; RealmEye codes expand to their groups")
         let sources = tiled.sources(tiled.variants(800))

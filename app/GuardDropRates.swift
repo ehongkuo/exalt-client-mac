@@ -439,6 +439,7 @@ struct DropReport: Equatable {
     var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
     var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
+    var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
     /// A dungeon to list: one with a template in the catalog, or a map with kills. `codes`: its drop tags.
@@ -638,6 +639,7 @@ struct DropReport: Equatable {
             if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
         }
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
+        store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
         for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name(item)) {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
@@ -733,10 +735,12 @@ struct DropReport: Equatable {
         }
     }
 
-    /// A group's members by kind, in its family's rotation order; a tier can hold two items of one kind (a sword and a
-    /// flail), which share their kind's turn. Items with no place go last, one kind each.
+    /// A group's members by kind, in its family's rotation order. A slot's base type comes before its alternate (sword,
+    /// then flail), each its own kind. Items with no place go last, one kind each.
     func kinds(_ items: [Int]) -> [[Int]] {
-        let placed = Dictionary(grouping: items.filter { rotation($0) != nil }) { rotation($0)!.position }
+        let placed = Dictionary(grouping: items.filter { rotation($0) != nil }) {
+            rotation($0)!.position * 2 + (subtypes.contains(base($0)) ? 1 : 0)
+        }
         return placed.keys.sorted().map { placed[$0]!.sorted { name($0) < name($1) } } + items.filter { rotation($0) == nil }.map { [$0] }
     }
 
