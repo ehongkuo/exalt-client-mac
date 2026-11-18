@@ -209,7 +209,6 @@ enum DropRateTests {
         check(report.runs == ["The Void": 2], "runs: visits where the boss died")
         check(report.runsWith("The Void", [588]) == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
         check(report.kills == [boss: 2, minion: 2] && report.copies[minion]?[588] == 2, "kills and copies by mob")
-        check(report.bestBag[boss] == [.white: 1, .orange: 1], "best bag per kill: white over purple")
         check(report.bossBags["The Void"]?[nil] == [.white: 1, .orange: 1] && report.bossBags["The Void"]?[1] == [.white: 1, .orange: 1],
               "best bag from the bosses, per run")
         check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
@@ -269,5 +268,15 @@ enum DropRateTests {
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
         check(tiled.rarityCounts([588, 800]) == [0, 1, 1, 0, 0], "rarity over a set of items")
+        // The mob page (issue #50): kills, runs it died in, and its drops by bag with copies per kill.
+        check(tiled.kills[boss] == 2 && tiled.mobRuns[boss] == 2 && tiled.mobRuns[minion] == 1,
+              "runs a mob died in: the minion's map-3 kill had no boss, so it is not a run")
+        let mobDrops = tiled.drops(of: boss)
+        check(mobDrops[.cyan] == [801, 800] && mobDrops[.white] == [588] && mobDrops[.orange] == [9] && mobDrops.count == 3,
+              "a mob's drops by bag; the shiny folds into its sword; ties by name")
+        check(tiled.copies(boss, tiled.variants(800)) == 2 && tiled.copies(boss, tiled.variants(9)) == 1,
+              "copies per kill: the sword and its shiny count together")
+        check(tiled.drops(of: minion) == [.white: [588]] && tiled.drops(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
+              "a minion's own drops; an unknown mob has none")
     }
 }

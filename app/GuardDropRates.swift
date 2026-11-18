@@ -420,9 +420,9 @@ struct DropReport: Equatable {
     struct Mob: Hashable { var type: Int, dungeon: String }
     var kills: [Mob: Int] = [:]
     var maxHP: [Mob: Int] = [:]
-    var bestBag: [Mob: [DropBag: Int]] = [:]        // kills whose best bag was that colour
     var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
     var runs: [String: Int] = [:]                   // by dungeon
+    var mobRuns: [Mob: Int] = [:]                   // runs the mob died in
     /// dungeon → item → the runs (map ids) with at least one copy. Sets, so any-of counts (base and shiny, a tier
     /// group) count a run once.
     var runMaps: [String: [Int: Set<Int>]] = [:]
@@ -577,12 +577,6 @@ struct DropReport: Equatable {
             r.kills[mob] = int($0, 2); r.maxHP[mob] = int($0, 3)
         }
         store.run("""
-            SELECT mob_type, dungeon, top, count(*) FROM (
-                SELECT k.mob_type, coalesce(m.name, '') dungeon, max(\(rank)) top FROM kills k JOIN maps m ON m.id = k.map
-                JOIN bags b ON b.kill = k.id WHERE \(died) GROUP BY k.id)
-            WHERE top IS NOT NULL GROUP BY 1, 2, 3
-            """) { r.bestBag[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][DropBag.allCases[int($0, 2)]] = int($0, 3) }
-        store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), i.item_type, count(*), max(\(rank)) FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) GROUP BY 1, 2, 3
             """) {
@@ -606,6 +600,10 @@ struct DropReport: Equatable {
         store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
             r.runs[text($0, 0)] = int($0, 1)
         }
+        store.run("""
+            \(runs) SELECT k.mob_type, coalesce(m.name, ''), count(DISTINCT k.map) FROM kills k JOIN maps m ON m.id = k.map
+            WHERE \(died) AND k.map IN (SELECT map FROM runs) GROUP BY 1, 2
+            """) { r.mobRuns[Mob(type: int($0, 0), dungeon: text($0, 1))] = int($0, 2) }
         store.run("""
             \(runs) SELECT DISTINCT coalesce(m.name, ''), i.item_type, k.map FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs)
@@ -786,6 +784,14 @@ struct DropReport: Equatable {
             return (0, s.mobs.map { DropRate(count: $0.value, of: kills[$0.key] ?? 0).range.lowerBound }.max() ?? 0)
         }
         return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
+    }
+
+    /// A mob's drops for its page: base items (shinies folded in) by bag, surest per kill first, then by name.
+    func drops(of mob: Mob) -> [DropBag?: [Int]] {
+        let kills = kills[mob] ?? 0
+        func low(_ item: Int) -> Double { DropRate(count: copies(mob, variants(item)), of: kills).range.lowerBound }
+        return Dictionary(grouping: Set((copies[mob] ?? [:]).keys.map(base))) { bag($0) }
+            .mapValues { $0.sorted { (low($0), name($1)) > (low($1), name($0)) } }
     }
 
     /// The mobs killed in a dungeon, bosses first, then most kills.
