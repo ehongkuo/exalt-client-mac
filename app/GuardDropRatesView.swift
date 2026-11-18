@@ -301,8 +301,8 @@ struct DropRatesView: View {
         }
     }
     private func mobRow(_ title: String, _ mobs: [DropReport.Mob]) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).frame(width: 56, height: 28, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
                 let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob]!
@@ -342,7 +342,7 @@ struct DropRatesView: View {
             // The still sprite: the member that dropped most here, else the first by name.
             let shown = items.max { report.dropped($0) < report.dropped($1) }.flatMap { report.dropped($0) > 0 ? $0 : nil } ?? items[0]
             Button { model.item = nil; model.group = model.group == group ? nil : group } label: {
-                GroupTile(sprites: ([shown] + items.filter { $0 != shown }).map { model.sprites[$0] }, tier: group.tier)
+                GroupTile(sprites: rotation(items, first: shown), tier: group.tier)
                     .opacity(anyDropped ? 1 : 0.35).padding(4)
                     .background(tileBackground(model.group == group && model.item == nil))
             }
@@ -350,6 +350,19 @@ struct DropRatesView: View {
             .help("\(group.name): \(items.map(report.name).joined(separator: ", "))")
             .accessibilityLabel("\(group.name), \(items.count) items" + (anyDropped ? "" : ", none dropped here yet"))
         }
+    }
+
+    /// A group's sprites by place in its family's fixed rotation (sword, dagger, bow, …; attack, defense, speed, … rings),
+    /// so every group of a family shows the same kind at once; a missing kind shows the next one there is.
+    private func rotation(_ items: [Int], first: Int) -> GroupTile.Rotation {
+        var frames: [Int: CGImage?] = [:], length = 1
+        for item in items {
+            guard let r = report.rotation(item) else { continue }
+            frames[r.position] = model.sprites[item]; length = r.of
+        }
+        return GroupTile.Rotation(frames: (0..<length).compactMap { i in
+            (0..<length).lazy.map { (i + $0) % length }.first { frames[$0] != nil }.map { frames[$0]! }
+        }, still: model.sprites[first])
     }
 
     private func tileBackground(_ selected: Bool) -> some View {
@@ -377,7 +390,7 @@ struct DropRatesView: View {
         }
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                GroupTile(sprites: members.map { model.sprites[$0] }, tier: group.tier, size: 40)
+                GroupTile(sprites: rotation(members, first: members[0]), tier: group.tier, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.name).font(.title3.weight(.semibold))
                     Text("\(members.count) items · \(d.name)").foregroundStyle(.secondary)
@@ -603,21 +616,23 @@ struct DropRatesView: View {
     private func sortedBags(_ bags: [DropBag: Int]) -> [DropBag] { DropBag.allCases.reversed().filter { bags[$0] != nil } }
 }
 
-/// A tier group's tile: the group's sprites in turn, one a second, with the tier; still with Reduce Motion.
+/// A tier group's tile: its family's rotation, one kind a second on the wall clock (so all groups of a family turn
+/// together), with the tier; `still` with Reduce Motion.
 struct GroupTile: View {
-    var sprites: [CGImage?]
+    struct Rotation { var frames: [CGImage?], still: CGImage? }
+    var sprites: Rotation
     var tier: Int
     var size: CGFloat = 32
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if !reduceMotion && sprites.count > 1 {
+            if !reduceMotion && sprites.frames.count > 1 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    SpriteIcon(image: sprites[Int(context.date.timeIntervalSince1970) % sprites.count], size: size)
+                    SpriteIcon(image: sprites.frames[Int(context.date.timeIntervalSince1970) % sprites.frames.count], size: size)
                 }
             } else {
-                SpriteIcon(image: sprites.first ?? nil, size: size)
+                SpriteIcon(image: sprites.still, size: size)
             }
         }
         .overlay(alignment: .bottomTrailing) {

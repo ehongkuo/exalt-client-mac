@@ -628,6 +628,23 @@ struct DropReport: Equatable {
         return Group(tier: tier, family: family)
     }
 
+    /// Each family's kinds in a fixed order: weapon, ability and armor slots, and ring stats (by the ring's name).
+    static let weaponSlots = [1, 2, 3, 8, 17, 24], armorSlots = [6, 7, 14]
+    static let abilitySlots = [4, 5, 11, 12, 13, 15, 16, 18, 19, 20, 21, 22, 23, 25, 27, 28, 29, 30, 31]
+    static let ringStats = ["Attack", "Defense", "Speed", "Dexterity", "Vitality", "Wisdom", "Health", "Magic"]
+    /// An item's place in its family's rotation, and the rotation's length; nil for an item with no group or an
+    /// unknown kind.
+    func rotation(_ item: Int) -> (position: Int, of: Int)? {
+        let b = base(item)
+        guard let family = group(b)?.family, let slot = slots[b] else { return nil }
+        switch family {
+        case .weapons: return Self.weaponSlots.firstIndex(of: slot).map { ($0, Self.weaponSlots.count) }
+        case .armors: return Self.armorSlots.firstIndex(of: slot).map { ($0, Self.armorSlots.count) }
+        case .abilities: return Self.abilitySlots.firstIndex(of: slot).map { ($0, Self.abilitySlots.count) }
+        case .rings: return Self.ringStats.firstIndex { name(b).contains($0) }.map { ($0, Self.ringStats.count) }
+        }
+    }
+
     /// A tile in a bag row: one base item, or a tier group of two or more.
     enum Tile: Hashable {
         case item(Int)
@@ -647,7 +664,9 @@ struct DropReport: Equatable {
             let byGroup = Dictionary(grouping: inBag) { group($0) }
             var groups: [Tile] = [], singles: [Int] = []
             for (g, members) in byGroup {
-                if let g, members.count > 1 { groups.append(.group(g, members.sorted { name($0) < name($1) })) } else { singles += members }
+                if let g, members.count > 1 {
+                    groups.append(.group(g, members.sorted { (rotation($0)?.position ?? .max, name($0)) < (rotation($1)?.position ?? .max, name($1)) }))
+                } else { singles += members }
             }
             return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }
