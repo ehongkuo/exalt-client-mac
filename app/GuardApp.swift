@@ -8,7 +8,7 @@ import UserNotifications
 private let ok = Color.green, warn = Color.orange, bad = Color.red
 private let panelBackground = Color(white: 0.15)
 
-/// "Exalt Client Mac Staging" for ./build.sh --stage: its own data folder and defaults, marked in the UI.
+/// "Exalt Client Mac Staging <issue>" for ./build.sh --stage: each worktree's own data folder and defaults, marked in the UI.
 private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? GuardPaths.prodName
 private let isStaging = appName != GuardPaths.prodName
 
@@ -16,6 +16,7 @@ private let isStaging = appName != GuardPaths.prodName
 private let liveURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_LIVE_FILE"] ?? "/dev/null")
 private let settingsURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_SETTINGS_FILE"] ?? "/dev/null")
 private let dataURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUARD_DATA_DIR"] ?? "/nonexistent")
+private let dropsURL = dataURL
 #else
 private let dataURL: URL = {
     let home = FileManager.default.homeDirectoryForCurrentUser, prod = GuardPaths.dataFolder(home: home)
@@ -26,6 +27,12 @@ private let dataURL: URL = {
         for (key, value) in defaults { UserDefaults.standard.set(value, forKey: key) }
     }
     return staging
+}()
+/// One drop_rates.db for the installed and staging apps (issue #49): it lives in the installed app's data folder.
+private let dropsURL: URL = {
+    let prod = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
+    try? FileManager.default.createDirectory(at: prod, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    return prod
 }()
 private let liveURL = GuardPaths.liveFile(data: dataURL)
 private let settingsURL = GuardPaths.settingsFile(data: dataURL)
@@ -330,7 +337,7 @@ final class DropAlerts: ObservableObject {
     /// Bag sprites are cut from a large atlas, so they are read once, off the main thread.
     private func loadBagsIfNeeded() {
         #if !GUARD_UI_TEST
-        guard settings.enabled, bagSprites.isEmpty, !loadingBags else { return }
+        guard bagSprites.isEmpty, !loadingBags else { return }   // also with alerts off: the drop panels show them
         loadingBags = true
         DispatchQueue.global(qos: .utility).async {
             let sprites = BagSprites.load(assets: RealmHoundPaths.assets)
@@ -421,11 +428,13 @@ private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color
 /// purple, gold), clustered as on an item's slot.
 struct RarityGems: View {
     var rarity: DropRarity
-    private let gem: CGFloat = 10
+    var gem: CGFloat = 10
+    /// By `DropRarity`; common (no gems) is grey for the rarity bars.
+    static let colors = [Color(white: 0.55), Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),
+                         Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)]
 
     var body: some View {
-        let color = [Color.clear, Color(red: 0.3, green: 0.82, blue: 0.3), Color(red: 0.2, green: 0.62, blue: 1),
-                     Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)][rarity.rawValue]
+        let color = Self.colors[rarity.rawValue]
         // Gem centres in gem widths: a pair, a triangle, then a diamond of four.
         let spots: [(CGFloat, CGFloat)] = [[], [(0, 0)], [(0, 0), (1, 0)], [(0, 0), (1, 0), (0.5, 0.5)],
                                            [(0.5, 0), (0, 0.5), (1, 0.5), (0.5, 1)]][rarity.rawValue]
@@ -625,16 +634,24 @@ struct GuardView: View {
     @ObservedObject var launch: LaunchController
     @ObservedObject var alerts: PartyAlerts
     @ObservedObject var drops: DropAlerts
+    @ObservedObject var rates: DropRatesModel
 
     var body: some View {
         #if !GUARD_SYNC_CAPTURE
         let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
         #endif
-        MainLayout {
-            GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, source: source).content(source.snapshot, source.link, source.rate)
+        if rates.shown {
+            DropRatesView(model: rates, drops: drops)
+        } else {
+            MainLayout {
+                VStack(spacing: 10) {
+                    MainTabs(rates: rates)
+                    GuardPanel(window: window, settings: settings, launch: launch, alerts: alerts, drops: drops, source: source).content(source.snapshot, source.link, source.rate)
+                }
+            }
+            .frame(minWidth: 420, minHeight: 360)
+            .preferredColorScheme(.dark)
         }
-        .frame(minWidth: 420, minHeight: 360)
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -779,7 +796,7 @@ struct GuardPanel {
         return HStack(spacing: 8) {
             Circle().fill(dot).frame(width: 7, height: 7)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            if isStaging { Pill(text: "STAGING", color: .blue) }
+            if isStaging { Pill(text: appName.dropFirst(GuardPaths.prodName.count + 1).uppercased(), color: .blue) }   // "STAGING 49"
             Spacer()
             Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
                 .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
@@ -1239,12 +1256,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let launch = LaunchController()
     let alerts = PartyAlerts()
     let drops = DropAlerts()
-    var joinPopup: NSPanel!
+    let rates = DropRatesModel()
+    private var ratesLoaded = -Double.infinity
+    private var ratesWatch: AnyCancellable?
+    private var guardFrame: NSRect?, statsFrame: NSRect?
+    var joinPopups: [NSPanel] = []
     var dropPopup: NSPanel!
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var lootTimer: Timer?
+    private var lootBusy = false
+    private var healthLoaded = false
+    private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
+    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    private func importLoot() {
+        let logs = GuardPaths.logs(data: dataURL)
+        // With no loot file and the health already shown, there is nothing to do.
+        let pending = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).contains { $0.hasPrefix("loot-") }
+        guard !lootBusy, pending || !healthLoaded else { return }
+        lootBusy = true
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        lootQueue.async {
+            var health: CaptureHealth?
+            if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
+                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                LootImport.run(logs: logs, store: store, appVersion: version)
+                health = CaptureHealth.load(store)
+            }
+            DispatchQueue.main.async {
+                if let health { self.rates.update(health: health); self.healthLoaded = true }
+                self.lootBusy = false
+                // All-time queries are heavier, so the shown stats views refresh at most every 30 s.
+                if self.rates.shown, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
+            }
+        }
+    }
+    /// The stats views (issue #45) widen the main window to about 1100 pt and stop keeping it on top; back in
+    /// the guard view, the window gets its own frame and Keep on top again. Only the guard view's frame is saved.
+    private func showStats(_ shown: Bool) {
+        let fullScreen = window.styleMask.contains(.fullScreen)
+        if shown {
+            loadRates()
+            window.level = .normal
+            guard !fullScreen else { return }
+            let current = window.frame
+            guardFrame = current
+            window.setFrameAutosaveName("")
+            let height = max(current.height, 680)
+            let frame = statsFrame ?? NSRect(x: current.minX, y: current.maxY - height, width: 1100, height: height)
+            window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
+        } else {
+            state.setFloating(state.floating)
+            guard !fullScreen, let guardFrame else { return }
+            statsFrame = window.frame
+            window.setFrame(guardFrame, display: true, animate: true)
+            window.setFrameAutosaveName("ExaltClientMacMain")
+        }
+    }
+    private func loadRates() {
+        ratesLoaded = Date().timeIntervalSince1970
+        lootQueue.async {
+            guard let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) else {
+                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
+                return
+            }
+            let report = DropReport.load(store)
+            let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
+            let problem = report.dungeons.isEmpty && xml.isEmpty
+                ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
+            DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
+        }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
@@ -1271,6 +1355,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #if !GUARD_UI_TEST
         LogCleanup.removeOld(data: dataURL)
         #endif
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        importLoot()
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
+        #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -1282,7 +1370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.title = appName
         #endif
         window.delegate = self
-        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops))
+        window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops, rates: rates))
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
         state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
@@ -1299,43 +1387,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
-        // Join popup: top centre of the screen, above everything including full-screen video.
-        joinPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 76),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        joinPopup.level = .statusBar
-        joinPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        joinPopup.backgroundColor = .clear; joinPopup.isOpaque = false; joinPopup.hasShadow = true
-        joinPopup.hidesOnDeactivate = false
-        let popupHost = NSHostingView(rootView: JoinPopupView(alerts: alerts, source: source))
-        // Fixed size: otherwise the empty view shrinks the panel to zero and the next popup grows upward off screen.
-        popupHost.sizingOptions = []
-        joinPopup.contentView = popupHost
+        // After the view switched, so the narrow guard view's frame is not held at the stats views' minimum width.
+        ratesWatch = rates.$shown.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
+        // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
-            guard let self, let panel = self.joinPopup else { return }
-            if call == nil { panel.orderOut(nil); return }
-            if let screen = NSScreen.main {
-                // In full screen the visible frame reaches into the camera notch; stay below both.
-                let top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
-                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top - 12))
+            guard let self else { return }
+            if call == nil { self.joinPopups.forEach { $0.orderOut(nil) }; return }
+            let screens = NSScreen.screens
+            while self.joinPopups.count < screens.count {
+                self.joinPopups.append(self.popupPanel(height: 76, JoinPopupView(alerts: self.alerts, source: self.source)))
             }
-            panel.orderFrontRegardless()
+            for (i, panel) in self.joinPopups.enumerated() {
+                guard i < screens.count else { panel.orderOut(nil); continue }
+                panel.setFrameTopLeftPoint(NSPoint(x: screens[i].frame.midX - 190, y: self.popupTop(screens[i])))
+                panel.orderFrontRegardless()
+            }
         }
-        // Drop popup: the same place, or just below the Join popup while that is up.
-        dropPopup = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 64),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        dropPopup.level = .statusBar
-        dropPopup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        dropPopup.backgroundColor = .clear; dropPopup.isOpaque = false; dropPopup.hasShadow = true
-        dropPopup.hidesOnDeactivate = false
-        let dropHost = NSHostingView(rootView: DropPopupView(drops: drops))
-        dropHost.sizingOptions = []
-        dropPopup.contentView = dropHost
+        // Drop popup: on the game's monitor, just below that monitor's Join popup while one is up.
+        dropPopup = popupPanel(height: 64, DropPopupView(drops: drops))
         dropWatch = drops.$popup.receive(on: DispatchQueue.main).sink { [weak self] drop in
             guard let self, let panel = self.dropPopup else { return }
             if drop == nil { panel.orderOut(nil); return }
-            if let screen = NSScreen.main {
-                var top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top) - 12
-                if self.joinPopup.isVisible { top = self.joinPopup.frame.minY - 8 }
+            if let screen = self.gameScreen() ?? NSScreen.main {
+                var top = self.popupTop(screen)
+                if let join = self.joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+                    top = join.frame.minY - 8
+                }
                 panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top))
             }
             panel.orderFrontRegardless()
@@ -1371,27 +1448,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    private var compactMode = false
-    private var compactAfterFullScreen = false
-    /// Show the strip before hiding the main window: hiding the last regular window counts as
-    /// "last window closed", which would otherwise quit the app. A full-screen window has to
-    /// leave full screen first, or hiding it leaves an empty full-screen space behind.
-    func showCompact() {
-        if window.styleMask.contains(.fullScreen) {
-            compactAfterFullScreen = true
-            window.toggleFullScreen(nil)
-            return
+    private var mode = WindowMode()
+    /// A popup card above everything, including full-screen video, that never takes focus.
+    private func popupPanel<V: View>(height: CGFloat, _ view: V) -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: height),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        let host = NSHostingView(rootView: view)
+        // Fixed size: otherwise the empty view shrinks the panel to zero and the next popup grows upward off screen.
+        host.sizingOptions = []
+        panel.contentView = host
+        return panel
+    }
+    /// Where a popup's top edge goes. In full screen the visible frame reaches into the camera notch; stay below both.
+    private func popupTop(_ screen: NSScreen) -> CGFloat {
+        min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top) - 12
+    }
+    /// The screen holding most of the game window, or nil when the game has no window.
+    private func gameScreen() -> NSScreen? {
+        let guarded = source.link.isLive ? source.snapshot?.pid : nil
+        guard let pid = guarded ?? NSWorkspace.shared.runningApplications
+                .first(where: { $0.executableURL?.lastPathComponent == "RotMGExalt" })?.processIdentifier,
+              let info = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        // Bounds and owner need no screen recording permission; only window titles do.
+        let window = info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+            .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
+            .max { $0.width * $0.height < $1.width * $1.height }
+        let screens = NSScreen.screens
+        let bounds = screens.map { CGDisplayBounds(($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) }
+        return PopupScreen.index(window: window, screens: bounds).map { screens[$0] }
+    }
+    /// The decisions live in WindowMode (tested in the model tests); this only carries them out.
+    private func run(_ steps: [WindowMode.Step]) {
+        for step in steps {
+            switch step {
+            case .leaveFullScreen: window.toggleFullScreen(nil)
+            case .showStrip: compact.orderFrontRegardless()
+            case .hideMain: window.orderOut(nil)
+            case .showMain: window.makeKeyAndOrderFront(nil)
+            case .hideStrip: compact.orderOut(nil)
+            case .activate: NSApp.activate(ignoringOtherApps: true)
+            }
         }
-        compactMode = true; compact.orderFrontRegardless(); window.orderOut(nil)
     }
-    func windowDidExitFullScreen(_ notification: Notification) {
-        guard compactAfterFullScreen else { return }
-        compactAfterFullScreen = false
-        showCompact()
-    }
-    func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
+    func showCompact() { run(mode.toCompact(fullScreen: window.styleMask.contains(.fullScreen))) }
+    func windowDidExitFullScreen(_ notification: Notification) { run(mode.didLeaveFullScreen()) }
+    func showFull() { run(mode.toFull()) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { mode.quitsWhenLastWindowCloses }
     /// Clicking a guard banner switches to the game, if one is running.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {

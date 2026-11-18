@@ -21,6 +21,12 @@ METHOD_CONSTANTS = {
 OPTIONAL_METHODS = {'hit_handler'}
 METHOD_CONSTANTS['hit_handler'] = None
 HOOKS = {'nexus', 'report', 'notify', 'hp', 'damage', 'death', 'update', 'stats'}
+# Drop-rate capture (issue #38): a profile has all six or none; without them the guard skips capture.
+LOOT_HOOKS = {'enemydamage': 'ENEMY_DAMAGE_OFFSET', 'damagemessage': 'DAMAGE_MESSAGE_OFFSET',
+              'newobject': 'NEW_OBJECT_OFFSET', 'removeobject': 'REMOVE_OBJECT_OFFSET',
+              'statusapply': 'STATUS_APPLY_OFFSET', 'newtick': 'NEW_TICK_OFFSET'}
+METHOD_CONSTANTS.update(LOOT_HOOKS)
+OPTIONAL_METHODS |= set(LOOT_HOOKS)
 CALL_LAYOUT = {
     'DAMAGE_CALLER': (('collision', 'hit_handler'), 'damage', 'direct'),
     'NOTIFY_CALLER': (('collision', 'hit_handler'), 'notify', 'virtual'),
@@ -50,7 +56,8 @@ def validate_profile(profile):
         raise ValueError('Invalid GameAssembly SHA-256')
     if not set(METHOD_CONSTANTS) - OPTIONAL_METHODS <= {m['id'] for m in profile['methods']} <= set(METHOD_CONSTANTS):
         raise ValueError('Profile must contain every supported method and caller context')
-    if {m.get('hook') for m in profile['methods'] if m.get('hook')} != HOOKS:
+    if {m.get('hook') for m in profile['methods'] if m.get('hook')} - HOOKS not in (set(), set(LOOT_HOOKS)) or \
+            not HOOKS <= {m.get('hook') for m in profile['methods']}:
         raise ValueError('Profile must contain all audited hooks')
     if not set(CALL_LAYOUT) - OPTIONAL_CALLS <= {c['constant'] for c in profile['callsites']} <= set(CALL_LAYOUT):
         raise ValueError('Profile must contain all audited callers')
@@ -70,7 +77,7 @@ def validate_profile(profile):
         prefix = bytes.fromhex(method['entry_prefix'])
         if not prefix or (method.get('hook') and not 14 <= len(prefix) <= 32):
             raise ValueError('Invalid audited entry prefix')
-        if method.get('hook') != (method['id'] if method['id'] in HOOKS else None):
+        if method.get('hook') != (method['id'] if method['id'] in HOOKS | set(LOOT_HOOKS) else None):
             raise ValueError('Hook does not match its integration role')
         if method.get('hook') in hooks: raise ValueError('Duplicate hook identifier')
         if method.get('hook'): hooks.add(method['hook'])

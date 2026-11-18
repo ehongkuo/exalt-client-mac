@@ -2,13 +2,13 @@
 # Runs the tests, then builds the guard and Exalt Client Mac.app into build/ and installs the
 # app to ~/Applications.
 # Usage: ./build.sh               (tests + build + install; the game must be closed)
-#        ./build.sh --stage       (tests + build "Exalt Client Mac Staging.app" into build/, never
+#        ./build.sh --stage       (tests + build "Exalt Client Mac Staging <issue>.app" into build/, never
 #                                  installs: live-test a PR with its own data folder and settings)
 #        ./build.sh --app-only --sync-capture (temporary observation-only app)
-#        ./build.sh --test-only
+#        ./build.sh --test-only   (tests only; they show no window, popup or sound and take no
+#                                  focus, so they can run while the game or the app is open)
 #        ./build.sh --app-only    (install while the game runs; the game keeps its current guard
-#                                  until it is restarted from the app). Skips the tests: their
-#                                  UI check takes focus from the game. Run them with the game closed.
+#                                  until it is restarted from the app). Skips the tests.
 set -eu
 sync_capture=0
 stage=0
@@ -24,9 +24,14 @@ done
 src="${0:A:h}"
 out="$src/build"
 cache="$src/module-cache"
-# The staged app gets its own name, bundle id (so its own defaults) and data folder (the app
-# names its Application Support folder after CFBundleName).
-if (( stage )); then app_name='Exalt Client Mac Staging'; bundle_id=local.exalt.clientmac.staging
+# Each worktree's staged app gets its own name, bundle id (so its own defaults) and data folder (the
+# app names its Application Support folder after CFBundleName), tagged with the branch's issue number
+# (feature/49-... -> "Exalt Client Mac Staging 49"), so several can be open at once (issue #49).
+if (( stage )); then
+    branch="$(git -C "$src" branch --show-current 2>/dev/null || true)"
+    tag="${${branch:t}%%-*}"
+    [[ "$tag" == <-> ]] || tag="${${src:t}//[^A-Za-z0-9-]/-}"   # no issue number: the worktree's folder name
+    app_name="Exalt Client Mac Staging $tag"; bundle_id="local.exalt.clientmac.staging.$tag"
 else app_name='Exalt Client Mac'; bundle_id=local.exalt.clientmac; fi
 app="$out/$app_name.app"
 installed="$HOME/Applications/Exalt Client Mac.app"
@@ -50,6 +55,11 @@ python3 "$src/tests/probe/test_damage_map.py"
 python3 "$src/tests/probe/test_damage_session.py"
 clang -Wall -Wextra -Werror "$src/tests/core_tests.c" -o "$tests/core-tests"
 "$tests/core-tests"
+clang -Wall -Wextra -Werror "$src/tests/loot_tests.c" -o "$tests/loot-tests"
+"$tests/loot-tests"
+python3 "$src/tools/drop_check.py" --self-test
+python3 "$src/tools/drop_backfill.py" --self-test
+python3 "$src/tools/drop_merge.py" --self-test
 clang -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests"
 "$tests/live-tests"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$src/tests/live_tests.c" -o "$tests/live-tests-x86"
@@ -62,7 +72,7 @@ for i in {1..300}; do [[ -s "$cross" ]] && break; sleep 0.01; done
 [[ -s "$cross" ]] || { print 'FAIL: the cross-architecture writer never started'; exit 1; }
 "$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
-    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardModelTests.swift" \
+    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardDropRatesTests.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$tests/model-tests"
 "$tests/model-tests"
@@ -78,38 +88,6 @@ python3 "$src/tests/probe/test_latency.py"
 python3 "$src/tests/probe/test_replay.py"
 python3 "$src/tests/probe/test_shadow_ledger.py"
 python3 "$src/tests/probe/test_untracked.py"
-# UI regression: compact, back, compact again and back must each show the right window and
-# never quit the app (it briefly shows its window, fed by a synthetic writer; never touches
-# the game).
-ui="$(mktemp -d)"
-mkdir -p "$ui/UITest.app/Contents/MacOS"
-clang -O2 -Wall -Wextra -Werror "$src/tests/ui_fixture.c" -o "$ui/ui-fixture"
-xcrun swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors -D GUARD_UI_TEST \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" \
-    "$src/app/GuardApp.swift" -o "$ui/UITest.app/Contents/MacOS/UITest"
-"$ui/ui-fixture" "$ui/live.bin" 25 &
-writer=$!   # pids get their own names: $app is the app bundle path
-sleep 0.5
-GUARD_LIVE_FILE="$ui/live.bin" GUARD_SETTINGS_FILE="$ui/settings.conf" GUARD_AUTO_COMPACT=1 \
-    "$ui/UITest.app/Contents/MacOS/UITest" >"$ui/steps.txt" 2>&1 &
-ui_pid=$!
-# Wait for all four steps (slower when the machine is busy, e.g. with the game running).
-for i in {1..80}; do
-    (( $(grep -c '^step=' "$ui/steps.txt" 2>/dev/null || true) >= 4 )) && break
-    kill -0 $ui_pid 2>/dev/null || break
-    sleep 0.25
-done
-if ! kill -0 $ui_pid 2>/dev/null; then print 'FAIL: the app quit when switching to compact'; kill $writer; exit 1; fi
-kill $ui_pid; wait $ui_pid 2>/dev/null || true; kill $writer 2>/dev/null || true; wait 2>/dev/null || true
-expected='step=compact main=false compact=true fullscreen=false
-step=full main=true compact=false fullscreen=false
-step=compact again main=false compact=true fullscreen=false
-step=full again main=true compact=false fullscreen=false'
-if [[ "$(grep '^step=' "$ui/steps.txt")" != "$expected" ]]; then
-    print 'FAIL: compact/expand steps showed the wrong windows:'; cat "$ui/steps.txt"; exit 1
-fi
-rm -rf "$ui"
-print 'Compact and expand UI test passed'
 [[ "${build_mode}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
 else
 print '== Tests skipped (--app-only: the game may be running)'
@@ -148,7 +126,7 @@ cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" 
 
 print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardApp.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardDropRatesView.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
 # Icon: DECA's launcher icon with the red lettering turned yellow (drawn fallback if missing).
 icons="$(mktemp -d)"

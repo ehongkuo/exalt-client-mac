@@ -29,6 +29,11 @@
 #define EXALT_PROFILE_HOOK_BYTES
 #endif
 #include "build_profile.h"
+#if defined(EXALT_CLIENT_FATAL) && defined(ENEMY_DAMAGE_OFFSET)
+#define LOOT_CAPTURE 1   /* drop-rate capture, issue #38 */
+static void loot_prepare(const void *game);
+static void loot_drain(int closing);
+#endif
 
 enum { RESULT_DRY = 0, RESULT_CALLED = 1, RESULT_EXCEPTION = -1, RESULT_UNAVAILABLE = -2, RESULT_EMPTY = -3 };
 #define MAX_QUICKSLOTS 8
@@ -89,7 +94,8 @@ static uint64_t next_map_lookup, next_equipment_lookup;
 #define CHAT_SEEN 256
 static void *chat_class, *chat_handle, *chat_slots_field, *chat_slot_class, *chat_slot_model_field;
 static void *chat_message_class, *chat_sender_field, *chat_channel_field, *chat_text_field, *own_name_field;
-static void *chat_list_class, *chat_items_field, *chat_size_field;
+typedef struct { void *klass, *items, *size; } ListFields;   /* a List<T>'s fields, looked up once per list class */
+static ListFields chat_list;
 static void *chat_object;   /* compared only, never read: it may have been collected */
 static int chat_primed;
 static struct { void *object; uint64_t hash; } chat_seen[CHAT_SEEN];
@@ -344,6 +350,9 @@ static int prepare(void) {
         refuse(REFUSAL_GUARD, "hud_fields_missing"); return 0;
     }
     prepare_guard(game);
+#ifdef LOOT_CAPTURE
+    loot_prepare(game);
+#endif
     return 1;
 }
 
@@ -455,18 +464,18 @@ static int chat_changed(void *object, uint64_t hash) {
     return 1;
 }
 /* Reads the chat slot list's backing array; returns the element count (0 if unreadable). */
-static int32_t chat_slot_items(void *list, void *const **items) {
+static int32_t list_items(void *list, const char *array_type, ListFields *f, void *const **items) {
     if (!list) return 0;
     void *klass = il2cpp_object_get_class(list);
-    if (klass != chat_list_class) {
-        chat_list_class = klass;
-        chat_items_field = typed_field(klass, "_items", "DecaGames.RotMG.Chat.UI.ChatSlotController[]");
-        chat_size_field = typed_field(klass, "_size", "System.Int32");
+    if (klass != f->klass) {
+        f->klass = klass;
+        f->items = typed_field(klass, "_items", array_type);
+        f->size = typed_field(klass, "_size", "System.Int32");
     }
-    if (!chat_items_field || !chat_size_field) return 0;
-    void *array = read_reference(list, chat_items_field);
+    if (!f->items || !f->size) return 0;
+    void *array = read_reference(list, f->items);
     int32_t size = 0;
-    il2cpp_field_get_value(list, chat_size_field, &size);
+    il2cpp_field_get_value(list, f->size, &size);
     if (!array || size <= 0) return 0;
     if ((uint32_t)size > il2cpp_array_length(array)) size = (int32_t)il2cpp_array_length(array);
     *items = (void *const *)((char *)array + 0x20);
@@ -514,7 +523,7 @@ static void poll_chat(uint64_t now, double epoch, void *player) {
         live_data.chat_status = CHAT_READING;
     }
     void *const *slots = NULL;
-    int32_t count = chat_slot_items(read_reference(chat, chat_slots_field), &slots);
+    int32_t count = list_items(read_reference(chat, chat_slots_field), "DecaGames.RotMG.Chat.UI.ChatSlotController[]", &chat_list, &slots);
     int priming = !chat_primed;
     chat_primed = 1;
     for (int32_t i = 0; i < count; ++i) {
@@ -752,6 +761,9 @@ static void drain(void *unused) {
     hit_probe_drain();
 #endif
     int closing = atomic_load_explicit(&finished, memory_order_acquire);
+#ifdef LOOT_CAPTURE
+    loot_drain(closing);
+#endif
     uint64_t tail = atomic_load_explicit(&note_tail, memory_order_relaxed);
     while (tail != atomic_load_explicit(&note_head, memory_order_acquire)) {
         fputs(notes[tail % NOTE_CAPACITY], logfile);
@@ -810,6 +822,9 @@ static void refuse(int code, const char *detail) {
 }
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
 #include "../probe/hit_probe.h"
+#endif
+#ifdef LOOT_CAPTURE
+#include "loot_capture.h"
 #endif
 static void tick(void *unused) {
     (void)unused;
@@ -876,6 +891,9 @@ done:
 #ifdef EXALT_CLIENT_FATAL
     if(r.status==0)hit_probe_terminal_sample(own,r.player_hp,r.player_max);
 #endif
+#endif
+#ifdef LOOT_CAPTURE
+    loot_tick(own);
 #endif
     if (ready) { poll_chat(begin, r.epoch, own); run_join(own, begin); }
     r.previous_hp = detector.valid ? detector.hp : r.hp;
@@ -994,6 +1012,9 @@ __attribute__((constructor)) static void start(void) {
     start_epoch = epoch.tv_sec + epoch.tv_nsec / 1e9; start_ns = monotonic_ns();
 #if defined(EXALT_HIT_PROBE) || defined(EXALT_CLIENT_FATAL)
     hit_probe_open(folder);
+#endif
+#ifdef LOOT_CAPTURE
+    loot_open(folder);
 #endif
     live_data.session_start_epoch = start_epoch;
     /* STRICT: without it the kernel coalesces a non-foreground process's 1 ms timer to ~30 ms. */

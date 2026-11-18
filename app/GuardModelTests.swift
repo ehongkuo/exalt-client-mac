@@ -219,9 +219,23 @@ private func sample() -> LiveData {
         check(fatalSnapshot.deathPending == 228 && fatalSnapshot.deathPredicted == -3, "prediction telemetry")
         check(GuardEvent(epoch: 0, action: .nexusOnDeath, result: 1, slot: -1, hp: 225, maxHP: 225).title == "Nexus on death",
               "death event labelled separately")
+        // Compact view and back (the app used to quit when the strip replaced the main window).
+        var mode = WindowMode()
+        check(mode.quitsWhenLastWindowCloses, "closing the main window quits")
+        for round in ["", " again"] {
+            check(mode.toCompact(fullScreen: false) == [.showStrip, .hideMain], "compact\(round): strip shows before the main window hides")
+            check(mode.compact && !mode.quitsWhenLastWindowCloses, "compact\(round): never quits while the strip is up")
+            check(mode.toFull() == [.showMain, .hideStrip, .activate], "full\(round): main window back, strip gone")
+            check(!mode.compact && mode.quitsWhenLastWindowCloses, "full\(round): closing the main window quits again")
+        }
+        check(mode.toCompact(fullScreen: true) == [.leaveFullScreen], "compact from full screen leaves full screen first")
+        check(!mode.compact, "still the main window until full screen is left")
+        check(mode.didLeaveFullScreen() == [.showStrip, .hideMain] && mode.compact, "then switches to compact")
+        check(mode.didLeaveFullScreen() == [], "leaving full screen by hand stays in the main window")
         print("Guard model tests passed")
         SettingsTests.run()
         LaunchTests.run()
         DropTests.run()
+        DropRateTests.run()
     }
 }
