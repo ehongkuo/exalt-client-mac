@@ -502,8 +502,8 @@ struct DropRatesView: View {
 }
 
 /// A mob's page (issue #50), laid out like the dungeon's grid: a row per bag with the bag's total, then a cell per
-/// item or tier group with its drop chance per kill, drops/kills and ±. A group opens a row of the items it dropped;
-/// an item opens its item page.
+/// untiered item with its drop chance per kill, drops/kills and ±, then a full-width row per tier group that opens in
+/// place to the items it dropped. An item opens its item page.
 struct MobPage: View {
     @ObservedObject var model: DropRatesModel
     var mob: DropReport.Mob
@@ -540,13 +540,23 @@ struct MobPage: View {
                             numbers(report.killsWith(mob, row), of: kills, stacked: true)
                         }
                         .frame(width: 56)
-                        // An open group's items follow its cell, marked as its members.
-                        let cells = row.flatMap { tile -> [(tile: DropReport.Tile, member: Bool)] in
-                            guard case .group(let group, let items) = tile, model.openGroups.contains(group) else { return [(tile, false)] }
-                            return [(tile, false)] + items.filter { report.killsWith(mob, [.item($0)]) > 0 }.map { (.item($0), true) }
-                        }
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
-                            ForEach(cells, id: \.tile) { cell($0.tile, member: $0.member, kills: kills) }
+                        // Untiered items in a grid, then each tier group as a full-width row that opens in place.
+                        VStack(alignment: .leading, spacing: 6) {
+                            let singles = row.filter { if case .item = $0 { return true } else { return false } }
+                            if !singles.isEmpty { grid(singles, kills: kills) }
+                            ForEach(row, id: \.self) { tile in
+                                if case .group(let group, let items) = tile {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        cell(tile, kills: kills)
+                                        if model.openGroups.contains(group) {
+                                            grid(items.filter { report.killsWith(mob, [.item($0)]) > 0 }.map(DropReport.Tile.item), kills: kills)
+                                                .padding([.horizontal, .bottom], 6)
+                                        }
+                                    }
+                                    .background(Color.white.opacity(model.openGroups.contains(group) ? 0.04 : 0))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
                         }
                     }
                     Divider()
@@ -558,7 +568,13 @@ struct MobPage: View {
     }
 
     /// An item or tier group: sprite (a group cycles its kinds, with its tier), name, drop chance, drops/kills · ±.
-    private func cell(_ tile: DropReport.Tile, member: Bool, kills: Int) -> some View {
+    private func grid(_ tiles: [DropReport.Tile], kills: Int) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
+            ForEach(tiles, id: \.self) { cell($0, kills: kills) }
+        }
+    }
+
+    private func cell(_ tile: DropReport.Tile, kills: Int) -> some View {
         let report = model.report, n = report.killsWith(mob, [tile])
         let name: String, open: Bool?
         switch tile {
@@ -590,7 +606,6 @@ struct MobPage: View {
             }
             .padding(6).frame(maxWidth: .infinity, alignment: .leading)
             .background(tileBackground(open == true))
-            .overlay(alignment: .leading) { if member { Capsule().fill(Color.accentColor).frame(width: 3).padding(.vertical, 8) } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
