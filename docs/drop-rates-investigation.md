@@ -340,7 +340,7 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    today's kills; every other tab uses all the data kept. Each shows rates with "1 in N" and the 95 %
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
    Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
-   the window (opened from the Drop data panel). Rules as built:
+   the views. Rules as built:
    - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
      not each item's `<BagType>`), so it is a chance per kill. Item rates count copies.
    - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
@@ -349,8 +349,33 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    - **Sprites:** the catalog keeps each object's `<Texture>` (or first `<AnimatedTexture>` frame) as
      `texture_file` and `texture_index`; `GameSprites` crops it from the atlas its flatbuffer entry names
      (1 `groundTiles.png`, 2 `characters.png`, 4 `mapObjects.png`).
-4. **Rarity and custom questions:** rarity decoding, a question builder (source x item x rarity x
-   unit) and base rates without boosts once loot factors are captured.
+4. **One window: the Drop rates tab (#45).** The main window has two tabs, Guard and Drop rates. Drop rates
+   widens the window to about 1100 pt and stops it floating; Guard gets its own frame and Keep on top back.
+   The top bar shows whether capture is running, the last kill, and capture health over all the data (kills,
+   bags linked, records lost, capture refused); the Drop data panel, the Today view and the separate window are
+   gone. Three panes:
+   - **Dungeons and search:** every dungeon the catalog lists (a `<DungeonModTemplate>`, or one in
+     `DropReport.dropTags`) and every map with kills, with its portal sprite; played ones first. Search shows
+     two groups, Items (opens the item page) and Dungeons.
+   - **Bags and drops:** a breadcrumb (dungeon › mob › group › item, each a step back; Esc steps back too),
+     BOSSES and MINIONS rows of mob chips (a mob shows only its drops; Esc or the breadcrumb shows all), then one row of tiles per bag,
+     by the catalog's `<BagType>` (`DropBag(bagType:)`). Shinies ("X Shiny" by id) fold into their base item.
+     Items of one `<Tier>` and slot family (weapons, armors, abilities, rings by `<SlotType>`) share a tile,
+     which cycles its sprites only on hover. Possible drops are the items whose `ORG_*` tag is one of the
+     dungeon's drop tags, plus every item that dropped there; not yet dropped ones are faded. Drop tags are the
+     template labels that some item carries as its origin, except where `DropReport.dropTags` names them.
+   - **Right pane:** the dungeon's best bag per run, a mob's best bag per kill, a tier group (the chance of any
+     of it per run, then each item), or the **item page**. The item page is global: every dungeon it dropped
+     in, surest first (by the low end of the per-run 95% range; places with no runs follow by their best mob
+     per kill), each opening to its mobs' per-kill rates; the shiny's own rate; rarity of every copy as five
+     cells. A list pick closes the item page; a dungeon row on it keeps it open.
+   - **Rates** read "1 in N · ±X%": ±X% is 1.96 ÷ √drops, "too few drops" under 4. Zero reads "rarer than
+     1 in N" (the top of the range). Runs are counted as sets of map ids, so any-of rates (base and shiny, a
+     tier group) count a run once.
+   - **Live data:** rows keep the order they were first shown in while you look; one whose count grew gets a dot.
+   - **Rarity** is a copy's enchantment count from its bag's stat 80 (`Enchantments`). A copy with no part
+     in the stat (potions, stones) or a cut-short part has no rarity and counts in none.
+   - Out: base rates without boosts, until loot factors are captured.
 
 ## Phases
 
