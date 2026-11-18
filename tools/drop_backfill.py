@@ -15,7 +15,7 @@ import os
 import sqlite3
 import sys
 
-from drop_check import REALMHOUND, STAGING_DB, read_only, realmhound_drops
+from drop_check import REALMHOUND, DROP_DB, read_only, realmhound_drops
 
 
 def realmhound_kills(folder, start, end):
@@ -92,7 +92,7 @@ def self_test():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--db', default=STAGING_DB)
+    parser.add_argument('--db', default=DROP_DB)
     parser.add_argument('--realmhound', default=REALMHOUND)
     parser.add_argument('--session', type=int, help='capture session id (default: latest)')
     parser.add_argument('--self-test', action='store_true')

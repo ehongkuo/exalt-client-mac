@@ -3,7 +3,8 @@ import Foundation
 
 /// Where things live. The guard and the build check ship inside the app, so the app can be
 /// moved anywhere; settings and logs go to ~/Library/Application Support/<app name>, so a staging
-/// build ("Exalt Client Mac Staging", from ./build.sh --stage) never touches the installed app's.
+/// build ("Exalt Client Mac Staging <issue>", from ./build.sh --stage) never touches the installed app's or another's.
+/// The one exception is drop_rates.db, which both apps share in the installed app's folder (issue #49).
 enum GuardPaths {
     static let prodName = "Exalt Client Mac"
     static func dataFolder(home: URL, name: String = prodName) -> URL { home.appendingPathComponent("Library/Application Support/\(name)") }
