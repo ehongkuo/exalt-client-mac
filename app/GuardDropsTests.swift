@@ -103,6 +103,10 @@ enum DropTests {
                 "Malphas": GameTexture(file: "abyssOfDemonsChars16x16", index: 0), "Bow": GameTexture(file: "lostHallsObjects8x8", index: 0xa7)])
             check(mobAndItem["Malphas"]?.width == 16 && mobAndItem["Bow"]?.width == 8, "a mob's first frame and an item's sprite")
         }
+        if FileManager.default.fileExists(atPath: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml").path) {
+            let names = RuleCatalog.enchantNames(inXML: try! String(contentsOf: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml"), encoding: .utf8))
+            check(names[0x639] == "Lucky Streak" && names.count > 500, "enchantment names from RealmHound's assets")
+        }
 
         // The log: first sight sets the start, later drops come back with their items in slot order.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("drop-tests-\(getpid())")
