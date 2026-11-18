@@ -1311,9 +1311,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private func loadRates() {
         ratesLoaded = Date().timeIntervalSince1970
         lootQueue.async {
-            guard let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) else { return }
+            guard let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) else {
+                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db) in the app's data folder can't be opened." }
+                return
+            }
             let report = DropReport.load(store)
-            DispatchQueue.main.async { self.rates.update(report) }
+            let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
+            let problem = report.dungeons.isEmpty && xml.isEmpty
+                ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
+            DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
         }
     }
     func applicationDidFinishLaunching(_ notification: Notification) {

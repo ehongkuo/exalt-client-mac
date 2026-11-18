@@ -176,10 +176,12 @@ enum DropRateTests {
 
         // Rates (issue #41): 1 in N, and a 95% range from the drop count (exact Poisson values).
         let ten = DropRate(count: 10, of: 1000)
-        check(abs(ten.range.lowerBound - 0.0047954) < 1e-6 && abs(ten.range.upperBound - 0.0183904) < 1e-6 && !ten.rough,
+        check(abs(ten.range.lowerBound - 0.0047954) < 1e-6 && abs(ten.range.upperBound - 0.0183904) < 1e-6,
               "exact range at 10 drops")
         let none = DropRate(count: 0, of: 100)
-        check(none.range.lowerBound == 0 && abs(none.range.upperBound - 0.0368888) < 1e-6 && none.rough, "no drops still has a range")
+        check(none.range.lowerBound == 0 && abs(none.range.upperBound - 0.0368888) < 1e-6, "no drops still has a range")
+        check(DropRate(count: 3, of: 9).precision == nil && abs(DropRate(count: 4, of: 9).precision! - 0.98) < 1e-9 &&
+              abs(DropRate(count: 100, of: 900).precision! - 0.196) < 1e-9, "precision: ±1.96/√drops, none under 4 drops")
         check(abs(DropRate.poissonRange(1).0 - 0.0253178) < 1e-6 && abs(DropRate.poissonRange(400).0 - 361.756) < 0.01 &&
               abs(DropRate.poissonRange(400).1 - 441.187) < 0.01, "exact below 50 drops, Byar above")
         check(DropRate(count: 3, of: 0).range == 0...0 && DropRate(count: 3, of: 0).rate == 0, "no kills, no rate")
@@ -205,7 +207,7 @@ enum DropRateTests {
         let report = DropReport.load(rates)
         let boss = DropReport.Mob(type: 1, dungeon: "The Void"), minion = DropReport.Mob(type: 2, dungeon: "The Void")
         check(report.runs == ["The Void": 2], "runs: visits where the boss died")
-        check(report.runsWith["The Void"]?[588] == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
+        check(report.runsWith("The Void", [588]) == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
         check(report.kills == [boss: 2, minion: 2] && report.copies[minion]?[588] == 2, "kills and copies by mob")
         check(report.bestBag[boss] == [.white: 1, .orange: 1], "best bag per kill: white over purple")
         check(report.bossBags["The Void"]?[nil] == [.white: 1, .orange: 1] && report.bossBags["The Void"]?[1] == [.white: 1, .orange: 1],
@@ -238,5 +240,27 @@ enum DropRateTests {
             """) == ["Abyss of Demons": ["ANY", "ABYSS", "SKIN_HUNTER"]], "template labels")
         check(GameNames.objects(inXML: "<Object type=\"0x071b\" id=\"Abyss of Demons Portal\"><Class>Portal</Class><DungeonName>Abyss of Demons</DungeonName></Object>")
               .first?.dungeon == "Abyss of Demons", "a portal's dungeon")
+
+        // Tiles and sources (issue #45): shinies fold into their base, a tier and slot family share a tile, and any-of
+        // counts a run once. Run 1 drops the sword, its shiny and the dagger; run 2 the dagger.
+        check(rates.exec("""
+            INSERT INTO items(type, name, origin, bag_type, tier, slot_type) VALUES (800, 'Test Sword', ',VOID,', 4, 12, 1),
+                (801, 'Test Dagger', ',VOID,', 4, 12, 2), (802, 'Test Sword Shiny', NULL, 4, NULL, 1), (803, 'Test Robe', ',VOID,', 4, 12, 14);
+            INSERT INTO bags(id, map, time, bag_type, kill) VALUES (7, 1, 1, 1292, 1), (8, 2, 3, 1292, 3);
+            INSERT INTO bag_items(bag, slot, item_type) VALUES (7, 0, 800), (7, 1, 802), (7, 2, 801), (8, 0, 801);
+            """), "tile rows")
+        let tiled = DropReport.load(rates)
+        let weapons = DropReport.Group(tier: 12, family: .weapons)
+        check(tiled.base(802) == 800 && tiled.variants(800) == [800, 802] && tiled.group(802) == weapons && tiled.group(9) == nil,
+              "a shiny's base, and its group")
+        check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
+              "any-of: a run with the sword and its shiny, or with two of a group, counts once")
+        let row = tiled.tiles([800, 801, 802, 803], dropped: [801])[.cyan]
+        check(row == [.group(weapons, [801, 800]), .item(803)] && weapons.name == "T12 weapons",
+              "one tile per tier group, shinies folded in, a lone member stays an item")
+        let sources = tiled.sources(tiled.variants(800))
+        check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
+              "an item's sources: per dungeon, runs with one, copies by mob")
+        check(tiled.rarityCounts([588, 800]) == [0, 1, 1, 0, 0], "rarity over a set of items")
     }
 }

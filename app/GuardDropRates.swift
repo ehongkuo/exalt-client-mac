@@ -330,10 +330,14 @@ enum LootImport {
 struct CaptureHealth: Equatable {
     var kills = 0, bags = 0, linked = 0, lost = 0
     var refused: String?
+    var lastKill: Double?   // seconds since 1970
 
     static func load(_ store: DropRateStore) -> CaptureHealth {
         var h = CaptureHealth()
-        store.run("SELECT count(*) FROM kills k WHERE \(DropReport.died)") { h.kills = Int(sqlite3_column_int64($0, 0)) }
+        store.run("SELECT count(*), max(k.time) FROM kills k WHERE \(DropReport.died)") {
+            h.kills = Int(sqlite3_column_int64($0, 0))
+            if sqlite3_column_type($0, 1) != SQLITE_NULL { h.lastKill = sqlite3_column_double($0, 1) }
+        }
         store.run("SELECT count(*), count(kill) FROM bags") {
             h.bags = Int(sqlite3_column_int64($0, 0)); h.linked = Int(sqlite3_column_int64($0, 1))
         }
@@ -364,11 +368,13 @@ enum Enchantments {
 }
 
 /// A rate: `count` drops (or runs with one) in `of` kills (or runs), with a 95% range from the drop count
-/// (Poisson, docs/drop-rates-investigation.md section 4). Under 10 drops it reads as rough.
+/// (Poisson, docs/drop-rates-investigation.md section 4).
 struct DropRate: Equatable {
     var count: Int, of: Int
     var rate: Double { of > 0 ? Double(count) / Double(of) : 0 }
-    var rough: Bool { count < 10 }
+    /// How far off the rate may be, at 95%, as a fraction (0.44 reads ±44%): about 1.96 ÷ √drops. Nil under 4 drops,
+    /// too few to say. It shrinks as data grows; there is no threshold where a rate becomes "solid".
+    var precision: Double? { count >= 4 ? 1.96 / Double(count).squareRoot() : nil }
     var range: ClosedRange<Double> {
         guard of > 0 else { return 0...0 }
         let (low, high) = Self.poissonRange(count)
@@ -417,7 +423,9 @@ struct DropReport: Equatable {
     var bestBag: [Mob: [DropBag: Int]] = [:]        // kills whose best bag was that colour
     var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
     var runs: [String: Int] = [:]                   // by dungeon
-    var runsWith: [String: [Int: Int]] = [:]        // dungeon → item → runs with at least one copy
+    /// dungeon → item → the runs (map ids) with at least one copy. Sets, so any-of counts (base and shiny, a tier
+    /// group) count a run once.
+    var runMaps: [String: [Int: Set<Int>]] = [:]
     /// dungeon → boss type (nil: any boss) → runs whose best bag from it was that colour.
     var bossBags: [String: [Int?: [DropBag: Int]]] = [:]
     var itemBag: [Int: DropBag] = [:]               // the highest bag colour each item came in
@@ -429,6 +437,8 @@ struct DropReport: Equatable {
     var drops: [Copy] = []
     var origins: [Int: String] = [:]                // item → the catalog's origin codes (",ABYSS,"), for every tagged item
     var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
+    var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
+    var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
     /// A dungeon to list: one with a template in the catalog, or a map with kills. `codes`: its drop tags.
     struct Dungeon: Hashable { var name: String, portal: Int?, codes: Set<String> }
     var dungeons: [Dungeon] = []                    // by name
@@ -514,9 +524,9 @@ struct DropReport: Equatable {
             r.runs[text($0, 0)] = int($0, 1)
         }
         store.run("""
-            \(runs) SELECT coalesce(m.name, ''), i.item_type, count(DISTINCT k.map) FROM bag_items i JOIN bags b ON b.id = i.bag
-            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs) GROUP BY 1, 2
-            """) { r.runsWith[text($0, 0), default: [:]][int($0, 1)] = int($0, 2) }
+            \(runs) SELECT DISTINCT coalesce(m.name, ''), i.item_type, k.map FROM bag_items i JOIN bags b ON b.id = i.bag
+            JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs)
+            """) { r.runMaps[text($0, 0), default: [:]][int($0, 1), default: []].insert(int($0, 2)) }
         var anyBoss: [Int: (dungeon: String, bag: DropBag)] = [:]   // by map
         store.run("""
             SELECT k.map, coalesce(m.name, ''), k.mob_type, max(\(rank)) FROM kills k JOIN maps m ON m.id = k.map
@@ -529,10 +539,11 @@ struct DropReport: Equatable {
         }
         for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
         store.run("""
-            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL FROM objects
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin FROM items
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL
+                OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
             """) {
             let type = int($0, 0)
             r.names[type] = text($0, 1)
@@ -540,7 +551,10 @@ struct DropReport: Equatable {
             if sqlite3_column_type($0, 6) != SQLITE_NULL { r.origins[type] = text($0, 6) }
             if int($0, 2) != 0 { r.bosses.insert(type) }
             if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
+            if sqlite3_column_type($0, 7) != SQLITE_NULL { r.tiers[type] = int($0, 7) }
+            if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
         }
+        store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
         var listed: [String: Dungeon] = [:]
@@ -563,8 +577,9 @@ struct DropReport: Equatable {
         rarity.filter { (dungeon == nil || $0.key.dungeon == dungeon) && (mob == nil || $0.key == mob) }.compactMap { $0.value[item]?.lastIndex { $0 > 0 } }.max()
     }
     /// Copies of an item by rarity, from one mob or every mob.
-    func rarityCounts(_ item: Int, mob: Mob? = nil) -> [Int] {
-        rarity.filter { mob == nil || $0.key == mob }.compactMap { $0.value[item] }.reduce([0, 0, 0, 0, 0]) { zip($0, $1).map(+) }
+    func rarityCounts(_ item: Int, mob: Mob? = nil) -> [Int] { rarityCounts([item], mob: mob) }
+    func rarityCounts(_ items: Set<Int>, mob: Mob? = nil) -> [Int] {
+        rarity.filter { mob == nil || $0.key == mob }.flatMap { r in items.compactMap { r.value[$0] } }.reduce([0, 0, 0, 0, 0]) { zip($0, $1).map(+) }
     }
 
     /// Copies of an item from every mob.
@@ -578,6 +593,84 @@ struct DropReport: Equatable {
         let tagged = origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys
         return Set(tagged).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
     }
+    /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
+    func base(_ item: Int) -> Int { shinyOf[item] ?? item }
+    /// An item and its shiny.
+    func variants(_ item: Int) -> Set<Int> { Set(shinyOf.filter { $0.value == item }.keys).union([item]) }
+    /// Runs in a dungeon with at least one copy of any of the items.
+    func runsWith(_ dungeon: String, _ items: Set<Int>) -> Int {
+        items.reduce(into: Set<Int>()) { $0.formUnion(runMaps[dungeon]?[$1] ?? []) }.count
+    }
+    /// Copies of any of the items from one mob.
+    func copies(_ mob: Mob, _ items: Set<Int>) -> Int { items.reduce(0) { $0 + (copies[mob]?[$1] ?? 0) } }
+
+    /// Items of one tier and slot family, which share a tile: T12 weapons, T5 rings. Untiered items (UTs, STs,
+    /// whites) have no group.
+    struct Group: Hashable {
+        enum Family: Int, CaseIterable { case weapons, armors, abilities, rings }
+        var tier: Int, family: Family
+        var name: String { "T\(tier) \(family)" }
+    }
+    /// The game's <SlotType> families; consumables (10) and eggs (26) have tiers but no group.
+    static func family(slot: Int) -> Group.Family? {
+        switch slot {
+        case 1, 2, 3, 8, 17, 24: return .weapons
+        case 6, 7, 14: return .armors
+        case 9: return .rings
+        case 10, 26: return nil
+        default: return .abilities
+        }
+    }
+    func group(_ item: Int) -> Group? {
+        let b = base(item)
+        guard let tier = tiers[b], let family = slots[b].flatMap(Self.family) else { return nil }
+        return Group(tier: tier, family: family)
+    }
+
+    /// A tile in a bag row: one base item, or a tier group of two or more.
+    enum Tile: Hashable {
+        case item(Int)
+        case group(Group, [Int])
+        var items: [Int] { switch self { case .item(let i): return [i]; case .group(_, let items): return items } }
+    }
+    /// Items as tiles by bag (nil: no bag known). Shinies fold into their base; groups come first (best tier first),
+    /// then items that `dropped`, then the rest, each by name.
+    func tiles(_ items: Set<Int>, dropped: Set<Int>) -> [DropBag?: [Tile]] {
+        let bases = Set(items.map(base))
+        let dropped = Set(dropped.map(base))
+        return Dictionary(grouping: bases) { bag($0) }.mapValues { inBag in
+            let byGroup = Dictionary(grouping: inBag) { group($0) }
+            var groups: [Tile] = [], singles: [Int] = []
+            for (g, members) in byGroup {
+                if let g, members.count > 1 { groups.append(.group(g, members.sorted { name($0) < name($1) })) } else { singles += members }
+            }
+            groups.sort {
+                guard case .group(let a, _) = $0, case .group(let b, _) = $1 else { return false }
+                return (a.family.rawValue, -a.tier) < (b.family.rawValue, -b.tier)
+            }
+            singles.sort { (dropped.contains($0) ? 0 : 1, name($0)) < (dropped.contains($1) ? 0 : 1, name($1)) }
+            return groups + singles.map(Tile.item)
+        }
+    }
+
+    /// Where an item (or any of a set) dropped: one per dungeon, with its runs, runs with one, and copies per mob.
+    struct Source: Hashable {
+        var dungeon: String, runs: Int, runsWith: Int, mobs: [Mob: Int]
+        var perRun: DropRate? { runs > 0 ? DropRate(count: runsWith, of: runs) : nil }
+    }
+    /// Sources, surest first: by the low end of the per-run 95% range, so a lucky 1 in 2 doesn't top a steady 1 in 7.
+    /// Places with no runs (no boss died: the Realm, events) follow, by their best mob's per kill.
+    func sources(_ items: Set<Int>) -> [Source] {
+        var mobs: [String: [Mob: Int]] = [:]
+        for mob in copies.keys { let n = copies(mob, items); if n > 0 { mobs[mob.dungeon, default: [:]][mob] = n } }
+        let all = mobs.map { Source(dungeon: $0.key, runs: runs[$0.key] ?? 0, runsWith: runsWith($0.key, items), mobs: $0.value) }
+        func key(_ s: Source) -> (Int, Double) {
+            if let r = s.perRun { return (1, r.range.lowerBound) }
+            return (0, s.mobs.map { DropRate(count: $0.value, of: kills[$0.key] ?? 0).range.lowerBound }.max() ?? 0)
+        }
+        return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
+    }
+
     /// The mobs killed in a dungeon, bosses first, then most kills.
     func mobs(in dungeon: String) -> [Mob] {
         kills.keys.filter { $0.dungeon == dungeon }
