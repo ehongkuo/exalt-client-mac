@@ -278,5 +278,17 @@ enum DropRateTests {
               "copies per kill: the sword and its shiny count together")
         check(tiled.drops(of: minion) == [.white: [588]] && tiled.drops(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
               "a minion's own drops; an unknown mob has none")
+        // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
+        let tab = DropRatesModel()
+        tab.item = 588; tab.pick(mob: boss)
+        check(tab.mob == boss && tab.item == nil && tab.group == nil, "a mob click opens its page over an open item")
+        tab.item = 800; tab.back()
+        check(tab.mob == boss && tab.item == nil, "esc from an item on the mob page goes back to the mob page")
+        tab.group = weapons; tab.back()
+        check(tab.mob == boss && tab.group == nil, "esc from a group goes back to the mob page")
+        tab.back()
+        check(tab.mob == nil, "esc from the mob page goes back to the dungeon")
+        tab.pick(mob: minion); tab.pick(mob: minion)
+        check(tab.mob == nil, "clicking the open mob again closes its page")
     }
 }

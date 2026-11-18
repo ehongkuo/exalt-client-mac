@@ -1,70 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The Drop rates tab of the main window (issues #41, #45), from all the data kept (DropReport has every query):
-/// dungeons on the left; the selected dungeon's drops in the middle, one row of tiles per bag; on the right the most
-/// specific thing picked: an item (a global page), a tier group, a mob's page (issue #50), or the dungeon.
-final class DropRatesModel: ObservableObject {
-    /// The main window shows the Drop rates tab instead of the Guard tab.
-    @Published var shown = false { didSet { resetOrders() } }
-    @Published var dungeon: String? { didSet { resetOrders() } }
-    @Published var mob: DropReport.Mob? { didSet { resetOrders() } }   // its page on the right; the grid stays dungeon-wide
-    @Published var group: DropReport.Group? { didSet { resetOrders() } }
-    @Published var item: Int? { didSet { resetOrders() } }
-    @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
-    @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
-    /// Why the tab can't show data (no database, no game data); nil when it can.
-    @Published var problem: String?
-    @Published private(set) var report = DropReport()
-    @Published private(set) var health = CaptureHealth()
-    @Published private(set) var sprites: [Int: CGImage] = [:]
-    private var spritesAsked: Set<Int> = []
-
-    func update(health: CaptureHealth) { if health != self.health { self.health = health } }
-    func update(_ report: DropReport) {
-        if report != self.report { self.report = report }
-        // Sprites are cut once per type, off the main thread, as new mobs and items show up.
-        let wanted = report.textures.filter { !spritesAsked.contains($0.key) }
-        guard !wanted.isEmpty else { return }
-        spritesAsked.formUnion(wanted.keys)
-        DispatchQueue.global(qos: .utility).async {
-            let cut = GameSprites.load(assets: RealmHoundPaths.assets, wanted)
-            DispatchQueue.main.async { self.sprites.merge(cut) { _, new in new } }
-        }
-    }
-    /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.
-    func select(dungeon: String, keepItem: Bool = false) {
-        self.dungeon = dungeon; mob = nil; group = nil
-        if !keepItem { item = nil }
-    }
-    /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
-    func back() {
-        if !search.isEmpty { search = "" } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
-    }
-
-    // Live data reloads every 30 s while you look. Rows keep the order they were first shown in (new ones go last),
-    // and a row whose count grew since then is marked. Any new pick starts over.
-    private var orders: [String: [AnyHashable]] = [:]
-    private var seen: [String: [AnyHashable: Int]] = [:]
-    private func resetOrders() { orders = [:]; seen = [:] }
-    /// `rows`, freshly sorted, in their first-shown order under `key`, each with whether its count grew.
-    func stable<T: Hashable>(_ key: String, _ rows: [T], count: (T) -> Int) -> [(row: T, grew: Bool)] {
-        let fresh = rows.map(AnyHashable.init)
-        let old = orders[key] ?? []
-        let order = old.filter(fresh.contains) + fresh.filter { !old.contains($0) }
-        orders[key] = order
-        var counts = seen[key] ?? [:]
-        let byKey = Dictionary(rows.map { (AnyHashable($0), $0) }) { a, _ in a }
-        let result = order.compactMap { k -> (T, Bool)? in
-            guard let row = byKey[k] else { return nil }
-            let n = count(row)
-            defer { if counts[k] == nil { counts[k] = n } }
-            return (row, counts[k].map { n > $0 } ?? false)
-        }
-        seen[key] = counts
-        return result
-    }
-}
+/// The Drop rates tab's views; `DropRatesModel` (in GuardDropRates.swift) holds what is picked.
 
 /// Guard | Drop rates, at the top of the main window in both tabs. An orange dot: capture is off.
 struct MainTabs: View {
@@ -293,7 +230,7 @@ struct DropRatesView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
                 let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob]!
-                chip(selected: model.mob == mob, { model.item = nil; model.group = nil; model.mob = model.mob == mob ? nil : mob }) {
+                chip(selected: model.mob == mob, { model.pick(mob: mob) }) {
                     SpriteIcon(image: model.sprites[mob.type], size: 20)
                     Text(name).lineLimit(1)
                 }
