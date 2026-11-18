@@ -3,7 +3,15 @@
 Goal: the Drop rates tab knows every dungeon, its mobs and their possible drops before the first kill, so new kill data
 lands in a ready slot and nothing in play is a surprise.
 
-Status: investigation done, plan waiting on the choices in [Decisions](#decisions). No script or data file yet.
+Status: decisions made (Nov 17, see [Decisions](#decisions)). The fetch stage of `tools/drop_catalog.py` is written;
+the parser waits on sample pages from your first run.
+
+**Decided:** you run the fetch yourself; this session may read the pages it caches; `data/drop_catalog.json` is
+committed (check RealmEye's terms first); the RealmEye sprite fallback stays in scope; a small edit to
+`GuardDropRatesView.swift` is fine, anything bigger waits for #50.
+
+**Next step:** run `tools/drop_catalog.py fetch /wiki/dungeons` plus one dungeon page and one mob page you know. The
+parser and the full crawl are written against those.
 
 ## 1. Sources
 
