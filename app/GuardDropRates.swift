@@ -532,6 +532,13 @@ struct DropReport: Equatable {
         "Wraith": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
         "Zombie Cleric": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4"
     ]
+    /// Catalog items with a <Tier> that RealmEye lists as no tier or has no page for (Nov 2026): test and event items,
+    /// never tiered loot. Every other tiered item has a RealmEye page, and spot-checked sprites match.
+    static let notLoot: Set<String> = [
+        "Short Test Sword", "Testing Trap", "Test Trap ATT", "Test Trap DEF", "Test Trap SPD", "Test Trap DEX", "Test Trap WIS",
+        "Test Trap VIT", "Test Trap DEX 2", "Magic Nova Spell BulletNova", "Magic Nova Spell DamageNova", "Trick Sheath",
+        "Trick Star", "Trick Lute", "Ring of Minor Defense",
+    ]
     /// Every item of the tier groups in a `realmEyeTiers` line.
     func tierItems(_ codes: String) -> Set<Int> {
         let families: [Substring: Group.Family] = ["We": .weapons, "Ab": .abilities, "Ar": .armors, "Ri": .rings]
@@ -631,7 +638,7 @@ struct DropReport: Equatable {
             if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
         }
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
-        for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") {
+        for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name(item)) {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
