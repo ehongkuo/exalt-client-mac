@@ -412,8 +412,8 @@ struct DropRate: Equatable {
 /// Everything the drop rates views show past Today (issues #41, #45), from all the data kept. Every query of the
 /// views is here, so a change in the data's shape after a staging run changes this one place.
 /// - A kill is `died`; its drops are the items in bags linked to it (`bags.kill`).
-/// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
-///   second bag of the same colour adds nothing.
+/// - A run's best bag from a boss is the highest colour among that boss's bags; it counts once per run, so an
+///   overflow second bag of the same colour adds nothing.
 /// - A run is a map visit in which a boss (catalog `boss`) died; per-run rates count runs with at least one.
 struct DropReport: Equatable {
     /// A mob type in one dungeon (the map name).

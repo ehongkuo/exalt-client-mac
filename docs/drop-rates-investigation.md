@@ -341,9 +341,8 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
    Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
    the views. Rules as built:
-   - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
-     not each item's `<BagType>`), so it is a chance per kill. Item rates count copies. (The mob page of #50
-     dropped it; the dungeon summary keeps the bosses' best bag per run.)
+   - **Best bag** counts runs whose highest bag colour from the bosses was that colour (the bag objects' colour,
+     not each item's `<BagType>`). Item rates count copies.
    - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
      runs with at least one. Realm quests count as bosses, so a realm visit with a quest kill is a run.
    - **Range:** exact Poisson below 50 drops, Byar's approximation above (within 0.01 %).

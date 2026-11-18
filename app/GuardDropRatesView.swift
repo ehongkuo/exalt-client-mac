@@ -293,7 +293,7 @@ struct DropRatesView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
                 let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob]!
-                chip(selected: model.mob == mob, { model.group = nil; model.mob = model.mob == mob ? nil : mob }) {
+                chip(selected: model.mob == mob, { model.item = nil; model.group = nil; model.mob = model.mob == mob ? nil : mob }) {
                     SpriteIcon(image: model.sprites[mob.type], size: 20)
                     Text(name).lineLimit(1)
                 }
