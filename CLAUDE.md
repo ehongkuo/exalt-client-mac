@@ -11,11 +11,13 @@ this repo:
 - **Order of work:** issue → worktree + session → `./build.sh --stage` and live-test → merge →
   `./build.sh` on main installs to ~/Applications. ~/Applications holds the app I play with: never
   install to it from a PR branch.
-- **Staging:** `./build.sh --stage` runs the tests and builds `build/Exalt Client Mac Staging.app`
-  (own bundle id, own data folder `~/Library/Application Support/Exalt Client Mac Staging`, blue
-  icon, "STAGING" badge). Its first run copies the installed app's settings. The app you start the
-  game from decides which guard runs, and only one game runs at a time: quit one app before
-  opening the other.
+- **Staging:** `./build.sh --stage` runs the tests and builds `build/Exalt Client Mac Staging <issue>.app`,
+  named after the branch's issue number (`feature/49-...` gives "Staging 49"; no number: the
+  worktree's folder name). Each has its own bundle id, data folder
+  (`~/Library/Application Support/Exalt Client Mac Staging <issue>`) and settings, a blue icon and a
+  "STAGING <issue>" badge, so several can be open at once. Its first run copies the installed app's
+  settings. All of them and the installed app share one `drop_rates.db`, in the installed app's data
+  folder. The app you start the game from decides which guard runs, and only one game runs at a time.
 - **Before a PR leaves draft:** `./build.sh --stage` passes. The tests show no window, popup or
   sound and take no focus, so `./build.sh --test-only` runs any time. The build step after them
   still needs the game, DECA's launcher and the staged app closed; `./build.sh --stage --app-only`
