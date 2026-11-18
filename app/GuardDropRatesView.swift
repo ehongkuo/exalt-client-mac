@@ -285,17 +285,11 @@ struct DropRatesView: View {
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
-    /// All mobs, then the bosses and the minions killed here, each in their own row. Clicking the picked mob again
-    /// shows all.
+    /// The bosses and the minions killed here, each in their own row. Clicking the picked mob again, the breadcrumb or
+    /// Esc shows all.
     private func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
         let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
         return VStack(alignment: .leading, spacing: 6) {
-            chip(selected: model.mob == nil, { model.mob = nil; model.group = nil }) {
-                Image(systemName: "square.grid.2x2").frame(width: 20, height: 20)
-                Text("All mobs")
-            }
-            .frame(width: 150)
-            .accessibilityLabel("All mobs")
             if !bosses.isEmpty { mobRow("BOSSES", bosses) }
             if !minions.isEmpty { mobRow("MINIONS", minions) }
         }

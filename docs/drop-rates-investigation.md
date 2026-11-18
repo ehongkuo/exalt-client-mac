@@ -358,7 +358,7 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
      `DropReport.dropTags`) and every map with kills, with its portal sprite; played ones first. Search shows
      two groups, Items (opens the item page) and Dungeons.
    - **Bags and drops:** a breadcrumb (dungeon › mob › group › item, each a step back; Esc steps back too), one
-     strip of mobs (All mobs first, bosses crowned; a mob shows only its drops), then one row of tiles per bag,
+     BOSSES and MINIONS rows of mob chips (a mob shows only its drops; Esc or the breadcrumb shows all), then one row of tiles per bag,
      by the catalog's `<BagType>` (`DropBag(bagType:)`). Shinies ("X Shiny" by id) fold into their base item.
      Items of one `<Tier>` and slot family (weapons, armors, abilities, rings by `<SlotType>`) share a tile,
      which cycles its sprites only on hover. Possible drops are the items whose `ORG_*` tag is one of the
