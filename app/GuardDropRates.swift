@@ -1,3 +1,5 @@
+import Combine
+import CoreGraphics
 import Foundation
 import SQLite3
 
@@ -404,6 +406,11 @@ struct DropRate: Equatable {
     }
 
     /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
+    /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
+    var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
+    /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
+    var percent: String { Self.percent(rate) }
+    static func percent(_ rate: Double) -> String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
     static func oneIn(_ rate: Double) -> String {
         rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
     }
@@ -412,17 +419,20 @@ struct DropRate: Equatable {
 /// Everything the drop rates views show past Today (issues #41, #45), from all the data kept. Every query of the
 /// views is here, so a change in the data's shape after a staging run changes this one place.
 /// - A kill is `died`; its drops are the items in bags linked to it (`bags.kill`).
-/// - A kill's best bag is the highest colour among its bags; it counts once per kill, so an overflow
-///   second bag of the same colour adds nothing.
+/// - A run's best bag from a boss is the highest colour among that boss's bags; it counts once per run, so an
+///   overflow second bag of the same colour adds nothing.
 /// - A run is a map visit in which a boss (catalog `boss`) died; per-run rates count runs with at least one.
 struct DropReport: Equatable {
     /// A mob type in one dungeon (the map name).
     struct Mob: Hashable { var type: Int, dungeon: String }
     var kills: [Mob: Int] = [:]
     var maxHP: [Mob: Int] = [:]
-    var bestBag: [Mob: [DropBag: Int]] = [:]        // kills whose best bag was that colour
     var copies: [Mob: [Int: Int]] = [:]             // copies of each item from the mob's kills
     var runs: [String: Int] = [:]                   // by dungeon
+    var mobRuns: [Mob: Int] = [:]                   // runs the mob died in
+    /// mob → item → the kills (ids) with at least one copy. Sets, so any-of counts (a bag, a tier group, an item and
+    /// its shiny) count a kill once.
+    var killsWith: [Mob: [Int: Set<Int>]] = [:]
     /// dungeon → item → the runs (map ids) with at least one copy. Sets, so any-of counts (base and shiny, a tier
     /// group) count a run once.
     var runMaps: [String: [Int: Set<Int>]] = [:]
@@ -577,12 +587,6 @@ struct DropReport: Equatable {
             r.kills[mob] = int($0, 2); r.maxHP[mob] = int($0, 3)
         }
         store.run("""
-            SELECT mob_type, dungeon, top, count(*) FROM (
-                SELECT k.mob_type, coalesce(m.name, '') dungeon, max(\(rank)) top FROM kills k JOIN maps m ON m.id = k.map
-                JOIN bags b ON b.kill = k.id WHERE \(died) GROUP BY k.id)
-            WHERE top IS NOT NULL GROUP BY 1, 2, 3
-            """) { r.bestBag[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][DropBag.allCases[int($0, 2)]] = int($0, 3) }
-        store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), i.item_type, count(*), max(\(rank)) FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) GROUP BY 1, 2, 3
             """) {
@@ -593,7 +597,7 @@ struct DropReport: Equatable {
         var decoded: [Int: [Int?]] = [:]   // by bag: one decode per bag, not per item
         store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), i.item_type, i.slot, b.id,
-                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80) FROM bag_items i JOIN bags b ON b.id = i.bag
+                (SELECT text FROM bag_stats s WHERE s.bag = b.id AND s.stat_type = 80), k.id FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died)
             """) {
             let bag = int($0, 4), slot = int($0, 3)
@@ -601,11 +605,16 @@ struct DropReport: Equatable {
             decoded[bag] = counts
             let mob = Mob(type: int($0, 0), dungeon: text($0, 1)), item = int($0, 2), n = slot < counts.count ? counts[slot] : nil
             r.drops.append(Copy(mob: mob, item: item, enchants: n))
+            r.killsWith[mob, default: [:]][item, default: []].insert(int($0, 6))
             if let n { r.rarity[mob, default: [:]][item, default: [0, 0, 0, 0, 0]][DropRarity(enchants: n).rawValue] += 1 }
         }
         store.run("\(runs) SELECT coalesce(m.name, ''), count(*) FROM runs JOIN maps m ON m.id = runs.map GROUP BY 1") {
             r.runs[text($0, 0)] = int($0, 1)
         }
+        store.run("""
+            \(runs) SELECT k.mob_type, coalesce(m.name, ''), count(DISTINCT k.map) FROM kills k JOIN maps m ON m.id = k.map
+            WHERE \(died) AND k.map IN (SELECT map FROM runs) GROUP BY 1, 2
+            """) { r.mobRuns[Mob(type: int($0, 0), dungeon: text($0, 1))] = int($0, 2) }
         store.run("""
             \(runs) SELECT DISTINCT coalesce(m.name, ''), i.item_type, k.map FROM bag_items i JOIN bags b ON b.id = i.bag
             JOIN kills k ON k.id = b.kill JOIN maps m ON m.id = k.map WHERE \(died) AND k.map IN (SELECT map FROM runs)
@@ -680,9 +689,18 @@ struct DropReport: Equatable {
     /// A dungeon's possible drops: items the catalog tags with one of its drop tags, its mobs' tiered loot by RealmEye,
     /// and every item that dropped there.
     func possibleDrops(_ dungeon: Dungeon) -> Set<Int> {
-        let tagged = origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys
-        return Set(tagged).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
+        tagged(dungeon).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
             .union(kills.keys.filter { $0.dungeon == dungeon.name }.flatMap(tierItems))
+    }
+    /// Items the catalog tags with one of a dungeon's drop tags.
+    func tagged(_ dungeon: Dungeon) -> Set<Int> {
+        Set(origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys)
+    }
+    /// A mob's possible drops: what it dropped and its tiered loot by RealmEye; a boss also gets its dungeon's tagged
+    /// items, which the catalog lists per dungeon, not per mob (so a minion doesn't).
+    func possibleDrops(_ mob: Mob) -> Set<Int> {
+        let dungeon = bosses.contains(mob.type) ? dungeons.first { $0.name == mob.dungeon } : nil
+        return Set((copies[mob] ?? [:]).keys).union(tierItems(mob)).union(dungeon.map(tagged) ?? [])
     }
     /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
     func base(_ item: Int) -> Int { shinyOf[item] ?? item }
@@ -786,6 +804,15 @@ struct DropReport: Equatable {
             return (0, s.mobs.map { DropRate(count: $0.value, of: kills[$0.key] ?? 0).range.lowerBound }.max() ?? 0)
         }
         return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
+    }
+
+    /// A mob's possible drops as the grid's tiles, by bag, for its page.
+    func tiles(of mob: Mob) -> [DropBag?: [Tile]] { tiles(possibleDrops(mob)) }
+    /// A mob's kills that dropped at least one of the tiles' items (or their shinies): the mob page's drop chance.
+    func killsWith(_ mob: Mob, _ tiles: [Tile]) -> Int {
+        tiles.flatMap(\.items).reduce(into: Set<Int>()) { kills, item in
+            for v in variants(item) { kills.formUnion(killsWith[mob]?[v] ?? []) }
+        }.count
     }
 
     /// The mobs killed in a dungeon, bosses first, then most kills.
@@ -943,5 +970,76 @@ enum GameNames {
     private static func xmlFiles(_ folder: URL) -> [URL] {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension == "xml" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+}
+
+/// The Drop rates tab of the main window (issues #41, #45), from all the data kept (DropReport has every query):
+/// dungeons on the left; the selected dungeon's drops in the middle, one row of tiles per bag; on the right the most
+/// specific thing picked: an item (a global page), a tier group, a mob's page (issue #50), or the dungeon.
+final class DropRatesModel: ObservableObject {
+    /// The main window shows the Drop rates tab instead of the Guard tab.
+    @Published var shown = false { didSet { resetOrders() } }
+    @Published var dungeon: String? { didSet { resetOrders() } }
+    @Published var mob: DropReport.Mob? { didSet { resetOrders() } }   // its page on the right; the grid stays dungeon-wide
+    @Published var group: DropReport.Group? { didSet { resetOrders() } }
+    @Published var item: Int? { didSet { resetOrders() } }
+    @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
+    @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
+    @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
+    @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
+    /// Why the tab can't show data (no database, no game data); nil when it can.
+    @Published var problem: String?
+    @Published private(set) var report = DropReport()
+    @Published private(set) var health = CaptureHealth()
+    @Published private(set) var sprites: [Int: CGImage] = [:]
+    private var spritesAsked: Set<Int> = []
+
+    func update(health: CaptureHealth) { if health != self.health { self.health = health } }
+    func update(_ report: DropReport) {
+        if report != self.report { self.report = report }
+        // Sprites are cut once per type, off the main thread, as new mobs and items show up.
+        let wanted = report.textures.filter { !spritesAsked.contains($0.key) }
+        guard !wanted.isEmpty else { return }
+        spritesAsked.formUnion(wanted.keys)
+        DispatchQueue.global(qos: .utility).async {
+            let cut = GameSprites.load(assets: RealmHoundPaths.assets, wanted)
+            DispatchQueue.main.async { self.sprites.merge(cut) { _, new in new } }
+        }
+    }
+    /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.
+    func select(dungeon: String, keepItem: Bool = false) {
+        self.dungeon = dungeon; mob = nil; group = nil
+        if !keepItem { item = nil }
+    }
+    /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.
+    func pick(mob: DropReport.Mob) {
+        item = nil; group = nil; openGroups = []; openBags = []; self.mob = self.mob == mob ? nil : mob
+    }
+    /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
+    func back() {
+        if !search.isEmpty { search = "" } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
+    }
+
+    // Live data reloads every 30 s while you look. Rows keep the order they were first shown in (new ones go last),
+    // and a row whose count grew since then is marked. Any new pick starts over.
+    private var orders: [String: [AnyHashable]] = [:]
+    private var seen: [String: [AnyHashable: Int]] = [:]
+    private func resetOrders() { orders = [:]; seen = [:] }
+    /// `rows`, freshly sorted, in their first-shown order under `key`, each with whether its count grew.
+    func stable<T: Hashable>(_ key: String, _ rows: [T], count: (T) -> Int) -> [(row: T, grew: Bool)] {
+        let fresh = rows.map(AnyHashable.init)
+        let old = orders[key] ?? []
+        let order = old.filter(fresh.contains) + fresh.filter { !old.contains($0) }
+        orders[key] = order
+        var counts = seen[key] ?? [:]
+        let byKey = Dictionary(rows.map { (AnyHashable($0), $0) }) { a, _ in a }
+        let result = order.compactMap { k -> (T, Bool)? in
+            guard let row = byKey[k] else { return nil }
+            let n = count(row)
+            defer { if counts[k] == nil { counts[k] = n } }
+            return (row, counts[k].map { n > $0 } ?? false)
+        }
+        seen[key] = counts
+        return result
     }
 }
