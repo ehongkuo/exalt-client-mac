@@ -317,28 +317,18 @@ final class DropAlerts: ObservableObject {
     @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
+    /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
+    var catalog = RuleCatalog()
     private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
 
     init() {
-        var s = DropAlertSettings()
-        if let v = defaults.object(forKey: "dropAlerts") as? Bool { s.enabled = v }
-        if let v = defaults.object(forKey: "dropAlertSound") as? Bool { s.sound = v }
-        if let v = defaults.stringArray(forKey: "dropAlertBags") { s.bags = Set(v.compactMap(DropBag.init(rawValue:))) }
-        if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { s.minRarity = r }
-        if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { s.shiny = v }
-        settings = s
+        settings = DropAlertSettings(defaults: defaults)
         loadShiniesIfNeeded()
         loadBagsIfNeeded()
     }
-    private func save() {
-        defaults.set(settings.enabled, forKey: "dropAlerts")
-        defaults.set(settings.sound, forKey: "dropAlertSound")
-        defaults.set(settings.bags.map(\.rawValue).sorted(), forKey: "dropAlertBags")
-        defaults.set(settings.minRarity.rawValue, forKey: "dropAlertRarity")
-        defaults.set(settings.shiny, forKey: "dropAlertShiny")
-    }
+    private func save() { settings.save(to: defaults) }
     /// The shiny list comes from about 60 MB of XML, so it is read once, off the main thread.
     private func loadShiniesIfNeeded() {
         #if !GUARD_UI_TEST
@@ -371,7 +361,7 @@ final class DropAlerts: ObservableObject {
         let drops = log.poll()
         if log.logs != logs { logs = log.logs }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, nowMs: nowMs) }).last {
+        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
             show(alert)
         }
         #endif
@@ -1142,6 +1132,40 @@ struct GuardPanel {
         .onAppear { dropData.loadNamesIfNeeded() }
     }
 
+    /// One item rule (issue #47): blank or Any parts match everything.
+    private func itemRule(_ rule: Binding<ItemRule>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Picker("Type", selection: rule.slot) {
+                    Text("Any").tag(Int?.none)
+                    ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+                }
+                .fixedSize()
+                Picker("Tier", selection: rule.minTier) {
+                    Text("Any").tag(Int?.none)
+                    ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
+                }
+                .fixedSize()
+                Picker("Rarity", selection: rule.minRarity) {
+                    ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                }
+                .fixedSize()
+                Spacer(minLength: 0)
+                Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless).help("Remove rule")
+            }
+            HStack(spacing: 6) {
+                Text("Name").foregroundStyle(.secondary)
+                TextField("contains…", text: rule.name)
+                Text("Enchant").foregroundStyle(.secondary)
+                TextField("contains…", text: rule.enchant)
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+    }
+
     private func dropDetail() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch).controlSize(.small)
@@ -1171,6 +1195,11 @@ struct GuardPanel {
                 }
                 .fixedSize()
                 Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+                Divider().padding(.vertical, 2)
+                Text("Item rules").fontWeight(.semibold)
+                Text("Also alert when any item matches a rule, in any bag.").foregroundStyle(.secondary)
+                ForEach($drops.settings.rules) { $rule in itemRule($rule) }
+                Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
             }
             .disabled(!drops.settings.enabled)
             Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
@@ -1334,15 +1363,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         guard !lootBusy, pending || lootDay != today else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        let noCatalog = drops.catalog.items.isEmpty
         lootQueue.async {
-            var day: DropDay?
+            var day: DropDay?, catalog: RuleCatalog?
             if let store = DropRateStore(path: LootImport.dbPath(data: dataURL)) {
-                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
+                if GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
+                    catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
+                }
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 day = DropDay.load(store, since: today)
             }
             DispatchQueue.main.async {
                 if let day { self.dropData.update(day); self.lootDay = today }
+                if let catalog { self.drops.catalog = catalog }
                 self.lootBusy = false
                 // All-time queries are heavier, so an open Drop rates window refreshes at most every 30 s.
                 if self.ratesWindow?.isVisible == true, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
