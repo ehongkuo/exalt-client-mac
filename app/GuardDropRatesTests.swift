@@ -286,9 +286,9 @@ enum DropRateTests {
               DropRate(count: 9, of: 20).plusMinus == "±65%" && DropRate(count: 3, of: 20).plusMinus == nil, "percent and ±")
         // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
         let tab = DropRatesModel()
-        tab.item = 588; tab.openGroups = [weapons]; tab.pick(mob: boss)
-        check(tab.mob == boss && tab.item == nil && tab.group == nil && tab.openGroups.isEmpty,
-              "a mob click opens its page over an open item, with its groups closed")
+        tab.item = 588; tab.openGroups = [weapons]; tab.openBags = [.cyan, nil]; tab.pick(mob: boss)
+        check(tab.mob == boss && tab.item == nil && tab.group == nil && tab.openGroups.isEmpty && tab.openBags.isEmpty,
+              "a mob click opens its page over an open item, with its bags and groups closed")
         tab.item = 800; tab.back()
         check(tab.mob == boss && tab.item == nil, "esc from an item on the mob page goes back to the mob page")
         tab.group = weapons; tab.back()

@@ -984,6 +984,7 @@ final class DropRatesModel: ObservableObject {
     @Published var group: DropReport.Group? { didSet { resetOrders() } }
     @Published var item: Int? { didSet { resetOrders() } }
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
+    @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
     @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
@@ -1012,7 +1013,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.
     func pick(mob: DropReport.Mob) {
-        item = nil; group = nil; openGroups = []; self.mob = self.mob == mob ? nil : mob
+        item = nil; group = nil; openGroups = []; openBags = []; self.mob = self.mob == mob ? nil : mob
     }
     /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
     func back() {

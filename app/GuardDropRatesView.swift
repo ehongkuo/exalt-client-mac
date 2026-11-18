@@ -501,7 +501,7 @@ struct DropRatesView: View {
     private func sortedBags(_ bags: [DropBag: Int]) -> [DropBag] { DropBag.allCases.reversed().filter { bags[$0] != nil } }
 }
 
-/// A mob's page (issue #50), laid out like the dungeon's grid: a row per bag with the bag's total, then a cell per
+/// A mob's page (issue #50), laid out like the dungeon's grid: a row per bag with the bag's total that opens to a cell per
 /// untiered item with its drop chance per kill, drops/kills and ±, then a full-width row per tier group that opens in
 /// place to its items. Items it can drop but hasn't yet are faded at 0/N. An item opens its item page.
 struct MobPage: View {
@@ -530,16 +530,29 @@ struct MobPage: View {
             if tiles.isEmpty { Text("No drops from this mob yet.").foregroundStyle(.secondary) }
             ForEach(DropBag.allCases.reversed().map(Optional.some) + [nil], id: \.self) { bag in
                 if let row = tiles[bag] {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(spacing: 2) {
+                    let open = model.openBags.contains(bag)
+                    // A bag is one row (icon, name, its total) until clicked open.
+                    Button { if open { model.openBags.remove(bag) } else { model.openBags.insert(bag) } } label: {
+                        HStack(spacing: 10) {
                             Group {
-                                if let bag { BagIcon(bag: bag, sprite: bagSprites[bag], size: 28).help(bag.name) }
-                                else { Image(systemName: "questionmark.square.dashed").font(.system(size: 22)).foregroundStyle(.secondary).help("No bag in the game data") }
+                                if let bag { BagIcon(bag: bag, sprite: bagSprites[bag], size: 28) }
+                                else { Image(systemName: "questionmark.square.dashed").font(.system(size: 22)).foregroundStyle(.secondary) }
                             }
                             .frame(width: 36, height: 36)
-                            numbers(report.killsWith(mob, row), of: kills, stacked: true)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(bag?.name ?? "No bag in the game data").font(.callout.weight(.medium))
+                                Text("\(row.count) \(row.count == 1 ? "entry" : "entries")").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            numbers(report.killsWith(mob, row), of: kills, stacked: false)
+                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
-                        .frame(width: 56)
+                        .padding(.vertical, 4).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(bag?.name ?? "No bag"), \(DropRate(count: report.killsWith(mob, row), of: kills).percent) per kill")
+                    .accessibilityAddTraits(open ? .isSelected : [])
+                    if open {
                         // Untiered items in a grid, then each tier group as a full-width row that opens in place.
                         VStack(alignment: .leading, spacing: 6) {
                             let singles = row.filter { if case .item = $0 { return true } else { return false } }
@@ -558,11 +571,12 @@ struct MobPage: View {
                                 }
                             }
                         }
+                        .padding(.leading, 46)
                     }
                     Divider()
                 }
             }
-            Text("Drop chance: the share of kills that dropped at least one. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). A tier group opens its items; an item opens its page. Esc steps back.")
+            Text("Drop chance: the share of kills that dropped at least one. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
