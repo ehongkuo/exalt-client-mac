@@ -645,6 +645,13 @@ struct DropReport: Equatable {
         }
     }
 
+    /// A group's members by kind, in its family's rotation order; a tier can hold two items of one kind (a sword and a
+    /// flail), which share their kind's turn. Items with no place go last, one kind each.
+    func kinds(_ items: [Int]) -> [[Int]] {
+        let placed = Dictionary(grouping: items.filter { rotation($0) != nil }) { rotation($0)!.position }
+        return placed.keys.sorted().map { placed[$0]!.sorted { name($0) < name($1) } } + items.filter { rotation($0) == nil }.map { [$0] }
+    }
+
     /// A tile in a bag row: one base item, or a tier group of two or more.
     enum Tile: Hashable {
         case item(Int)

@@ -352,17 +352,9 @@ struct DropRatesView: View {
         }
     }
 
-    /// A group's sprites by place in its family's fixed rotation (sword, dagger, bow, …; attack, defense, speed, … rings),
-    /// so every group of a family shows the same kind at once; a missing kind shows the next one there is.
+    /// A group's sprites by kind, in its family's fixed order (sword, dagger, bow, …; attack, defense, speed, … rings).
     private func rotation(_ items: [Int], first: Int) -> GroupTile.Rotation {
-        var frames: [Int: CGImage?] = [:], length = 1
-        for item in items {
-            guard let r = report.rotation(item) else { continue }
-            frames[r.position] = model.sprites[item]; length = r.of
-        }
-        return GroupTile.Rotation(frames: (0..<length).compactMap { i in
-            (0..<length).lazy.map { (i + $0) % length }.first { frames[$0] != nil }.map { frames[$0]! }
-        }, still: model.sprites[first])
+        GroupTile.Rotation(kinds: report.kinds(items).map { $0.map { model.sprites[$0] } }, still: model.sprites[first])
     }
 
     private func tileBackground(_ selected: Bool) -> some View {
@@ -616,10 +608,17 @@ struct DropRatesView: View {
     private func sortedBags(_ bags: [DropBag: Int]) -> [DropBag] { DropBag.allCases.reversed().filter { bags[$0] != nil } }
 }
 
-/// A tier group's tile: its family's rotation, one kind a second on the wall clock (so all groups of a family turn
-/// together), with the tier; `still` with Reduce Motion.
+/// A tier group's tile: its kinds in turn, one a second on the wall clock, so groups with the same kinds (T7 and T8
+/// weapons) show the same kind at once. A kind with two items shows the next one each time round. `still` with Reduce
+/// Motion.
 struct GroupTile: View {
-    struct Rotation { var frames: [CGImage?], still: CGImage? }
+    struct Rotation {
+        var kinds: [[CGImage?]], still: CGImage?
+        func frame(_ second: Int) -> CGImage? {
+            let kind = kinds[second % kinds.count]
+            return kind[second / kinds.count % kind.count]
+        }
+    }
     var sprites: Rotation
     var tier: Int
     var size: CGFloat = 32
@@ -627,9 +626,9 @@ struct GroupTile: View {
 
     var body: some View {
         Group {
-            if !reduceMotion && sprites.frames.count > 1 {
+            if !reduceMotion && sprites.kinds.joined().count > 1 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    SpriteIcon(image: sprites.frames[Int(context.date.timeIntervalSince1970) % sprites.frames.count], size: size)
+                    SpriteIcon(image: sprites.frame(Int(context.date.timeIntervalSince1970)), size: size)
                 }
             } else {
                 SpriteIcon(image: sprites.still, size: size)

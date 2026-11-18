@@ -259,6 +259,8 @@ enum DropRateTests {
         check(row[.cyan] == [.group(weapons, [800, 801]), .item(803)] && weapons.name == "T12 weapons",
               "one tile per tier group in rotation order (sword, dagger), shinies folded in, a lone member stays an item; weapons before armors")
         check(tiled.rotation(801)! == (1, 6) && tiled.rotation(803)! == (2, 3) && tiled.rotation(9) == nil, "rotation places: dagger 2nd of 6, robe 3rd of 3")
+        check(tiled.kinds([803, 801, 802, 800, 9]) == [[800, 802], [801], [803], [9]],
+              "kinds in rotation order; two items of one kind share a turn; unplaced last")
         let sources = tiled.sources(tiled.variants(800))
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
