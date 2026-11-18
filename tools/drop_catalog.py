@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 """Builds the dungeon, mob and drop catalog from RealmEye and the game data (issue #51).
 
-    tools/drop_catalog.py fetch PATH...     fetch RealmEye pages into the cache, e.g. /wiki/dungeons
+    tools/drop_catalog.py build [--offline] [--refresh] [--db PATH]...
+    tools/drop_catalog.py fetch PATH...     fetch single RealmEye pages into the cache, e.g. /wiki/dungeons
     tools/drop_catalog.py --self-test
+
+build reads RealmEye's dungeon list, each dungeon's page and each of its mobs' pages, matches every
+name to the game's type ids in RealmHound's XML (read-only), and writes data/drop_catalog.json. It
+prints what changed since the last file, and what drop_rates.db has seen in play that the catalog
+still lacks. Mobs and items with no sprite in the game data get RealmEye's, in data/sprites/.
 
 Run it yourself, not from an AI agent: RealmEye's robots.txt blocks AI agents by name. Every request
 is checked against robots.txt for this tool's User-Agent, spaced at least 2 s apart (RealmEye asks for
 1 s), and saved under ~/Library/Caches/Exalt Client Mac/realmeye/, so a page is fetched once until you
-pass --refresh. Data from RealmEye (https://www.realmeye.com), credited in the catalog it builds.
+pass --refresh. --offline uses only the cache. Data from RealmEye (https://www.realmeye.com), credited
+in the catalog it builds.
 """
 import argparse
+import datetime
+import glob
+import html as htmllib
+import json
 import os
+import re
+import sqlite3
 import sys
 import time
 import urllib.error
@@ -20,7 +33,15 @@ import urllib.robotparser
 SITE = 'https://www.realmeye.com'
 AGENT = 'exalt-client-mac-drop-catalog/1.0 (personal tool, one page every 2 s, cached)'
 CACHE = os.path.expanduser('~/Library/Caches/Exalt Client Mac/realmeye')
+XML = os.path.expanduser('~/Library/Application Support/RealmHound/assets/xml')
+DBS = [os.path.expanduser(f'~/Library/Application Support/{app}/drop_rates.db')
+       for app in ('Exalt Client Mac', 'Exalt Client Mac Staging')]
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(REPO, 'data', 'drop_catalog.json')
+SPRITES = os.path.join(REPO, 'data', 'sprites')
 DELAY = 2.0
+REALM = 'Realm of the Mad God'   # the map name kills in the Realm are stored under
+FAMILIES = {'weapons': 'weapon', 'ability-items': 'ability', 'armor': 'armor', 'rings': 'ring'}
 
 
 def cache_path(path, cache=CACHE):
@@ -28,14 +49,16 @@ def cache_path(path, cache=CACHE):
     clean = path.split('#')[0].split('?')[0].strip('/')
     if not clean or '..' in clean.split('/'):
         raise ValueError(f'not a page path: {path!r}')
-    return os.path.join(cache, clean + '.html')
+    return os.path.join(cache, clean if os.path.splitext(clean)[1] else clean + '.html')
 
 
 class Fetcher:
-    def __init__(self, cache=CACHE, refresh=False, opener=urllib.request.urlopen, sleep=time.sleep, clock=time.monotonic):
-        self.cache, self.refresh = cache, refresh
+    def __init__(self, cache=CACHE, refresh=False, offline=False, opener=urllib.request.urlopen, sleep=time.sleep,
+                 clock=time.monotonic):
+        self.cache, self.refresh, self.offline = cache, refresh, offline
         self.opener, self.sleep, self.clock = opener, sleep, clock
         self.last, self.robots, self.delay = None, None, DELAY
+        self.missing, self.fresh = [], set()   # fresh: fetched this run, so --refresh fetches each once
 
     def wait(self):
         if self.last is not None:
@@ -55,30 +78,256 @@ class Fetcher:
             self.delay = max(DELAY, float(self.robots.crawl_delay(AGENT) or 0))
         return self.robots.can_fetch(AGENT, SITE + path)
 
-    def page(self, path):
-        """The page's HTML, from the cache when it's there. None when robots.txt disallows it or it's missing."""
+    def raw(self, path):
+        """The file's bytes, from the cache when it's there. None when robots.txt disallows it, it's missing
+        on the site, or --offline and it isn't cached."""
         file = cache_path(path, self.cache)
-        if os.path.exists(file) and not self.refresh:
-            with open(file, encoding='utf-8') as f: return f.read()
-        if not self.allowed(path):
-            print(f'skipped (robots.txt): {path}', file=sys.stderr)
-            return None
-        try:
-            html = self.get(SITE + path).decode('utf-8', 'replace')
-        except urllib.error.HTTPError as e:
-            print(f'skipped (HTTP {e.code}): {path}', file=sys.stderr)
+        if os.path.exists(file) and not (self.refresh and file not in self.fresh):
+            with open(file, 'rb') as f: return f.read()
+        why = 'offline, not cached' if self.offline else None
+        if not why and not self.allowed(path): why = 'robots.txt'
+        if not why:
+            try:
+                data = self.get(SITE + path)
+            except urllib.error.HTTPError as e:
+                why = f'HTTP {e.code}'
+        if why:
+            self.missing.append((path, why))
             return None
         os.makedirs(os.path.dirname(file), exist_ok=True)
-        with open(file + '.part', 'w', encoding='utf-8') as f: f.write(html)
+        with open(file + '.part', 'wb') as f: f.write(data)
         os.replace(file + '.part', file)   # a cut-off run never leaves half a page in the cache
-        print(f'fetched {path}')
-        return html
+        self.fresh.add(file)
+        print(f'fetched {path}', file=sys.stderr)
+        return data
+
+    def page(self, path):
+        data = self.raw(path)
+        return None if data is None else data.decode('utf-8', 'replace')
+
+
+# RealmEye pages. Layouts as of Nov 2026: the dungeon list's table rows open with a text link and an
+# anchor; a dungeon page lists its mobs as image links under <h2 id="enemies"> and the boss headings;
+# a mob page has "Base HP" and a <h3 id="drops"> section of text links, tiers as /wiki/weapons#tier-7.
+
+def key(name):
+    """A name for matching: entities decoded, curly quotes straightened, case folded."""
+    return re.sub(r'\s+', ' ', htmllib.unescape(name).replace('’', "'").replace('‘', "'")).strip().casefold()
+
+
+def wiki(html):
+    i = html.find('<div class="wiki-page"')
+    return html[i:] if i >= 0 else html
+
+
+def dungeon_list(html):
+    """(slug, name) of each dungeon in the list."""
+    found = re.findall(r'<td[^>]*><a href="/wiki/([^"#]+)">([^<]+)</a><a id=', wiki(html))
+    return list(dict.fromkeys((slug, htmllib.unescape(name).strip()) for slug, name in found))
+
+
+def image_links(html):
+    """(slug, name) of each image link, the way mobs are shown."""
+    found = re.findall(r'<a href="/wiki/([^"#]+)"><img [^>]*?alt="([^"]*)"', html)
+    return list(dict.fromkeys((slug, htmllib.unescape(name).strip()) for slug, name in found))
+
+
+def dungeon_mobs(html):
+    """(slug, name) of the mobs a dungeon page lists: enemies and bosses, not environmental hazards."""
+    html = wiki(html)
+    start = html.find('<h2 id="enemies"')
+    if start < 0: return []
+    end = next((m.start() for m in re.finditer(r'<h2\b(?: id="([^"]*)")?', html[start:])
+                if m.start() > 0 and m.group(1) not in ('boss', 'roomboss')), len(html) - start)
+    parts = re.split(r'<h[234][^>]*>(.*?)</h[234]>', html[start:start + end])
+    mobs = []
+    for heading, body in zip(parts[1::2], parts[2::2]):
+        if not re.sub('<[^>]+>', '', heading).strip().casefold().startswith('environmental'): mobs += image_links(body)
+    return list(dict.fromkeys(mobs))
+
+
+def is_mob(html):
+    return 'Base HP' in html
+
+
+def mob_drops(html):
+    """A mob page's named drops (names) and tiers ({family: [tier]})."""
+    html = wiki(html)
+    start = html.find('id="drops"')
+    if start < 0: return [], {}
+    end = re.compile(r'<h[23] id=').search(html, start + 10)
+    drops, tiers = [], {}
+    for href, text in re.findall(r'<a href="/wiki/([^"]+)">([^<]+)</a>', html[start:end.start() if end else len(html)]):
+        tier = re.fullmatch(r'([a-z-]+)#tier-(\d+)', href)
+        if tier and tier[1] in FAMILIES:
+            tiers.setdefault(FAMILIES[tier[1]], set()).add(int(tier[2]))
+        else:
+            drops.append(htmllib.unescape(text).strip())
+    return list(dict.fromkeys(drops)), {f: sorted(t) for f, t in sorted(tiers.items())}
+
+
+def sprite_src(html, name):
+    """The site path of the image RealmEye shows for a name, or None."""
+    for alt in (htmllib.escape(name), name):
+        if m := re.search(r'<img [^>]*?alt="' + re.escape(alt) + r'"[^>]*?src="(/s/[^"]+)"', html): return m[1]
+    return None
+
+
+# The game data (RealmHound's XML), read-only.
+
+class Game:
+    def __init__(self, folder=XML):
+        self.objects = {}   # type → {id, name, cls, file, texture, loot, dungeon}; a later file wins
+        for path in sorted(glob.glob(os.path.join(folder, '*.xml'))):
+            with open(path, encoding='utf-8', errors='replace') as f: self.read(f.read(), os.path.basename(path))
+        self.by_name = {}
+        for t, o in self.objects.items(): self.by_name.setdefault(key(o['name']), []).append(t)
+
+    def read(self, text, file):
+        for attrs, body in re.findall(r'<Object\s([^>]*?[^/])>(.*?)</Object>', text, re.S):
+            t = re.search(r'\btype="0x([0-9a-fA-F]+)"', attrs)
+            i = re.search(r'\bid="([^"]*)"', attrs)
+            if not t or not i: continue
+            el = lambda tag: (m := re.search(f'<{tag}>([^<]*)</{tag}>', body)) and htmllib.unescape(m[1]).strip()
+            oid, display = htmllib.unescape(i[1]), el('DisplayId')
+            self.objects[int(t[1], 16)] = dict(
+                id=oid, name=display if display and not display.startswith('{') else oid, cls=el('Class'), file=file,
+                item='<Item/>' in body or '<Item />' in body, loot=el('BagType') is not None,
+                texture=bool(re.search(r'<(Animated)?Texture[ >]', body)), dungeon=el('DungeonName'))
+
+    def match(self, name, want, hint=''):
+        """Type ids for a RealmEye name: Character objects for want='mob', loot items for 'item'. When several
+        share the name: the ones whose XML id is the name, then the ones in a file named like the dungeon (hint)."""
+        found = [t for t in self.by_name.get(key(name), []) if
+                 (self.objects[t]['cls'] == 'Character' if want == 'mob' else self.objects[t]['item'] and self.objects[t]['loot'])]
+        for narrow in (lambda t: key(self.objects[t]['id']) == key(name),
+                       lambda t: hint and re.sub(r'[^a-z]', '', hint.casefold()) in self.objects[t]['file'].casefold()):
+            if len(found) > 1 and any(map(narrow, found)): found = [t for t in found if narrow(t)]
+        return sorted(found)
+
+    def dungeons(self):
+        return {key(o['dungeon']): o['dungeon'] for o in self.objects.values() if o['dungeon']}
+
+    def portal(self, dungeon):
+        return min((t for t, o in self.objects.items() if o['dungeon'] == dungeon and o['cls'] == 'Portal'), default=None)
+
+
+def hexid(t): return f'0x{t:04x}'
+
+
+def build(fetch, game, sprites=SPRITES):
+    """The catalog, from RealmEye pages and the game data."""
+    out = dict(source=dict(site='RealmEye', url=SITE, note='Dungeons, mobs and drops from RealmEye; ids and sprites from the game data.',
+                           built=datetime.date.today().isoformat()),
+               dungeons=[], mobs=[], unmatched=[], ambiguous=[])
+    listing = fetch.page('/wiki/dungeons')
+    if listing is None: raise SystemExit('no dungeon list: run without --offline, or fetch /wiki/dungeons')
+    names = game.dungeons()
+    pages = [(slug, name) for slug, name in dungeon_list(listing)] + [('the-realm-enemies', REALM)]
+    mobs = {}   # slug → entry
+    for slug, name in pages:
+        game_name = REALM if name == REALM else names.get(key(name))
+        if game_name is None:
+            out['unmatched'].append(dict(kind='dungeon', realmeye=name, why='no portal with this <DungeonName>'))
+            continue
+        html = fetch.page(f'/wiki/{slug}')
+        if html is None: continue
+        listed = image_links(wiki(html)) if name == REALM else dungeon_mobs(html)
+        types = set()
+        for mob_slug, mob_name in listed:
+            if mob_slug not in mobs:
+                page = fetch.page(f'/wiki/{mob_slug}')
+                if page is None or not is_mob(page): continue   # an item or a place, not a mob
+                drops, tiers = mob_drops(page)
+                mobs[mob_slug] = dict(name=mob_name, realmeye=mob_slug, page=page, drops=drops, tiers=tiers, types=None)
+            entry = mobs[mob_slug]
+            if entry['types'] is None:
+                entry['types'] = game.match(entry['name'], 'mob', '' if name == REALM else name)
+                if not entry['types']:
+                    out['unmatched'].append(dict(kind='mob', realmeye=entry['name'], why='no Character object with this name'))
+                elif len(entry['types']) > 1:
+                    out['ambiguous'].append(dict(kind='mob', realmeye=entry['name'], types=list(map(hexid, entry['types']))))
+            types.update(entry['types'])
+        out['dungeons'].append(dict(name=game_name, portal=(p := game.portal(game_name)) and hexid(p), realmeye=slug,
+                                    mobs=list(map(hexid, sorted(types)))))
+    need_sprite = []
+    for entry in sorted(mobs.values(), key=lambda e: key(e['name'])):
+        if not entry['types']: continue
+        drops = []
+        for item in entry['drops']:
+            found = game.match(item, 'item')
+            if not found:
+                out['unmatched'].append(dict(kind='drop', realmeye=item, mob=entry['name'], why='no loot item with this name'))
+            elif len(found) > 1:
+                out['ambiguous'].append(dict(kind='drop', realmeye=item, types=list(map(hexid, found))))
+            drops += found
+            need_sprite += [(t, item, entry['page']) for t in found if not game.objects[t]['texture']]
+        need_sprite += [(t, entry['name'], entry['page']) for t in entry['types'] if not game.objects[t]['texture']]
+        out['mobs'].append(dict(name=entry['name'], types=list(map(hexid, entry['types'])), realmeye=entry['realmeye'],
+                                tiers=entry['tiers'], drops=list(map(hexid, sorted(set(drops))))))
+    out['dungeons'].sort(key=lambda d: d['name'])
+    for k in ('unmatched', 'ambiguous'):
+        out[k] = sorted({json.dumps(e, sort_keys=True): e for e in out[k]}.values(), key=lambda e: (e['kind'], key(e['realmeye'])))
+    # RealmEye's sprite for anything the game data draws nothing for.
+    out['sprites'] = {}
+    for t, (name, page) in sorted({t: (n, p) for t, n, p in need_sprite}.items()):
+        src = sprite_src(page, name)
+        data = src and fetch.raw(src)
+        if data:
+            os.makedirs(sprites, exist_ok=True)
+            file = f'{hexid(t)}{os.path.splitext(src)[1]}'
+            with open(os.path.join(sprites, file), 'wb') as f: f.write(data)
+            out['sprites'][hexid(t)] = file
+    return out
+
+
+def diff(old, new):
+    """Lines saying what changed between two catalogs."""
+    def sets(c):
+        return ({d['name'] for d in c.get('dungeons', [])}, {m['name'] for m in c.get('mobs', [])},
+                {(m['name'], d) for m in c.get('mobs', []) for d in m['drops']},
+                {(m['name'], f, t) for m in c.get('mobs', []) for f, ts in m['tiers'].items() for t in ts},
+                {e['realmeye'] for e in c.get('unmatched', [])})
+    lines = []
+    for label, a, b in zip(('dungeon', 'mob', 'drop', 'tier', 'unmatched'), sets(old), sets(new)):
+        for x in sorted(b - a, key=str): lines.append(f'+ {label} {x}')
+        for x in sorted(a - b, key=str): lines.append(f'- {label} {x}')
+    return lines
+
+
+def missing_in_play(catalog, dbs):
+    """Lines naming maps, mobs and dropped items seen in drop_rates.db that the catalog lacks."""
+    dungeons = {d['name'] for d in catalog['dungeons']}
+    mobs = {int(t, 16) for m in catalog['mobs'] for t in m['types']}
+    drops = {int(t, 16) for m in catalog['mobs'] for t in m['drops']}
+    seen = {'map': set(), 'mob': set(), 'item': set()}
+    for path in dbs:
+        if not os.path.exists(path): continue
+        db = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+        try:
+            seen['map'] |= {r[0] for r in db.execute(
+                "SELECT DISTINCT m.name FROM kills k JOIN maps m ON m.id = k.map WHERE m.name IS NOT NULL")}
+            seen['mob'] |= {r for r in db.execute(
+                "SELECT DISTINCT k.mob_type, coalesce(o.display_name, o.name, '') FROM kills k LEFT JOIN objects o ON o.type = k.mob_type "
+                "WHERE coalesce(o.drop_source, 1) AND k.mob_type IS NOT NULL")}
+            seen['item'] |= {r for r in db.execute(
+                "SELECT DISTINCT i.item_type, coalesce(t.display_name, t.name, '') FROM bag_items i LEFT JOIN items t ON t.type = i.item_type "
+                "WHERE t.tier IS NULL")}   # tiered items are covered by tiers
+        except sqlite3.Error as e:
+            print(f'{path}: {e}', file=sys.stderr)
+        finally:
+            db.close()
+    lines = [f'map {m}' for m in sorted(seen['map'] - dungeons)]
+    lines += [f'mob {hexid(t)} {n}' for t, n in sorted(seen['mob']) if t not in mobs]
+    lines += [f'item {hexid(t)} {n}' for t, n in sorted(seen['item']) if t not in drops]
+    return lines
 
 
 def self_test():
     import tempfile
     assert cache_path('/wiki/abyss-of-demons', '/c') == '/c/wiki/abyss-of-demons.html'
     assert cache_path('wiki/x#loot', '/c') == '/c/wiki/x.html'
+    assert cache_path('/s/a/img/wiki/i/abc.png', '/c') == '/c/s/a/img/wiki/i/abc.png'
     for bad in ('/', '/wiki/../../etc'):
         try: cache_path(bad, '/c'); raise AssertionError(bad)
         except ValueError: pass
@@ -101,7 +350,75 @@ def self_test():
         assert [u for u, _ in asked] == [SITE + '/robots.txt', SITE + '/wiki/dungeons'], asked
         assert all(a == AGENT for _, a in asked)
         assert slept == [2.0], slept   # 2 s between requests even though robots.txt asks for 1
-        assert os.path.exists(os.path.join(cache, 'wiki', 'dungeons.html'))
+        assert Fetcher(cache, offline=True).page('/wiki/elsewhere') is None
+
+    # Made-up pages in RealmEye's layout.
+    listing = ('<div class="wiki-page"><table><tr><td rowspan="3"><a href="/wiki/test-den">Test Den</a><a id="test-den"></a></td>'
+               '<td><a href="/wiki/test-den"><img alt="Test Den" src="/s/x.png"></a></td></tr>'
+               '<tr><td><a href="/wiki/oryx-s-nook">Oryx’s Nook</a><a id="nook"></a></td></tr></table></div>')
+    assert dungeon_list(listing) == [('test-den', 'Test Den'), ('oryx-s-nook', 'Oryx’s Nook')]
+    den = ('<div class="wiki-page"><h2 id="layout">Layout</h2><a href="/wiki/x"><img alt="Layout map" src="/s/l.png"></a>'
+           '<h2 id="enemies">Enemies and Environmental Hazards</h2><h3>Enemies</h3>'
+           '<a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"><br>Den Rat</a>'
+           '<h3>Environmental Hazards</h3><a href="/wiki/den-lava"><img alt="Den Lava" src="/s/v.png"></a>'
+           '<h2 id="boss">Boss</h2><a href="/wiki/den-king"><img alt="Den King" title="Den King" src="/s/k.png"></a>'
+           '<h2 id="interest">Drops of Interest</h2><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></div>')
+    assert dungeon_mobs(den) == [('den-rat', 'Den Rat'), ('den-king', 'Den King')], dungeon_mobs(den)
+    king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><p>Base HP: 100</p>'
+            '<h3 id="drops">Drops</h3><table><tr><td><img alt="Purple Bag" src="/s/b.png"></td>'
+            '<td><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></td><td><a href="/wiki/den-sword">Den Sword</a>'
+            '<sup><abbr title="Guaranteed">G</abbr></sup></td><td><a href="/wiki/weapons#tier-7">Tier 7 Weapons</a></td>'
+            '<td><a href="/wiki/rings#tier-3">Tier 3 Rings</a></td><td><a href="/wiki/weapons#tier-8">Tier 8 Weapons</a></td>'
+            '<td><a href="/wiki/pet-eggs">Pet Eggs</a></td></tr></table><h3 id="tips">Tips</h3><a href="/wiki/z">Not a drop</a></div>')
+    assert is_mob(king) and not is_mob(den)
+    assert mob_drops(king) == (['Den Sword', 'Pet Eggs'], {'ring': [3], 'weapon': [7, 8]}), mob_drops(king)
+    assert sprite_src(king, 'Den King') == '/s/k.png'
+
+    xml = ('<Objects><Object type="0x0010" id="Test Den Portal"><Class>Portal</Class><DungeonName>Test Den</DungeonName>'
+           '<Texture><File>a</File><Index>1</Index></Texture></Object>'
+           '<Object type="0x0011" id="Den King"><Class>Character</Class><Texture><File>a</File><Index>2</Index></Texture></Object>'
+           '<Object type="0x0012" id="Heroic Den King"><Class>Character</Class><DisplayId>Den King</DisplayId></Object>'
+           '<Object type="0x0013" id="Den Rat"><Class>Character</Class></Object>'
+           '<Object id="Den Sword" type="0x0020"><Class>Equipment</Class><Item/><BagType>2</BagType>'
+           '<Texture><File>a</File><Index>3</Index></Texture></Object>'
+           '<Object type="0x0021" id="Den Sword Skin"><DisplayId>Den Sword</DisplayId><Item/></Object></Objects>')
+    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as cache, tempfile.TemporaryDirectory() as art:
+        with open(os.path.join(folder, 'testDenObjects.xml'), 'w') as f: f.write(xml)
+        game = Game(folder)
+        assert game.match('Den King', 'mob') == [0x11]       # the XML id wins over a display name
+        assert game.match('Den Sword', 'item') == [0x20]     # a skin (no <BagType>) isn't loot
+        assert game.match('den rat', 'mob') == [0x13] and game.match('Den Lava', 'mob') == []
+        rat = '<div class="wiki-page"><img alt="Den Rat" src="/s/r.png"><p>Base HP: 5</p></div>'
+        pages = {'wiki/dungeons': listing, 'wiki/test-den': den, 'wiki/den-king': king, 'wiki/den-rat': rat,
+                 'wiki/the-realm-enemies': '<div class="wiki-page"><a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"></a></div>',
+                 's/r.png': 'PNG'}
+        for path, body in pages.items():
+            os.makedirs(os.path.dirname(cache_path(path, cache)), exist_ok=True)
+            with open(cache_path(path, cache), 'w') as f: f.write(body)
+        fetch = Fetcher(cache, offline=True)
+        c = build(fetch, game, art)
+        assert [d['name'] for d in c['dungeons']] == [REALM, 'Test Den'], c['dungeons']
+        den_entry = c['dungeons'][1]
+        assert den_entry['portal'] == '0x0010' and den_entry['mobs'] == ['0x0011', '0x0013'], den_entry
+        assert c['dungeons'][0]['mobs'] == ['0x0013']
+        assert c['mobs'][0] == dict(name='Den King', types=['0x0011'], realmeye='den-king', tiers={'ring': [3], 'weapon': [7, 8]},
+                                    drops=['0x0020']), c['mobs'][0]
+        assert {(e['kind'], e['realmeye']) for e in c['unmatched']} == {('dungeon', 'Oryx’s Nook'), ('drop', 'Pet Eggs')}, c['unmatched']
+        assert c['sprites'] == {'0x0013': '0x0013.png'} and open(os.path.join(art, '0x0013.png')).read() == 'PNG'
+        assert [p for p, _ in fetch.missing] == []   # a dungeon the game lacks isn't fetched
+        assert diff({}, c)[:2] == [f'+ dungeon {REALM}', '+ dungeon Test Den'] and diff(c, c) == []
+
+        db = os.path.join(folder, 'drop_rates.db')
+        con = sqlite3.connect(db)
+        con.executescript("""
+            CREATE TABLE maps(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE kills(map INTEGER, mob_type INTEGER);
+            CREATE TABLE objects(type INTEGER, name TEXT, display_name TEXT, drop_source INTEGER);
+            CREATE TABLE bag_items(item_type INTEGER); CREATE TABLE items(type INTEGER, name TEXT, display_name TEXT, tier INTEGER);
+            INSERT INTO maps VALUES (1, 'Test Den'), (2, 'New Place'); INSERT INTO kills VALUES (1, 17), (2, 99);
+            INSERT INTO objects VALUES (99, 'New Mob', NULL, 1); INSERT INTO bag_items VALUES (32), (77), (78);
+            INSERT INTO items VALUES (77, 'New Ring', NULL, NULL), (78, 'T9 Sword', NULL, 9);""")
+        con.commit(); con.close()
+        assert missing_in_play(c, [db]) == ['map New Place', 'mob 0x0063 New Mob', 'item 0x004d New Ring'], missing_in_play(c, [db])
     print('drop_catalog self-test passed')
 
 
@@ -109,16 +426,40 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--refresh', action='store_true', help='fetch again even when cached')
+    parser.add_argument('--offline', action='store_true', help='use only cached pages')
     sub = parser.add_subparsers(dest='command')
     fetch = sub.add_parser('fetch', help='fetch pages into the cache')
     fetch.add_argument('paths', nargs='+')
+    b = sub.add_parser('build', help='build data/drop_catalog.json')
+    b.add_argument('--db', action='append', help=f'drop_rates.db to check for gaps (default: {", ".join(DBS)})')
+    b.add_argument('--out', default=OUT)
     args = parser.parse_args()
     if args.self_test: return self_test()
-    if args.command != 'fetch': parser.error('nothing to do: try fetch /wiki/dungeons')
-    f = Fetcher(refresh=args.refresh)
-    missing = [p for p in args.paths if f.page(p) is None]
-    print(f'cache: {CACHE}')
-    return 1 if missing else 0
+    f = Fetcher(refresh=args.refresh, offline=args.offline)
+    if args.command == 'fetch':
+        for p in args.paths:
+            if f.page(p) is not None: print(f'cached {p}')
+    elif args.command == 'build':
+        catalog = build(f, Game())
+        old = {}
+        if os.path.exists(args.out):
+            with open(args.out, encoding='utf-8') as fh: old = json.load(fh)
+        if old.get('source', {}).get('built') and not diff(old, catalog):
+            catalog['source']['built'] = old['source']['built']   # unchanged data keeps its date
+        os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        with open(args.out + '.part', 'w', encoding='utf-8') as fh:
+            json.dump(catalog, fh, indent=1, ensure_ascii=False, sort_keys=False); fh.write('\n')
+        os.replace(args.out + '.part', args.out)
+        changes = diff(old, catalog)
+        print(f'{len(catalog["dungeons"])} dungeons, {len(catalog["mobs"])} mobs, {len(catalog["unmatched"])} unmatched, '
+              f'{len(catalog["ambiguous"])} ambiguous → {args.out}')
+        print('\n'.join(['Changes:'] + changes) if changes else 'No changes.')
+        gaps = missing_in_play(catalog, args.db or DBS)
+        if gaps: print('\n'.join(['Seen in play, not in the catalog:'] + gaps))
+    else:
+        parser.error('nothing to do: try build')
+    for path, why in f.missing: print(f'skipped ({why}): {path}', file=sys.stderr)
+    return 0
 
 
 if __name__ == '__main__':
