@@ -255,6 +255,30 @@ enum JoinPopupRules {
     }
 }
 
+/// Which window is up: the main window or the compact strip. Hiding the last regular window counts as
+/// "last window closed", which would quit the app, so the strip shows first and quitting waits while it
+/// is up. A full-screen main window leaves full screen first, or hiding it leaves an empty space behind.
+struct WindowMode {
+    enum Step: Equatable { case leaveFullScreen, showStrip, hideMain, showMain, hideStrip, activate }
+    private(set) var compact = false
+    private var compactAfterFullScreen = false
+    var quitsWhenLastWindowCloses: Bool { !compact }
+    mutating func toCompact(fullScreen: Bool) -> [Step] {
+        if fullScreen { compactAfterFullScreen = true; return [.leaveFullScreen] }
+        compact = true
+        return [.showStrip, .hideMain]
+    }
+    mutating func didLeaveFullScreen() -> [Step] {
+        guard compactAfterFullScreen else { return [] }
+        compactAfterFullScreen = false
+        return toCompact(fullScreen: false)
+    }
+    mutating func toFull() -> [Step] {
+        compact = false
+        return [.showMain, .hideStrip, .activate]
+    }
+}
+
 /// Why the guard ended the game: a startup check failed, so the game never ran unprotected.
 struct GuardRefusal: Equatable {
     var code: Int32
