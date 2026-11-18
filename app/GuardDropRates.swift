@@ -439,6 +439,8 @@ struct DropReport: Equatable {
     var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
     var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
+    /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
+    var members: [Group: [Int]] = [:]
     /// A dungeon to list: one with a template in the catalog, or a map with kills. `codes`: its drop tags.
     struct Dungeon: Hashable { var name: String, portal: Int?, codes: Set<String> }
     var dungeons: [Dungeon] = []                    // by name
@@ -467,6 +469,79 @@ struct DropReport: Equatable {
         "Crystal Cavern": ["CRYSTAL"], "Lair of Draconis": ["LOD"], "Oryx's Sanctuary": ["OSANC"], "Moonlight Village": ["MOONLIGHT"],
         "Oryx's Castle": ["CASTLE"],
     ]
+
+    /// Tiered loot by mob name, from each mob's RealmEye page ("We7,8" is T7 and T8 weapons; Ab abilities, Ar armor,
+    /// Ri rings). The game data has no loot tables, so this is how a group that hasn't dropped yet still shows.
+    // shortcut: by hand from RealmEye in Nov 2026, only for the mobs killed so far (the Realm and Abyss of Demons);
+    // add a mob's line when a new dungeon shows only what dropped.
+    static let realmEyeTiers: [String: String] = [
+        "Abyss Idol": "We7,9 Ab3,4 Ar6,8 Ri3,4",
+        "Archdemon Malphas": "We7,8,9,10 Ab3,4 Ar6,8,9 Ri3,4",
+        "Banshee": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Beholder": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Blacksmith of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Brimstone Wyvern": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Brute Warrior of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Brute of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Burning Bones": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Cerberus": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Colossal Mantis": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
+        "Corrupt Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Cosmic Sprite": "We7,8,9,10 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Creepy Beholder": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Demon Mage of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Demon Warrior of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Demon of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Djinn": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Ent God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Flying Brain": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Flying Vampire": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Ghastly Nun": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Ghost God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Grand Dragonfly": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
+        "Harrowed Fiend": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Hazardous Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Hunter Dragonfly": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
+        "Imp of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Infernal Ironsmith": "We7,8,9,10 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Legion Church Guardian": "We9,10 Ab4 Ar10,11 Ri4",
+        "Legion City Guardian": "We9,10 Ab4 Ar10,11 Ri4",
+        "Legion Excavator": "We8,9,10 Ab3,4 Ar8,9,10 Ri3,4",
+        "Legion Fey Guardian": "We9,10 Ab4 Ar10,11 Ri4",
+        "Legion Graveyard Guardian": "We9,10 Ab4 Ar10,11 Ri4",
+        "Legion Hell Guardian": "We9,10 Ab4 Ar10,11 Ri4",
+        "Man-Eating Flytrap": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
+        "Nameless Gladiator": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Noxious Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Pumpkin Brute": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Raging Ifrit": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Red Demon": "We7,8,9,10 Ab2,3,4 Ar6,7,8,9,10 Ri2,3,4",
+        "Risen Hellhound": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "Skeleton Worshipper": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Skeleton of the Damned": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Slime God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Spitting Arachnid": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
+        "Sprite Beast": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Sprite God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Tormented Soul": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Unsung Jester": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Vagabond Satyr": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Werewolf Berserker": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
+        "White Demon": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "White Demon of the Abyss": "We7 Ab3 Ar7 Ri3",
+        "Wraith": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
+        "Zombie Cleric": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4"
+    ]
+    /// Every item of the tier groups in a `realmEyeTiers` line.
+    func tierItems(_ codes: String) -> Set<Int> {
+        let families: [Substring: Group.Family] = ["We": .weapons, "Ab": .abilities, "Ar": .armors, "Ri": .rings]
+        return Set(codes.split(separator: " ").flatMap { code -> [Int] in
+            guard let family = families[code.prefix(2)] else { return [] }
+            return code.dropFirst(2).split(separator: ",").flatMap { members[Group(tier: Int($0) ?? -1, family: family)] ?? [] }
+        })
+    }
+    /// A mob's tiered loot by RealmEye.
+    func tierItems(_ mob: Mob) -> Set<Int> { Self.realmEyeTiers[name(mob.type)].map(tierItems) ?? [] }
 
     /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
     static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
@@ -542,7 +617,7 @@ struct DropReport: Equatable {
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) UNION ALL
             SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
-            WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL
+            WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
                 OR name IN (SELECT name || ' Shiny' FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
             """) {
@@ -556,6 +631,10 @@ struct DropReport: Equatable {
             if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
         }
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
+        for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") {
+            if let g = r.group(item) { r.members[g, default: []].append(item) }
+        }
+        r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
         var listed: [String: Dungeon] = [:]
@@ -589,10 +668,12 @@ struct DropReport: Equatable {
     var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
     func bag(_ item: Int) -> DropBag? { bags[item] ?? itemBag[item] }
 
-    /// A dungeon's possible drops: items the catalog tags with one of its drop tags, and every item that dropped there.
+    /// A dungeon's possible drops: items the catalog tags with one of its drop tags, its mobs' tiered loot by RealmEye,
+    /// and every item that dropped there.
     func possibleDrops(_ dungeon: Dungeon) -> Set<Int> {
         let tagged = origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys
         return Set(tagged).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
+            .union(kills.keys.filter { $0.dungeon == dungeon.name }.flatMap(tierItems))
     }
     /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
     func base(_ item: Int) -> Int { shinyOf[item] ?? item }
@@ -671,9 +752,8 @@ struct DropReport: Equatable {
             let byGroup = Dictionary(grouping: inBag) { group($0) }
             var groups: [Tile] = [], singles: [Int] = []
             for (g, members) in byGroup {
-                if let g, members.count > 1 {
-                    groups.append(.group(g, members.sorted { (rotation($0)?.position ?? .max, name($0)) < (rotation($1)?.position ?? .max, name($1)) }))
-                } else { singles += members }
+                // A group tile holds the whole tier, so its rotation is the same wherever it shows.
+                if let g, let all = self.members[g], all.count > 1 { groups.append(.group(g, all)) } else { singles += members }
             }
             return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }

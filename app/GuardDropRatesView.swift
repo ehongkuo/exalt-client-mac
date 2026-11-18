@@ -228,7 +228,7 @@ struct DropRatesView: View {
         let mobs = report.mobs(in: d.name)
         let runs = report.runs[d.name] ?? 0
         let dropped = Set(mobs.flatMap { (report.copies[$0] ?? [:]).keys })
-        let shown = model.mob.map { Set((report.copies[$0] ?? [:]).keys) } ?? report.possibleDrops(d)
+        let shown = model.mob.map { Set((report.copies[$0] ?? [:]).keys).union(report.tierItems($0)) } ?? report.possibleDrops(d)
         let rows = report.tiles(shown)
         return VStack(alignment: .leading, spacing: 12) {
             breadcrumb(d)
@@ -372,9 +372,7 @@ struct DropRatesView: View {
 
     /// A tier group in this dungeon: the odds of any of it per run, then each item.
     private func groupPane(_ group: DropReport.Group, _ d: DropReport.Dungeon) -> some View {
-        let dropped = Set(report.mobs(in: d.name).flatMap { (report.copies[$0] ?? [:]).keys })
-        let members = Set(report.possibleDrops(d).union(dropped).map(report.base)).filter { report.group($0) == group }
-            .sorted { report.name($0) < report.name($1) }
+        let members = report.members[group] ?? []
         let runs = report.runs[d.name] ?? 0
         let all = members.reduce(into: Set<Int>()) { $0.formUnion(report.variants($1)) }
         let rows = model.stable("group", members.sorted { report.runsWith(d.name, report.variants($0)) > report.runsWith(d.name, report.variants($1)) }) {
@@ -428,7 +426,7 @@ struct DropRatesView: View {
                 }
             }
             if sources.isEmpty {
-                Text(possible.isEmpty ? "Not dropped yet." : "Not dropped yet. The game data lists it in:").foregroundStyle(.secondary)
+                Text(possible.isEmpty ? "Not dropped yet." : "Not dropped yet. The game data or RealmEye lists it in:").foregroundStyle(.secondary)
                 ForEach(possible, id: \.self) { name in
                     clickRow({ model.select(dungeon: name, keepItem: true) }) { Text(name); Spacer(); Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
                 }
