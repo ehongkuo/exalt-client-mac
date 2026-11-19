@@ -17,8 +17,8 @@ this repo:
   (`~/Library/Application Support/Exalt Client Mac Staging <issue>`) and settings, a blue icon and a
   "STAGING <issue>" badge, so several can be open at once. Its first run copies the installed app's
   settings. All of them and the installed app share one drop database in the installed app's data
-  folder: `drop_rates_v2.db` from #58 on (base rates need each kill's loot factors), `drop_rates.db`
-  for builds before it, kept as it was. The app you start the game from decides which guard runs, and only one game runs at a time.
+  folder: `drop_rates_v2.db` from #58 on (base rates need each kill's loot factors), the old
+  `drop_rates.db` was deleted then (it lacked those factors), so builds before #58 start an empty one. The app you start the game from decides which guard runs, and only one game runs at a time.
 - **Before a PR leaves draft:** `./build.sh --stage` passes. The tests show no window, popup or
   sound and take no focus, so `./build.sh --test-only` runs any time. The build step after them
   still needs the game, DECA's launcher and the staged app closed; `./build.sh --stage --app-only`
