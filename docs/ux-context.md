@@ -22,7 +22,8 @@ Set with /intent:intent (context mode). Every Intent skill run on this project s
 ## Product and constraints
 - SwiftUI macOS app, dark theme, tabs Guard and Drop rates. Redesign in issue #45.
 - Data from captured game packets: Realm and event dungeons have no drop tags; shinies matched by name;
-  the game's rarity icons are Unity textures, so the app draws its own gems.
+  the game's rarity and shiny marks ship in `data/icons` (copied from RealmHound's repo; drawn gems are the fallback),
+  and dungeon icons are cut from RealmHound's `CollectionIcon.png`.
 - Changes go issue → staged build → merge; nothing installed from a PR branch. Public repo: no account
   or player names.
 

@@ -139,6 +139,18 @@ enum DropTests {
                 "Malphas": GameTexture(file: "abyssOfDemonsChars16x16", index: 0), "Bow": GameTexture(file: "lostHallsObjects8x8", index: 0xa7)])
             check(mobAndItem["Malphas"]?.width == 16 && mobAndItem["Bow"]?.width == 8, "a mob's first frame and an item's sprite")
         }
+        check(GameIcons.cell(0) == CGRect(x: 0, y: 0, width: 16, height: 16) && GameIcons.cell(133) == CGRect(x: 208, y: 96, width: 16, height: 16),
+              "a dungeon icon's cell: 20 a row from the top left")
+        check(GameIcons.rarity(.common) == nil, "common has no rarity mark")
+        let iconCatalog = FileManager.default.temporaryDirectory.appendingPathComponent("icon-catalog-\(getpid()).json")
+        try! Data(#"{"dungeons": [{"name": "Abyss of Demons", "icon": 133}, {"name": "Off the sheet", "icon": 999}, {"name": "No icon"}]}"#.utf8).write(to: iconCatalog)
+        defer { try? FileManager.default.removeItem(at: iconCatalog) }
+        check(GameIcons.dungeons(assets: URL(fileURLWithPath: "/nonexistent"), catalog: iconCatalog).isEmpty, "no icon sheet: no dungeon icons")
+        check(GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: nil).isEmpty, "no catalog: no dungeon icons")
+        if FileManager.default.fileExists(atPath: RealmHoundPaths.assets.appendingPathComponent("sprites/CollectionIcon.png").path) {
+            let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: iconCatalog)
+            check(Set(icons.keys) == ["Abyss of Demons"] && icons["Abyss of Demons"]?.width == 16, "dungeon icons from RealmHound's sheet; a cell off it is skipped")
+        }
         if FileManager.default.fileExists(atPath: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml").path) {
             let names = RuleCatalog.enchantNames(inXML: try! String(contentsOf: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml"), encoding: .utf8))
             check(names[0x639] == "Lucky Streak" && names.count > 500, "enchantment names from RealmHound's assets")

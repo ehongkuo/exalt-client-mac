@@ -128,8 +128,11 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 7. The game's own icons in place of drawn ones. Rarity marks and the shiny overlay are interface textures in the game's
    `sharedassets1.assets`, not in the sprite sheets RealmHound unpacks; RealmHound's repo ships them as PNGs
    (`Enchants-Uncommon/Rare/Legendary/Divine.png`, `Shiny.png` in `crates/realmhound/assets/`). Dungeon icons come from
-   `CollectionIcon.png`, which RealmHound unpacks on this Mac. The drawn gems stay as the fallback. Open: where the app
-   gets the rarity and shiny art, see decision 7. `docs/ux-context.md` gets corrected.
+   `CollectionIcon.png`, which RealmHound unpacks on this Mac. The drawn gems stay as the fallback. Done: the five PNGs
+   are committed in `data/icons` (decision 7). The game gives items a `collectionIcon` cell, not portals, so the script
+   gives each dungeon the cell most of its drops name, leaving out badges (0-9), the Realm's globe (100) elsewhere,
+   ties, and the White Snake Invasions, which drop another dungeon's loot. 53 of 82 dungeons get one, checked by eye
+   against the sheet; the rest keep their portal sprite.
 
 ## Decisions
 
@@ -151,7 +154,7 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 6. **Overlap with #50.** Catalog mobs with no kills will crash `GuardDropRatesView.swift` where it force-unwraps
    `report.kills[...]` (dungeon kill counts), so that file needs a small edit here, plus the "Not in the catalog yet"
    list.
-7. **Rarity and shiny art source.** The repo has carried no game art so far.
+7. **Rarity and shiny art source.** Chosen: commit the PNGs with credit (`data/icons/README.md`).
    - **Download at build time (recommended):** `./build.sh` fetches the PNGs from RealmHound's GitHub into the app
      bundle, not committed.
    - **Read the game's files:** port RealmHound's Unity extractor for `sharedassets1.assets`; the textures may use a

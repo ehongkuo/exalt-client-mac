@@ -144,7 +144,7 @@ struct DropRatesView: View {
                     ForEach(rows, id: \.row.name) { d, grew in
                         let n = kills(in: d.name)
                         listRow(dungeon?.name == d.name, { model.select(dungeon: d.name) }) {
-                            SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 24)
+                            SpriteIcon(image: model.dungeonIcons[d.name] ?? d.portal.flatMap { model.sprites[$0] }, size: 24)
                             Text(d.name).lineLimit(1).help(d.name)
                             Spacer()
                             if grew { newMark }
@@ -408,7 +408,7 @@ struct DropRatesView: View {
             sectionTitle("SHINY")
             HStack(spacing: 12) {
                 SpriteIcon(image: model.sprites[shiny], size: 44).overlay(alignment: .topTrailing) {
-                    Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.yellow).offset(x: 5, y: -5)
+                    ShinyMark(size: 16).offset(x: 5, y: -5)
                 }
                 .help(report.name(shiny))
                 Spacer()

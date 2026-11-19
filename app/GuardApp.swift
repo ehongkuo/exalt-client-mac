@@ -381,10 +381,7 @@ struct DropPopupContent: View {
         HStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
                 BagIcon(bag: drop.bag, sprite: bagSprite, size: 32).frame(width: 40, height: 40)
-                if drop.shiny {
-                    Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(shinyPink, shinyGold).padding(2)
-                }
+                if drop.shiny { ShinyMark(size: 16).padding(1) }
             }
             .background(Color.white.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -429,6 +426,16 @@ struct RarityGems: View {
                          Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)]
 
     var body: some View {
+        if let mark = GameIcons.rarity(rarity) {
+            // The game's own mark: one 16 px gem cluster, drawn at twice the gem size.
+            Image(decorative: mark, scale: 1).interpolation(.none).resizable().frame(width: gem * 2, height: gem * 2)
+                .accessibilityLabel(rarity.name)
+        } else {
+            drawn
+        }
+    }
+
+    @ViewBuilder private var drawn: some View {
         let color = Self.colors[rarity.rawValue]
         // Gem centres in gem widths: a pair, a triangle, then a diamond of four.
         let spots: [(CGFloat, CGFloat)] = [[], [(0, 0)], [(0, 0), (1, 0)], [(0, 0), (1, 0), (0.5, 0.5)],
@@ -445,6 +452,18 @@ struct RarityGems: View {
         }
         .frame(width: gem * (spots.map(\.0).max()! + 1), height: gem * (spots.map(\.1).max()! + 1), alignment: .topLeading)
         .accessibilityLabel(rarity.name)
+    }
+}
+
+/// The game's shiny sparkle, or a sparkles symbol when the file is missing.
+struct ShinyMark: View {
+    var size: CGFloat
+    var body: some View {
+        if let mark = GameIcons.shiny {
+            Image(decorative: mark, scale: 1).interpolation(.none).resizable().frame(width: size, height: size)
+        } else {
+            Image(systemName: "sparkles").font(.system(size: size * 0.7, weight: .bold)).foregroundStyle(shinyPink, shinyGold)
+        }
     }
 }
 
