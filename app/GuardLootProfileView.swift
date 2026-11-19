@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The Loot profile window (issue #58): your character and every loot factor in the game running now, in the game's
-/// look (dark panels, inventory slots, gold multipliers). The model is LootNow, in GuardLootProfile.swift.
+/// The Loot profile (issue #58): your character and every loot factor in the game running now, in the game's look
+/// (dark panels, inventory slots, gold multipliers). `bar` is the one-row loot bar on top of the Drop rates tab; without
+/// it, the details its Details button opens in the tab's right pane. The model is LootNow, in GuardLootProfile.swift.
 
 let lootGold = Color(red: 1, green: 0.85, blue: 0.4)
 private let enchantGreen = Color(red: 0.71, green: 0.88, blue: 0.48)
@@ -9,20 +10,95 @@ private let boostBlue = Color(red: 0.35, green: 0.64, blue: 1)
 
 struct LootProfileView: View {
     @ObservedObject var model: DropRatesModel
+    var bar = false
 
     var body: some View {
         // Each second, so the potion timers count down.
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            ScrollView {
+            let now = model.now, s = now?.state(at: context.date.timeIntervalSince1970)
+            if bar {
+                lootBar(now, s)
+            } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let now = model.now { profile(now, now.state(at: context.date.timeIntervalSince1970)) } else { offline }
+                    HStack {
+                        Text("LOOT PROFILE").font(.system(size: 12, weight: .bold, design: .monospaced))
+                        Spacer()
+                        Button { model.lootDetails = false } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Close")
+                    }
+                    if let now, let s { profile(now, s) } else { offline }
                 }
-                .padding(14)
             }
         }
-        .frame(minWidth: 380, idealWidth: 440, minHeight: 480, idealHeight: 860)
-        .background(Color(red: 0.12, green: 0.12, blue: 0.13))
-        .preferredColorScheme(.dark)
+    }
+
+    /// One row: who you are, the total, the boosts with timers, your gear, the dungeon's modifiers, then Details.
+    @ViewBuilder private func lootBar(_ now: LootNow?, _ s: LootState?) -> some View {
+        if let now, let s {
+            let loot = (0..<4).map { i in (s.enchants.map { i < $0.count ? $0[i] : [] } ?? []).compactMap { catalog.enchants[$0] } }
+            let gear = LootMath.gear(s.enchants ?? [], catalog)
+            HStack(spacing: 12) {
+                slot(now.classType, size: 40, sprite: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(now.names[now.classType] ?? "Character").font(.system(size: 13, weight: .bold, design: .monospaced))
+                        if now.level > 0 { Text("LV \(now.level)").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(lootGold) }
+                    }
+                    Text((now.seasonal ? "Seasonal · " : "") + (now.map.isEmpty ? "loading" : now.map) + (now.safe ? " · timers paused" : ""))
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                barDivider
+                totals(s, big: 22, small: 15)
+                barDivider
+                HStack(spacing: 6) {
+                    slot(LootNow.potionSprite, size: 34, sprite: 24, border: s.potion > 0 ? boostBlue : nil).opacity(s.potion > 0 ? 1 : 0.5)
+                    VStack(alignment: .leading, spacing: 0) {
+                        (Text("Potion ") + Text(s.potion > 0 ? "×" + LootMath.times(LootMath.potion) : "off").foregroundColor(s.potion > 0 ? lootGold : .secondary))
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(s.potion > 0 ? LootMath.clock(s.potion) + " left" : "not running").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    small(LootNow.tierSprite, on: s.tier > 0, "Loot Tier Potion" + (s.tier > 0 ? ": \(LootMath.clock(s.tier)) left" : ": off"))
+                    small(LootNow.crucibleSprite, on: s.crucible, "Crucible: " + (s.crucible ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
+                    small(LootNow.ritualSprite, on: s.ritual > 0, "Blood Ritual: " + (s.ritual > 0 ? "−\(s.ritual * 5)% HP, ×" + LootMath.times(LootMath.ritual(s.ritual)) : "off"))
+                }
+                barDivider
+                HStack(spacing: 4) {
+                    ForEach(0..<4, id: \.self) { i in
+                        let type = i < now.equipment.count ? now.equipment[i] : -1
+                        slot(type, size: 34, sprite: 24, border: loot[i].isEmpty ? nil : lootGold.opacity(0.7))
+                            .help(type > 0 ? (now.names[type] ?? "") + (loot[i].isEmpty ? "" : ": " + loot[i].map { "\($0.name) +\(LootMath.times($0.percent))%" }.joined(separator: ", ")) : "Empty slot")
+                    }
+                    Text(s.enchants == nil ? "gear not captured" : "gear +\(LootMath.times(gear))%").font(.system(size: 11))
+                        .foregroundStyle(s.enchants == nil ? Color.secondary : enchantGreen).padding(.leading, 4)
+                }
+                if !s.modifiers.isEmpty {
+                    barDivider
+                    HStack(spacing: 4) { ForEach(s.modifiers.prefix(3), id: \.self) { modifier($0) } }
+                }
+                Spacer(minLength: 0)
+                Button { model.lootDetails.toggle() } label: {
+                    Text(model.lootDetails ? "Details ▴" : "Details ▾").font(.system(size: 11)).foregroundStyle(lootGold)
+                }
+                .buttonStyle(.plain).help("Every loot factor, in the right pane")
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Color(red: 0.17, green: 0.17, blue: 0.18))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(lootGold.opacity(0.55), lineWidth: 2))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        } else {
+            HStack(spacing: 6) {
+                Text("LOOT").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.secondary)
+                Text("No game running. Start it from here to see your boosts and your rate now next to each base rate.")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Color(red: 0.17, green: 0.17, blue: 0.18)).clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+    private var barDivider: some View { Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1, height: 34) }
+    private func small(_ sprite: Int, on: Bool, _ help: String) -> some View {
+        slot(sprite, size: 34, sprite: 22, border: on ? boostBlue : nil).opacity(on ? 1 : 0.45).help(help)
     }
 
     private var catalog: LootCatalog { model.catalog }
@@ -110,7 +186,6 @@ struct LootProfileView: View {
         let boss: Set<String> = ["BOSS", "BOSSFIGHT", "QUEST"], minion: Set<String> = ["MINION"]
         let drops: [LootCatalog.DropMultiplier] = s.modifiers.flatMap { catalog.modifiers[$0]?.drops ?? [] }
         let split = drops.contains { d in d.item == nil && !d.req.isEmpty && d.amount != 1 }
-        let minions = s.multiplier(catalog, labels: minion), bosses = s.multiplier(catalog, labels: boss)
         let gear: Double = LootMath.gear(s.enchants ?? [], catalog)
         let dungeonText: String = split
             ? "dungeon ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: minion)) + " / ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: boss))
@@ -121,17 +196,31 @@ struct LootProfileView: View {
         if LootMath.ritual(s.ritual) > 1 { parts.append("ritual ×" + LootMath.times(LootMath.ritual(s.ritual))) }
         return panel {
             VStack(alignment: .leading, spacing: 3) {
-                header("LOOT DROP NOW")
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    big("×" + LootMath.times(split ? minions : s.multiplier(catalog, labels: [])), size: 32)
-                    Text(split ? "minions" : "every mob").foregroundStyle(.secondary)
-                    if split { big("×" + LootMath.times(bosses), size: 22); Text("bosses").foregroundStyle(.secondary) }
-                }
+                totals(s, big: 32, small: 22)
                 Text(parts.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
+    }
+    /// A modifier treats minions and bosses differently.
+    static func split(_ s: LootState, _ catalog: LootCatalog) -> Bool {
+        let drops: [LootCatalog.DropMultiplier] = s.modifiers.flatMap { catalog.modifiers[$0]?.drops ?? [] }
+        return drops.contains { d in d.item == nil && !d.req.isEmpty && d.amount != 1 }
+    }
+    /// "LOOT NOW ×1.60 minions ×1.72 bosses", or one number when no modifier treats them differently.
+    private func totals(_ s: LootState, big size: CGFloat, small: CGFloat) -> some View {
+        let split = Self.split(s, catalog)
+        let minions: Double = s.multiplier(catalog, labels: split ? ["MINION"] : [])
+        let bosses: Double = s.multiplier(catalog, labels: ["BOSS", "BOSSFIGHT", "QUEST"])
+        return VStack(alignment: .leading, spacing: 0) {
+            header("LOOT NOW")
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                big("×" + LootMath.times(minions), size: size)
+                Text(split ? "minions" : "every mob").font(.caption).foregroundStyle(.secondary)
+                if split { big("×" + LootMath.times(bosses), size: small); Text("bosses").font(.caption).foregroundStyle(.secondary) }
+            }
+        }
     }
 
     private func gearSlot(_ now: LootNow, _ s: LootState, _ i: Int) -> some View {

@@ -1341,7 +1341,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
     private var lootTimer: Timer?
-    private var profile: NSWindow?
     private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
     private var healthLoaded = false
@@ -1422,19 +1421,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         if !catalog.modifiers.isEmpty { lootCatalog = catalog }   // RealmHound may extract the XML later
         return catalog
     }
-    /// The Loot profile window (issue #58), made on first open.
-    private func showProfile() {
-        if profile == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                             backing: .buffered, defer: false)
-            w.title = "Loot profile"
-            w.isReleasedWhenClosed = false
-            w.contentView = NSHostingView(rootView: LootProfileView(model: rates))
-            w.center(); w.setFrameAutosaveName("ExaltClientMacLootProfile")
-            profile = w
-        }
-        profile?.makeKeyAndOrderFront(nil)
-    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
@@ -1493,7 +1479,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
-        rates.showProfile = { [weak self] in self?.showProfile() }
         // After the view switched, so the narrow guard view's frame is not held at the stats views' minimum width.
         ratesWatch = rates.$shown.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.

@@ -63,7 +63,7 @@ Unknown: gear enchantments (only the item types), accelerators and loot events.
 - **Base rate per kill:** drops ÷ the sum of the kills' multipliers, each from the factors on its map at the kill.
   Kills before format 4 count their gear as no bonus (at most +12% off). Per-run and bag-colour rates stay as seen.
 - **Yours:** base × your multiplier now; the dungeon's modifiers count only for mobs of the dungeon you're in.
-- **Live:** the Loot profile window reads the newest running session from `drop_rates.db`, imported every 5 s.
+- **Live:** the loot bar on top of the Drop rates tab (Details opens the rest in the right pane) reads the newest running session from `drop_rates_v2.db`, imported every 5 s.
 - **Not yet:** accelerators, loot events and the crucible's % need new hooks; the window says so.
 - **To check on a staging run:** that your stat 80 has one part per inventory slot like a bag's, and stat 155's scale.
 

@@ -39,6 +39,7 @@ struct DropRatesView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            LootProfileView(model: model, bar: true).padding(.horizontal, 8).padding(.bottom, 8)
             Divider()
             if let problem = model.problem {
                 Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -77,16 +78,6 @@ struct DropRatesView: View {
         let h = model.health
         return HStack(spacing: 8) {
             MainTabs(rates: model)
-            Button { model.showProfile() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                    Text("Loot profile")
-                    if let now = model.now {
-                        Text("×" + LootMath.times(now.state.multiplier(model.catalog, labels: []))).fontWeight(.semibold).foregroundStyle(lootGold)
-                    }
-                }
-            }
-            .help("Your character and every loot boost in the game running now")
             Spacer()
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 if let refused = h.refused {
@@ -290,7 +281,8 @@ struct DropRatesView: View {
     // MARK: Right pane
 
     @ViewBuilder private var rightPane: some View {
-        if let item = model.item { itemPane(report.base(item)) }
+        if model.lootDetails { LootProfileView(model: model) }
+        else if let item = model.item { itemPane(report.base(item)) }
         else if let group = model.group, let d = dungeon { groupPane(group, d) }
         else if let mob = model.mob { MobPage(model: model, mob: mob, bagSprites: drops.bagSprites) }
         else if let d = dungeon { summaryPane(d) }
@@ -500,7 +492,7 @@ struct DropRatesView: View {
                     Divider()
                     Text("How rates are calculated").font(.headline)
                     Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual.")
-                    Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. See Loot profile.")
+                    Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
                     if model.report.gearUnknown > 0 {
                         Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off). Drop accelerators and server loot events aren't captured yet.")
                             .foregroundStyle(.secondary)

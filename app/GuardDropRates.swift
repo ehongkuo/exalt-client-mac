@@ -1020,10 +1020,12 @@ enum GameNames {
 final class DropRatesModel: ObservableObject {
     /// The main window shows the Drop rates tab instead of the Guard tab.
     @Published var shown = false { didSet { resetOrders() } }
-    @Published var dungeon: String? { didSet { resetOrders() } }
-    @Published var mob: DropReport.Mob? { didSet { resetOrders() } }   // its page on the right; the grid stays dungeon-wide
-    @Published var group: DropReport.Group? { didSet { resetOrders() } }
-    @Published var item: Int? { didSet { resetOrders() } }
+    @Published var dungeon: String? { didSet { resetOrders(); lootDetails = false } }
+    @Published var mob: DropReport.Mob? { didSet { resetOrders(); if mob != nil { lootDetails = false } } }   // its page on the right; the grid stays dungeon-wide
+    @Published var group: DropReport.Group? { didSet { resetOrders(); if group != nil { lootDetails = false } } }
+    @Published var item: Int? { didSet { resetOrders(); if item != nil { lootDetails = false } } }
+    /// The loot bar's Details: the Loot profile in the right pane until something else is picked (issue #58).
+    @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
     @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
@@ -1034,10 +1036,9 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var health = CaptureHealth()
     @Published private(set) var sprites: [Int: CGImage] = [:]
     private var spritesAsked: Set<Int> = []
-    /// Your loot factors in the game running now (nil: none runs), for the Loot profile window and "yours" rates.
+    /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
     @Published private(set) var now: LootNow?
     var catalog = LootCatalog()
-    var showProfile: () -> Void = {}
 
     func update(now: LootNow?) {
         if now != self.now { self.now = now }
@@ -1077,7 +1078,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
     func back() {
-        if !search.isEmpty { search = "" } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
+        if !search.isEmpty { search = "" } else if lootDetails { lootDetails = false } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
     }
 
     // Live data reloads every 30 s while you look. Rows keep the order they were first shown in (new ones go last),

@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 /// Loot factors (issue #58). docs/loot-factors.md lists every factor found, its size and the evidence. This file turns
-/// the captured stats into a multiplier: live for the Loot profile window and "yours" rates, and per kill for base rates.
+/// the captured stats into a multiplier: live for the loot bar in the Drop rates tab and "yours" rates, and per kill for base rates.
 
 /// The loot numbers the game's XML states: loot enchantments (`LootBonus`) and dungeon modifiers' `EntityDropMultiplier`s.
 struct LootCatalog: Equatable {
@@ -130,7 +130,7 @@ struct LootTimeline {
     static let statTypes = "67, 68, 128, 155"
 }
 
-/// What the Loot profile window shows: your character and its loot factors in the game running now.
+/// What the loot bar and its details show: your character and its loot factors in the game running now.
 struct LootNow: Equatable {
     var map = ""
     var classType = 0, level = 0
