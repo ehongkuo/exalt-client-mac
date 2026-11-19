@@ -4,7 +4,7 @@ Goal: the Drop rates tab knows every dungeon, its mobs and their possible drops 
 lands in a ready slot and nothing in play is a surprise.
 
 Status (Nov 18): the script, the data file and the app side are done; sprites up front and the "Not in the catalog
-yet" list remain. Decisions are in [Decisions](#decisions): you run the fetch yourself; this session reads the pages it
+yet" list and the game's own icons (step 7) remain. Decisions are in [Decisions](#decisions): you run the fetch yourself; this session reads the pages it
 caches; `data/drop_catalog.json` is committed; the RealmEye sprite fallback stays; `GuardDropRatesView.swift` gets only
 small edits.
 
@@ -125,6 +125,11 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 5. Tests: every entry joins to a game id whose XML id matches; every entry has a sprite or is in a listed reason set
    (the 5 mobs above); the loader handles a missing file.
 6. `./build.sh --stage` and a live check that a dungeon never run shows its mobs and drops.
+7. The game's own icons in place of drawn ones. Rarity marks and the shiny overlay are interface textures in the game's
+   `sharedassets1.assets`, not in the sprite sheets RealmHound unpacks; RealmHound's repo ships them as PNGs
+   (`Enchants-Uncommon/Rare/Legendary/Divine.png`, `Shiny.png` in `crates/realmhound/assets/`). Dungeon icons come from
+   `CollectionIcon.png`, which RealmHound unpacks on this Mac. The drawn gems stay as the fallback. Open: where the app
+   gets the rarity and shiny art, see decision 7. `docs/ux-context.md` gets corrected.
 
 ## Decisions
 
@@ -146,3 +151,9 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 6. **Overlap with #50.** Catalog mobs with no kills will crash `GuardDropRatesView.swift` where it force-unwraps
    `report.kills[...]` (dungeon kill counts), so that file needs a small edit here, plus the "Not in the catalog yet"
    list.
+7. **Rarity and shiny art source.** The repo has carried no game art so far.
+   - **Download at build time (recommended):** `./build.sh` fetches the PNGs from RealmHound's GitHub into the app
+     bundle, not committed.
+   - **Read the game's files:** port RealmHound's Unity extractor for `sharedassets1.assets`; the textures may use a
+     compressed format it doesn't handle.
+   - **Commit the PNGs** with credit: simplest, but game art in the public repo.
