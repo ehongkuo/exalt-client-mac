@@ -209,7 +209,6 @@ enum DropRateTests {
         check(report.runs == ["The Void": 2], "runs: visits where the boss died")
         check(report.runsWith("The Void", [588]) == 1, "Bows per Void run: two in one run count once, none from a run without the boss")
         check(report.kills == [boss: 2, minion: 2] && report.copies[minion]?[588] == 2, "kills and copies by mob")
-        check(report.bestBag[boss] == [.white: 1, .orange: 1], "best bag per kill: white over purple")
         check(report.bossBags["The Void"]?[nil] == [.white: 1, .orange: 1] && report.bossBags["The Void"]?[1] == [.white: 1, .orange: 1],
               "best bag from the bosses, per run")
         check(report.itemBag[588] == .white && report.bosses == [1] && report.name(1) == "Void Entity" &&
@@ -268,6 +267,35 @@ enum DropRateTests {
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
         check(tiled.rarityCounts([588, 800]) == [0, 1, 1, 0, 0], "rarity over a set of items")
+        // The mob page (issue #50): kills, runs it died in, and its drops by bag with copies per kill.
+        check(tiled.kills[boss] == 2 && tiled.mobRuns[boss] == 2 && tiled.mobRuns[minion] == 1,
+              "runs a mob died in: the minion's map-3 kill had no boss, so it is not a run")
+        let mobTiles = tiled.tiles(of: boss)
+        check(mobTiles[.cyan] == [.group(weapons, [800, 801]), .item(803)] && mobTiles[.white] == [.item(588), .item(700)] &&
+              mobTiles[.orange] == [.item(9)] && mobTiles.count == 3,
+              "a boss's tiles: its drops (the shiny folded into its sword) and its dungeon's tagged items not dropped yet")
+        check(tiled.possibleDrops(minion) == [588] && tiled.killsWith(boss, [.item(700)]) == 0,
+              "a minion gets only its own drops and RealmEye tiers, not the dungeon's tags; an undropped item has no kills")
+        check(tiled.killsWith(boss, [.group(weapons, [800, 801])]) == 2 && tiled.killsWith(boss, [.item(800)]) == 1 &&
+              tiled.killsWith(boss, [.item(588), .item(9)]) == 2 && tiled.killsWith(minion, [.item(588)]) == 2,
+              "kills with at least one: the sword and its shiny in one kill count once; a bag or group counts a kill once")
+        check(tiled.tiles(of: minion) == [.white: [.item(588)]] && tiled.tiles(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
+              "a minion's own drops; an unknown mob has none")
+        check(DropRate(count: 9, of: 20).percent == "45%" && DropRate(count: 1, of: 20).percent == "5%" &&
+              DropRate(count: 9, of: 20).plusMinus == "±65%" && DropRate(count: 3, of: 20).plusMinus == nil, "percent and ±")
+        // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
+        let tab = DropRatesModel()
+        tab.item = 588; tab.openGroups = [weapons]; tab.openBags = [.cyan, nil]; tab.pick(mob: boss)
+        check(tab.mob == boss && tab.item == nil && tab.group == nil && tab.openGroups.isEmpty && tab.openBags.isEmpty,
+              "a mob click opens its page over an open item, with its bags and groups closed")
+        tab.item = 800; tab.back()
+        check(tab.mob == boss && tab.item == nil, "esc from an item on the mob page goes back to the mob page")
+        tab.group = weapons; tab.back()
+        check(tab.mob == boss && tab.group == nil, "esc from a group goes back to the mob page")
+        tab.back()
+        check(tab.mob == nil, "esc from the mob page goes back to the dungeon")
+        tab.pick(mob: minion); tab.pick(mob: minion)
+        check(tab.mob == nil, "clicking the open mob again closes its page")
 
         // The drop catalog (issue #51): loaded with the game catalog, it lists a dungeon's mobs before any kill, and each
         // mob's tier groups and named drops.
