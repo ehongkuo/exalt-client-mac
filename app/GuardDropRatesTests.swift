@@ -22,6 +22,8 @@ enum DropRateTests {
         check(LootLine("kill\t1.0\t3\t1001\t3340\t1.00\t2.00\t0.00\t0\t0\t0\t4000\tremoved\t240\t75") ==
               .kill(LootKill(time: 1, generation: 3, object: 1001, type: 3340, x: 1, y: 2, z: 0, projectile: 0, projectileAlt: 0,
                              ability: 0, maxHP: 4000, landedBy: "removed", sinceHitMs: 240, others: 75)), "others' damage (format 3)")
+        check(LootLine("portal\t1.0\t3\t1003\t1795\t12.50\t30.25") ==
+              .portal(time: 1, generation: 3, object: 1003, type: 1795, x: 12.5, y: 30.25), "portal line")
         check(LootLine("drop\t1.0\t3\t1002\t1001") == .drop(time: 1, generation: 3, bag: 1002, killer: 1001), "drop line")
         check(LootLine("kill\t1\t2\t3") == nil && LootLine("bag\tx") == nil && LootLine("guard_map\tNexus") == nil, "bad lines")
 
@@ -37,12 +39,16 @@ enum DropRateTests {
             map\t1763300010.000\t2\tShatters
             bag\t1763300020.000\t2\t600\t1295\t10.10\t20.10\t2856\t2856\t-1\t-1\t-1\t-1\t-1\t-1
             bag_stat\t1763300020.000\t2\t600\t80\t0\tAQID
+            portal\t1763300020.000\t2\t610\t1795\t30.00\t20.00
+            portal\t1763300020.000\t2\t611\t1796\t70.00\t70.00
             bag\t1763300020.000\t2\t601\t1287\t50.00\t50.00\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1
             kill\t1763300020.200\t2\t500\t3340\t10.00\t20.00\t0.00\t900\t0\t120\t4000\tremoved\t100\t0
             kill\t1763300020.200\t2\t501\t3341\t30.00\t20.00\t0.00\t0\t0\t0\t300\tremoved\t50\t700
             kill\t1763300020.200\t2\t503\t3341\t90.00\t90.00\t0.00\t50\t0\t0\t300\tremoved\t3000\t0
             drop\t1763300020.400\t2\t600\t500
             drop\t1763300020.400\t2\t601\t0
+            drop\t1763300020.400\t2\t610\t501
+            drop\t1763300020.400\t2\t611\t0
             map_info\t1763300010.100\t2\t782\t123456\t0\t1\t2\t3\t1463\t5\tZephyr\tDRAINED_3;|A\t
             player_stat\t1763300010.100\t2\t39\t2500
             gap\t1763300021.000\t3\tring_full
@@ -52,13 +58,18 @@ enum DropRateTests {
         try! first.write(to: file, atomically: false, encoding: .utf8)
         let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
         var running = true
-        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 15, "whole lines only")
+        check(LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in running }) == 19, "whole lines only")
         func int(_ sql: String) -> Int64 { var v: Int64 = -1; store.run(sql) { v = sqlite3_column_int64($0, 0) }; return v }
         check(int("SELECT count(*) FROM kills") == 3 && int("SELECT count(*) FROM maps") == 2, "kills and maps")
         check(int("SELECT since_hit_ms FROM kills WHERE object_id = 503") == 3000, "time since the last hit is kept")
         check(int("SELECT damage_others FROM kills WHERE object_id = 501") == 700, "others' damage is kept")
         check(int("SELECT b.kill = k.id FROM bags b JOIN kills k ON k.object_id = 500 WHERE b.object_id = 600") == 1, "bag linked to its kill")
         check(int("SELECT kill IS NULL FROM bags WHERE object_id = 601") == 1, "a bag with no kill stays unlinked")
+        check(int("SELECT p.kill = k.id FROM portals p JOIN kills k ON k.object_id = 501 WHERE p.object_id = 610") == 1 &&
+              int("SELECT portal_type FROM portals WHERE object_id = 610") == 1795, "portal linked to its kill")
+        check(int("SELECT kill IS NULL FROM portals WHERE object_id = 611") == 1 && int("SELECT count(*) FROM portals") == 2,
+              "a portal with no kill is kept, unlinked")
+        check(int("SELECT count(*) FROM bags WHERE object_id IN (610, 611)") == 0, "portals are not bags")
         check(int("SELECT count(*) FROM bag_items WHERE item_type = 2856") == 2, "two copies count as two items")
         check(int("SELECT count(*) FROM bag_stats WHERE text = 'AQID'") == 1, "other bag stats are kept raw")
         check(int("SELECT lost FROM capture_gaps") == 3, "ring overflow is a gap")

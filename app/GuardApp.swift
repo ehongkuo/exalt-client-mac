@@ -160,9 +160,10 @@ final class LaunchController: ObservableObject {
             let dylib = GuardPaths.dylib(forApp: bundle)
             let expected = (try? String(contentsOf: GuardPaths.buildHashFile(forApp: bundle), encoding: .utf8)).flatMap(FileHash.expected)
             let exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+            let portals = DropRateStore(path: LootImport.dbPath(data: dropsURL))?.portalTypes() ?? []
             func plan(_ actual: String?) -> Result<LaunchPlan, LaunchProblem> {
                 LaunchPlan.make(install: install, dylib: dylib, data: dataURL, settings: settings, expectedHash: expected,
-                                actualHash: actual, running: running, observationOnly: observationOnly, exists: exists)
+                                actualHash: actual, running: running, observationOnly: observationOnly, portals: portals, exists: exists)
             }
             try? FileManager.default.createDirectory(at: GuardPaths.logs(data: dataURL), withIntermediateDirectories: true,
                                                      attributes: [.posixPermissions: 0o700])

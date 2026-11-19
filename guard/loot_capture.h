@@ -4,14 +4,15 @@
  * it never stops the game.
  *
  *   A  damage method (base, enemies only): your hits, and each Damage message's hit on a mob
- *   B  new object: each object's type and position; each bag once per map, with its contents
+ *   B  new object: each object's type and position; each bag once per map, with its contents; each
+ *      portal once per map (issue #64: types from EXALT_PORTALS), linked to its kill as bags are
  *   C  Damage message: who the server says shot (your abilities)
  *   D  remove object, from the server's Update: a mob someone hit is gone, which is a kill. The
  *      game's kill flag misses most kills (staging run 1: none over 32 kills RealmHound saw), and
  *      RealmHound counts this removal too. A mob that only left view is also a kill here.
  *   E  status apply (every object, on arrival and each tick): server positions, and your own stats
  *      when they change, for the loot factors among them
- *   F  NewTick: each bag of the tick before goes to the nearest kill since then
+ *   F  NewTick: each bag (and portal) of the tick before goes to the nearest kill since then
  * Once per map it also writes the map's info message raw (seed, strings such as modifiers).
  */
 #include "loot_core.h"
@@ -43,6 +44,8 @@ static LootHits loot_hits;
 static LootType loot_types[LOOT_TYPES];
 static LootSeen loot_seen[LOOT_SEEN];
 static LootTicks loot_ticks;
+static LootPortals loot_portals;
+static int loot_portal_types;   /* how many EXALT_PORTALS named: 0 records no portals, so the summary shows it */
 static FILE *loot_file;
 static const void *loot_methods[LOOT_HOOK_COUNT];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
@@ -57,7 +60,7 @@ static int loot_prepared, loot_attempted, loot_installed;
 static int32_t loot_self_id, loot_shooter;   /* your object id, from the connection */
 static void *loot_connection;
 static uint32_t loot_map, loot_named_map = UINT32_MAX;
-static _Atomic uint64_t loot_kills, loot_bags, loot_off_main;
+static _Atomic uint64_t loot_kills, loot_bags, loot_portal_count, loot_off_main;
 /* Where a kill can drop out, for the summary: damage calls by source, Update removals, those with hits. */
 static _Atomic uint64_t loot_hit_calls[LOOT_UNKNOWN + 1], loot_removals, loot_removals_hit;
 static _Atomic uintptr_t loot_unknown_caller;
@@ -125,6 +128,7 @@ static void loot_prepare(const void *game) {
     Dl_info info;
     if (!dladdr((const void *)il2cpp_domain_get, &info) || !info.dli_fbase) { loot_refuse("game_base"); return; }
     loot_base = (uintptr_t)info.dli_fbase;
+    loot_portal_types = loot_portals_parse(&loot_portals, getenv("EXALT_PORTALS"));
     loot_prepared = 1;
 }
 
@@ -196,8 +200,15 @@ static void loot_object(void *connection, void *data) {
     float pos[2] = {0, 0};
     loot_status_pos(status, pos);
     loot_type_set(loot_types, id, type, pos);
-    if (!loot_is_bag(type) || !loot_bag_first(loot_seen, id, loot_map)) return;
     uint64_t now = monotonic_ns();
+    if (loot_is_portal(&loot_portals, type)) {
+        if (!loot_bag_first(loot_seen, id, loot_map)) return;   /* ids are unique per map, so bags and portals share it */
+        LootEvent portal = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_PORTAL, .pos = {pos[0], pos[1]}};
+        loot_tick_bag(&loot_ticks, id, pos);
+        if (loot_push(&loot_ring, &portal)) atomic_fetch_add_explicit(&loot_portal_count, 1, memory_order_relaxed);
+        return;
+    }
+    if (!loot_is_bag(type) || !loot_bag_first(loot_seen, id, loot_map)) return;
     LootEvent bag = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG, .pos = {pos[0], pos[1]},
                      .v = {-1, -1, -1, -1, -1, -1, -1, -1}};
     loot_tick_bag(&loot_ticks, id, pos);
@@ -350,7 +361,7 @@ static void loot_install(void *player) {
     }
 #endif
     loot_installed = 1;
-    note("loot_ready\tformat=%d\tnewtick=%s\n", LOOT_FORMAT, chain ? "chained" : "native");
+    note("loot_ready\tformat=%d\tnewtick=%s\tportal_types=%d\n", LOOT_FORMAT, chain ? "chained" : "native", loot_portal_types);
 }
 
 static void loot_tick(void *player) {
@@ -422,9 +433,9 @@ static void loot_drain(int closing) {
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
     if (closing || now >= next_summary) {
         next_summary = now + 60 * NSEC_PER_SEC;
-        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
+        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tportals=%llu\tportal_types=%d\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
                 "\thits=%llu/%llu/%llu/%llu/%llu\tremovals=%llu\tremovals_hit=%llu\tunknown_caller=0x%lx\n",
-                epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags,
+                epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags, (unsigned long long)loot_portal_count, loot_portal_types,
                 (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions,
                 (unsigned long long)loot_ticks.overflow, (unsigned long long)loot_hit_calls[0], (unsigned long long)loot_hit_calls[1],
                 (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],

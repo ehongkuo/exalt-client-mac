@@ -6,10 +6,11 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define LOOT_FORMAT 4   /* 4: player_stat lines may carry text (stat 80, your gear's enchantments) */
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP };
+#define LOOT_FORMAT 5   /* 4: player_stat lines may carry text (stat 80); 5: portal lines (issue #64) */
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP, LOOT_PORTAL };
 /* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
  * is the server removing a mob someone hit, so every kill is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
@@ -32,7 +33,7 @@ typedef struct {
     uint8_t kind, source;
     float pos[3];
     int32_t v[8];           /* kill: your damage by source, max HP, ms since the last hit, others' damage; bag: items;
-                               stat: type, value; drop: the bag's kill (object id, 0 for none);
+                               stat: type, value; drop: the bag's or portal's kill (object id, 0 for none);
                                map info: your class, then raw ints; the text holds its strings, tab-separated */
     char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
@@ -159,6 +160,22 @@ static inline int loot_is_bag(uint16_t type) {
     default: return 0;
     }
 }
+/* Portal object types (issue #64): every Portal-class type in the app's catalog, sent at launch as
+ * EXALT_PORTALS="type,type,...". One bit per type. Returns how many types it set. */
+typedef struct { uint8_t bits[65536 / 8]; } LootPortals;
+static inline int loot_portals_parse(LootPortals *p, const char *text) {
+    memset(p, 0, sizeof *p);
+    int count = 0;
+    for (const char *c = text; c && *c;) {
+        char *end;
+        long type = strtol(c, &end, 10);
+        if (end == c) { ++c; continue; }
+        if (type > 0 && type < 65536 && !(p->bits[type >> 3] & 1 << (type & 7))) { p->bits[type >> 3] |= 1 << (type & 7); ++count; }
+        c = end;
+    }
+    return count;
+}
+static inline int loot_is_portal(const LootPortals *p, uint16_t type) { return type && p->bits[type >> 3] & 1 << (type & 7); }
 /* Your own stats are kept when they change, for the loot factors among them. Not HP, MP or
  * experience (1, 4, 6), which change all fight long, and never text stats (your name). */
 static inline int loot_player_stat_kept(int stat) { return stat >= 0 && stat < 256 && stat != 1 && stat != 4 && stat != 6; }
@@ -192,6 +209,8 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
     case LOOT_PLAYER_STAT:
         if (e->text[0]) return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\t%s\n", epoch, e->map, v[0], v[1], e->text);
         return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
+    case LOOT_PORTAL:
+        return snprintf(out, size, "portal\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\n", epoch, e->map, e->id, e->type, e->pos[0], e->pos[1]);
     case LOOT_DROP:
         return snprintf(out, size, "drop\t%.3f\t%u\t%d\t%d\n", epoch, e->map, e->id, v[0]);
     default: return 0;

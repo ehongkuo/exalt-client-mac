@@ -126,12 +126,24 @@ static void test_format(void) {
     strcpy(gear.text, "AAIB");
     loot_gear_parts(gear.text);
     assert(!strcmp(gear.text, "AAIB"));
+    LootEvent portal = {.id = 1003, .map = 3, .type = 1795, .kind = LOOT_PORTAL, .pos = {12.5f, 30.25f}};
+    loot_format(&portal, 1763300000.5, line, sizeof line);
+    assert(!strcmp(line, "portal\t1763300000.500\t3\t1003\t1795\t12.50\t30.25\n"));
     LootEvent odd = {.kind = LOOT_KILL, .source = 200};
     loot_format(&odd, 0, line, sizeof line);
     assert(strstr(line, "\tunknown\t0\t0\n"));
 }
 
+static void test_portals(void) {
+    static LootPortals p;
+    assert(loot_portals_parse(&p, "1795,1796,1795,x,0,70000,65535") == 3);   /* repeats, junk and out-of-range skipped */
+    assert(loot_is_portal(&p, 1795) && loot_is_portal(&p, 1796) && loot_is_portal(&p, 65535));
+    assert(!loot_is_portal(&p, 1797) && !loot_is_portal(&p, 0) && !loot_is_portal(&p, 1295));
+    assert(loot_portals_parse(&p, NULL) == 0 && !loot_is_portal(&p, 1795));   /* no catalog: no portals */
+}
+
 int main(void) {
+    test_portals();
     test_ring();
     test_hits();
     test_seen();

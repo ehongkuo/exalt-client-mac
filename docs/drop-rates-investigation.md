@@ -211,12 +211,13 @@ mode, opened only by the app.
 | `kills` | id, map, time, object id, mob type, your damage, max HP, landed by you, factors | One row per death of a mob you damaged |
 | `announcements` | session, time, text | Server-wide loot events |
 | `bags` | id, map, time, object id, bag type, kill (nullable), x, y | Every bag, every colour |
+| `portals` | id, map, time, object id, portal type, x, y, kill (nullable) | Every portal once per map (issue #64); no kill for one that opened on its own |
 | `bag_items` | bag, slot, item type | Contents when the bag appeared |
 | `bag_stats` | bag, stat type, value, text | Every other stat the bag arrived with, raw (enchants are decoded later) |
 | `capture_gaps` | session, from, to, lost events, reason | Ring overflow, app not running, map unknown |
 
 Built so far: `sessions`, `maps` (no character yet), `kills` (your damage split into projectile,
-second projectile path and ability), `bags`, `bag_items`, `bag_stats`, `capture_gaps`.
+second projectile path and ability), `bags`, `bag_items`, `bag_stats`, `portals`, `capture_gaps`.
 `factor_states` and `announcements` come with the loot-factor work.
 
 Indexes: `kills(mob_type)`, `kills(map, time)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
