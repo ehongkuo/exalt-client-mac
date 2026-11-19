@@ -131,6 +131,7 @@ static void loot_prepare(const void *game) {
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
 static int32_t loot_player_values[256];
 static uint8_t loot_player_known[256];
+static char loot_player_gear[sizeof ((LootEvent *)0)->text];   /* stat 80 as last written; loot_player_known[80] says it's set */
 /* Ids restart with each map, so hits, waiting bags and kills are forgotten when the server gives
  * you a new object id. The seen bags are per map already. */
 static void loot_new_map(void) {
@@ -236,7 +237,18 @@ static void loot_status(void *connection, void *status) {
         uint8_t stat = 0; int32_t value = 0;
         il2cpp_field_get_value(stats[i], loot_stat_type_field, &stat);
         void *text = read_reference(stats[i], loot_stat_text_field);
-        if (!loot_player_stat_kept(stat) || (text && il2cpp_string_length(text) > 0)) continue;
+        if (!loot_player_stat_kept(stat)) continue;
+        if (text && il2cpp_string_length(text) > 0) {   /* text stats: only your gear's enchantments (issue #58) */
+            if (stat != 80) continue;
+            LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, 0}};
+            read_text(text, e.text, sizeof e.text);
+            loot_gear_parts(e.text);
+            if (loot_player_known[stat] && !strcmp(loot_player_gear, e.text)) continue;
+            loot_player_known[stat] = 1;
+            memcpy(loot_player_gear, e.text, sizeof loot_player_gear);
+            loot_push(&loot_ring, &e);
+            continue;
+        }
         il2cpp_field_get_value(stats[i], loot_stat_int_field, &value);
         if (loot_player_known[stat] && loot_player_values[stat] == value) continue;
         loot_player_known[stat] = 1; loot_player_values[stat] = value;

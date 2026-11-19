@@ -17,7 +17,7 @@ Checked on 2026-11-18. Sources:
 | 1 | Loot Drop Potion | ×1.5 (community) | No | stat 67 `LD_TIMER`, seconds left | Yes |
 | 2 | Loot Tier Potion | up to +3 tiers, not more drops | No | stat 68 `LT_TIMER` | Yes, never on |
 | 3 | Lucky Clover (20 min), Golden Lucky Clover (60 min) | both potions' effects (`LDBoosted`, `LTBoosted`) | No | stats 67 and 68 | Yes |
-| 4 | Gear enchantments | +0.5% to +3% loot drop each (`LootBonus`: Loot Bonus I–IV 1/1.5/2/2.5%, XP or Dust Loot Bonus 0.5–1.25%, Lucky Streak 3%, an awakened ring 2%) | Yes, XML | stat 80 `ENCHANTMENTS` (text) with the item types in stats 8–11 | Item types only; the guard drops your text stats |
+| 4 | Gear enchantments | +0.5% to +3% loot drop each (`LootBonus`: Loot Bonus I–IV 1/1.5/2/2.5%, XP or Dust Loot Bonus 0.5–1.25%, Lucky Streak 3%, an awakened ring 2%) | Yes, XML | stat 80 `ENCHANTMENTS` (text) with the item types in stats 8–11 | From capture format 4: your four equipment slots' part of stat 80 (`player_texts`). Before it, item types only |
 | 5 | Dungeon modifiers | per mob and per item: `EntityDropMultiplier` ×1.01 to ×1.15+ on 205 of 249 modifiers (some only for bosses, minions or one potion). Reward modifiers: LOOTING +50%, REWARDING +25% | Yes, XML | the map info's modifier list, for example `ELITEMINIONS_2;FEEBLEMINIONS_2;` and a grade letter | **Yes, every map** (`map_info.info_58`) |
 | 6 | Crucible | the season's loot bonus: +10% in Season 31 (it was +10% to +20% before) | Patch notes; the client shows it (`Crucible.LootBonusHeader`) | stat 128 `CRUCIBLE`; the % is in `CruciblesManager` | Flag yes (always 0); % no |
 | 7 | Blood Ritual | ×1.1 at −10% HP, ×1.15 at −15%, ×1.25 at −20%; ×1 at −5% or less | Patch notes, and the client's definitions feed | stat 155 (its tier) | Yes, always 0 |
@@ -51,6 +51,21 @@ Open:
 
 Known for every kill: potion state, dungeon modifiers, Blood Ritual (off), crucible (off) and seasonal (on).
 Unknown: gear enchantments (only the item types), accelerators and loot events.
+
+## How the app uses them
+
+`app/GuardLootProfile.swift` has the numbers and the one rule that combines them (`LootMath.combine`).
+
+- **Multiplier:** potion ×1.5 × (1 + gear %) × the dungeon's modifiers × Crucible ×1.10 × Blood Ritual. Multiplying is
+  assumed until kills that mix factors say otherwise.
+- **Dungeon modifiers:** each `EntityDropMultiplier` applies to a mob with all of its `reqLabels` and none of its
+  `excludeLabels`. Item-only ones (`itemId`, such as ×100 stat potions) are left out of the rate.
+- **Base rate per kill:** drops ÷ the sum of the kills' multipliers, each from the factors on its map at the kill.
+  Kills before format 4 count their gear as no bonus (at most +12% off). Per-run and bag-colour rates stay as seen.
+- **Yours:** base × your multiplier now; the dungeon's modifiers count only for mobs of the dungeon you're in.
+- **Live:** the Loot profile window reads the newest running session from `drop_rates.db`, imported every 5 s.
+- **Not yet:** accelerators, loot events and the crucible's % need new hooks; the window says so.
+- **To check on a staging run:** that your stat 80 has one part per inventory slot like a bag's, and stat 155's scale.
 
 ## Sources
 

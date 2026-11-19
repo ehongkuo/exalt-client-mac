@@ -1266,6 +1266,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
     private var lootTimer: Timer?
+    private var profile: NSWindow?
+    private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
     private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
@@ -1279,13 +1281,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         lootQueue.async {
-            var health: CaptureHealth?
+            var health: CaptureHealth?, now: LootNow?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
+                now = LootNow.load(store)
             }
+            let catalog = self.catalog()
             DispatchQueue.main.async {
+                self.rates.catalog = catalog
+                self.rates.update(now: now)
                 if let health { self.rates.update(health: health); self.healthLoaded = true }
                 self.lootBusy = false
                 // All-time queries are heavier, so the shown stats views refresh at most every 30 s.
@@ -1322,12 +1328,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
                 return
             }
-            let report = DropReport.load(store)
+            let report = DropReport.load(store, catalog: self.catalog())
             let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
             let problem = report.dungeons.isEmpty && xml.isEmpty
                 ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
             DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
         }
+    }
+    /// The loot numbers from the game's XML, read once (issue #58). On lootQueue.
+    private func catalog() -> LootCatalog {
+        if let lootCatalog { return lootCatalog }
+        let catalog = LootCatalog.load(folder: RealmHoundPaths.xml)
+        if !catalog.modifiers.isEmpty { lootCatalog = catalog }   // RealmHound may extract the XML later
+        return catalog
+    }
+    /// The Loot profile window (issue #58), made on first open.
+    private func showProfile() {
+        if profile == nil {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                             backing: .buffered, defer: false)
+            w.title = "Loot profile"
+            w.isReleasedWhenClosed = false
+            w.contentView = NSHostingView(rootView: LootProfileView(model: rates))
+            w.center(); w.setFrameAutosaveName("ExaltClientMacLootProfile")
+            profile = w
+        }
+        profile?.makeKeyAndOrderFront(nil)
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
@@ -1387,6 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             compact.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 360, y: screen.visibleFrame.maxY - 20))
         }
         state.showCompact = { [weak self] in self?.showCompact() }
+        rates.showProfile = { [weak self] in self?.showProfile() }
         // After the view switched, so the narrow guard view's frame is not held at the stats views' minimum width.
         ratesWatch = rates.$shown.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
