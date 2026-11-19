@@ -46,7 +46,7 @@ enum DropBag: String, CaseIterable {
 }
 
 /// Item rarity is its number of enchantment slots, as RealmHound counts it (4 or more is Divine).
-enum DropRarity: Int, CaseIterable {
+enum DropRarity: Int, CaseIterable, Codable {
     case common, uncommon, rare, legendary, divine
     init(enchants: Int) { self = DropRarity(rawValue: min(max(enchants, 0), 4))! }
     var name: String { ["Common", "Uncommon", "Rare", "Legendary", "Divine"][rawValue] }
@@ -59,12 +59,201 @@ struct DropAlertSettings: Equatable {
     var minRarity = DropRarity.common
     /// Shiny items alert in any bag.
     var shiny = true
+    /// Item rules (issue #47) alert in any bag, alongside the filters above.
+    var rules: [ItemRule] = []
+}
+
+extension DropAlertSettings {
+    init(defaults: UserDefaults) {
+        if let v = defaults.object(forKey: "dropAlerts") as? Bool { enabled = v }
+        if let v = defaults.object(forKey: "dropAlertSound") as? Bool { sound = v }
+        if let v = defaults.stringArray(forKey: "dropAlertBags") { bags = Set(v.compactMap(DropBag.init(rawValue:))) }
+        if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { minRarity = r }
+        if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { shiny = v }
+        if let v = defaults.data(forKey: "dropAlertRules"), let r = try? JSONDecoder().decode([ItemRule].self, from: v) { rules = r }
+    }
+    func save(to defaults: UserDefaults) {
+        defaults.set(enabled, forKey: "dropAlerts")
+        defaults.set(sound, forKey: "dropAlertSound")
+        defaults.set(bags.map(\.rawValue).sorted(), forKey: "dropAlertBags")
+        defaults.set(minRarity.rawValue, forKey: "dropAlertRarity")
+        defaults.set(shiny, forKey: "dropAlertShiny")
+        defaults.set(try? JSONEncoder().encode(rules), forKey: "dropAlertRules")
+    }
+}
+
+/// An item rule (issue #47): every part that is set must match. Blank text, nil and Common mean any part;
+/// a rule with nothing set matches nothing, and a rule alerts only once it is confirmed.
+struct ItemRule: Codable, Hashable, Identifiable {
+    var id = UUID()
+    /// What the alert calls the rule; blank shows no rule name.
+    var title = ""
+    /// A draft is still being edited and never alerts.
+    var confirmed = false
+    /// Parts of the item's name, any case: any one of them matches.
+    var names: [String] = []
+    /// The item's <SlotType>.
+    var slot: Int? = nil
+    /// A class that can equip the item: its weapon, ability, armor or ring.
+    var playerClass: String? = nil
+    /// Untiered items (UTs, STs) never reach a minimum tier.
+    var minTier: Int? = nil
+    var minRarity = DropRarity.common
+    /// Parts of enchantment names, any case: "Attack Bonus" matches I, II and III.
+    var enchants: [String] = []
+    /// The item needs every enchantment in `enchants` (true) or any one of them.
+    var allEnchants = true
+
+    /// The item types to choose from: <SlotType> values in the game XML (Nov 2026). 10 is consumables, left out.
+    static let types: [(slot: Int, name: String)] = [
+        (1, "Sword"), (2, "Dagger"), (3, "Bow"), (4, "Tome"), (5, "Shield"), (6, "Leather armor"), (7, "Heavy armor"),
+        (8, "Wand"), (9, "Ring"), (11, "Spell"), (12, "Seal"), (13, "Cloak"), (14, "Robe"), (15, "Quiver"), (16, "Helm"),
+        (17, "Staff"), (18, "Poison"), (19, "Skull"), (20, "Trap"), (21, "Orb"), (22, "Prism"), (23, "Scepter"),
+        (24, "Katana"), (25, "Star"), (26, "Pet egg"), (27, "Wakizashi"), (28, "Lute"), (29, "Mace"), (30, "Sheath"),
+        (31, "Sigil"),
+    ].sorted { $0.name < $1.name }
+
+    /// What each class equips: the first four <SlotTypes> of its player object in players.xml (Nov 2026).
+    static let classes: [String: [Int]] = [
+        "Rogue": [2, 13, 6, 9], "Archer": [3, 15, 6, 9], "Wizard": [17, 11, 14, 9], "Priest": [8, 4, 14, 9],
+        "Warrior": [1, 16, 7, 9], "Knight": [1, 5, 7, 9], "Paladin": [1, 12, 7, 9], "Assassin": [2, 18, 6, 9],
+        "Necromancer": [17, 19, 14, 9], "Huntress": [3, 20, 6, 9], "Mystic": [17, 21, 14, 9], "Trickster": [2, 22, 6, 9],
+        "Sorcerer": [8, 23, 14, 9], "Ninja": [24, 25, 6, 9], "Samurai": [24, 27, 7, 9], "Bard": [3, 28, 14, 9],
+        "Summoner": [8, 29, 14, 9], "Kensei": [24, 30, 7, 9], "Druid": [8, 31, 6, 9],
+    ]
+
+    /// Nothing set: the rule would match nothing.
+    var isBlank: Bool {
+        Self.terms(names).isEmpty && slot == nil && playerClass == nil && minTier == nil && minRarity == .common && Self.terms(enchants).isEmpty
+    }
+
+    /// The set parts in one line, for a confirmed rule: "Tome · Tier 4+ · Lucky Streak".
+    var summary: String {
+        var parts: [String] = []
+        let names = Self.terms(names), enchants = Self.terms(enchants)
+        if !names.isEmpty { parts.append(names.map { "“\($0)”" }.joined(separator: " or ")) }
+        if let slot { parts.append(Self.types.first { $0.slot == slot }?.name ?? "Type \(slot)") }
+        if let playerClass { parts.append("\(playerClass) gear") }
+        if let minTier { parts.append("Tier \(minTier)+") }
+        if minRarity != .common { parts.append(minRarity.name) }
+        if !enchants.isEmpty { parts.append(enchants.joined(separator: allEnchants ? " and " : " or ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    func matches(_ item: LootItem, catalog: RuleCatalog) -> Bool {
+        guard confirmed, !isBlank else { return false }
+        let names = Self.terms(names), enchants = Self.terms(enchants)
+        let info = catalog.items[item.id]
+        if !names.isEmpty, !names.contains(where: item.name.localizedCaseInsensitiveContains) { return false }
+        if let slot, info?.slot != slot { return false }
+        if let playerClass, !(info?.slot.map { Self.classes[playerClass]?.contains($0) == true } ?? false) { return false }
+        if let minTier, (info?.tier ?? -1) < minTier { return false }
+        if DropRarity(enchants: item.enchants).rawValue < minRarity.rawValue { return false }
+        // A term that is a whole enchantment name ("Loot Bonus I") means that one, not II to IV as well.
+        func has(_ term: String) -> Bool {
+            let exact = catalog.enchants.values.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+            return item.enchantIds.contains {
+                guard let n = catalog.enchants[$0] else { return false }
+                return exact ? n.caseInsensitiveCompare(term) == .orderedSame : n.localizedCaseInsensitiveContains(term)
+            }
+        }
+        if !enchants.isEmpty, allEnchants ? !enchants.allSatisfy(has) : !enchants.contains(where: has) { return false }
+        return true
+    }
+}
+
+extension ItemRule {
+    /// Rules saved before titles and drafts existed load as confirmed, so their alerts keep working.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        confirmed = try c.decodeIfPresent(Bool.self, forKey: .confirmed) ?? true
+        names = try c.decodeIfPresent([String].self, forKey: .names) ?? []
+        slot = try c.decodeIfPresent(Int.self, forKey: .slot)
+        playerClass = try c.decodeIfPresent(String.self, forKey: .playerClass)
+        minTier = try c.decodeIfPresent(Int.self, forKey: .minTier)
+        minRarity = try c.decodeIfPresent(DropRarity.self, forKey: .minRarity) ?? .common
+        enchants = try c.decodeIfPresent([String].self, forKey: .enchants) ?? []
+        allEnchants = try c.decodeIfPresent(Bool.self, forKey: .allEnchants) ?? true
+        // Rules saved with one name and one enchantment.
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        if let v = try legacy.decodeIfPresent(String.self, forKey: .name), names.isEmpty { names = Self.terms([v]) }
+        if let v = try legacy.decodeIfPresent(String.self, forKey: .enchant), enchants.isEmpty { enchants = Self.terms([v]) }
+    }
+    private enum LegacyKeys: String, CodingKey { case name, enchant }
+
+    /// The non-blank terms, trimmed.
+    static func terms(_ list: [String]) -> [String] {
+        list.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+}
+
+/// What item rules look up: each item's type and tier from the item catalog (issue #40), and enchantment names.
+struct RuleCatalog: Equatable {
+    struct Item: Equatable { var slot: Int?, tier: Int? }
+    var items: [Int: Item] = [:]
+    var enchants: [Int: String] = [:]
+    /// Item names to suggest while typing a rule, sorted.
+    var names: [String] = []
+
+    /// Up to `limit` of `options` for what is typed: names starting with it first, then names with a word
+    /// starting with it, then names containing it, each alphabetical. Nothing typed suggests nothing.
+    static func suggest(_ typed: String, from options: [String], limit: Int = 8) -> [String] {
+        let t = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty else { return [] }
+        var groups: [[String]] = [[], [], []]
+        for o in options {
+            let l = o.lowercased()
+            guard l != t else { continue }
+            if l.hasPrefix(t) { groups[0].append(o) }
+            else if l.contains(" " + t) { groups[1].append(o) }
+            else if l.contains(t) { groups[2].append(o) }
+        }
+        return Array(groups.flatMap { $0.sorted() }.prefix(limit))
+    }
+
+    /// Reads the catalog's items and RealmHound's enchantments.xml (call it off the main thread).
+    static func load(_ store: DropRateStore, xml: URL) -> RuleCatalog {
+        var catalog = RuleCatalog()
+        store.run("SELECT type, slot_type, tier FROM items WHERE slot_type IS NOT NULL") { s in
+            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(
+                slot: Int(sqlite3_column_int64(s, 1)),
+                tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
+        }
+        store.run("SELECT DISTINCT coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
+            if let t = sqlite3_column_text(s, 0) { catalog.names.append(String(cString: t)) }
+        }
+        catalog.names.sort()
+        if let data = try? Data(contentsOf: xml.appendingPathComponent("enchantments.xml")) {
+            catalog.enchants = enchantNames(inXML: String(decoding: data, as: UTF8.self))
+        }
+        return catalog
+    }
+    /// `<Enchantment id="LUCKY_STREAK" type="0x639"><DisplayId>Lucky Streak</DisplayId>`: names by id, the
+    /// DisplayId unless it is a {translation.key}.
+    static func enchantNames(inXML text: String) -> [Int: String] {
+        var names: [Int: String] = [:]
+        for chunk in text.components(separatedBy: "<Enchantment ").dropFirst() {
+            let tag = " " + chunk.prefix { $0 != ">" }   // the space lets the first attribute match " name="
+            guard let type = attribute(tag, "type"), type.hasPrefix("0x"), let id = Int(type.dropFirst(2), radix: 16) else { continue }
+            let display = chunk.components(separatedBy: "</Enchantment>")[0].components(separatedBy: "<DisplayId>").dropFirst().first?
+                .components(separatedBy: "</DisplayId>").first
+            names[id] = display.flatMap { $0.hasPrefix("{") ? nil : $0 } ?? attribute(tag, "id")
+        }
+        return names
+    }
+    private static func attribute(_ tag: String, _ name: String) -> String? {
+        tag.components(separatedBy: " \(name)=\"").dropFirst().first?.components(separatedBy: "\"").first
+    }
 }
 
 struct LootItem: Equatable {
     var id: Int
     var name: String
     var enchants: Int
+    /// RealmHound's enchant_ids: one enchantment type per filled slot.
+    var enchantIds: [Int] = []
 }
 
 struct LootDrop: Equatable {
@@ -84,6 +273,8 @@ struct DropAlert: Equatable {
     var shiny: Bool
     var mob: String
     var dungeon: String
+    /// The title of the item rule that matched, if any.
+    var rule = ""
 
     var detail: String {
         var parts = [bag?.name ?? "Bag"]
@@ -99,18 +290,23 @@ enum DropRules {
     /// How long the popup stays up.
     static let shown = 10.0
 
-    /// An item alerts when its bag is chosen and it is at least the chosen rarity, or when it is
-    /// shiny and shiny alerts are on. The popup names the best matching item.
-    static func alert(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, nowMs: Int64) -> DropAlert? {
+    /// An item alerts when its bag is chosen and it is at least the chosen rarity, when it is shiny and
+    /// shiny alerts are on, or when an item rule matches it (in any bag). The popup names the best matching
+    /// item, a rule's item first.
+    static func alert(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
+                      nowMs: Int64) -> DropAlert? {
         guard settings.enabled, nowMs - drop.epochMs <= freshness else { return nil }
         let bag = DropBag(id: drop.bag)
         let bagChosen = bag.map(settings.bags.contains) ?? false
-        let matches = drop.items.compactMap { item -> DropAlert? in
+        let matches = drop.items.compactMap { item -> (ruled: Bool, alert: DropAlert)? in
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
-            guard (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon)
+            let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
+            guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
+            return (rule != nil, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+                                           rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? ""))
         }
-        return matches.max { ($0.shiny ? 1 : 0, $0.rarity.rawValue) < ($1.shiny ? 1 : 0, $1.rarity.rawValue) }
+        func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
+        return matches.max { rank($0) < rank($1) }?.alert
     }
 }
 
@@ -308,7 +504,7 @@ final class LootLog {
 
     private static func drops(_ db: OpaquePointer?, after: Int64, through: Int64) -> [LootDrop] {
         let sql = """
-            SELECT d.id, d.timestamp, d.dungeon, d.mob_name, d.bag_type, i.item_id, i.item_name, i.enchant_count
+            SELECT d.id, d.timestamp, d.dungeon, d.mob_name, d.bag_type, i.item_id, i.item_name, i.enchant_count, i.enchant_ids
             FROM loot_drops d LEFT JOIN loot_items i ON i.drop_id = d.id
             WHERE d.id > ? AND d.id <= ? ORDER BY d.id, i.slot
             """
@@ -326,7 +522,8 @@ final class LootLog {
             }
             if sqlite3_column_type(statement, 5) != SQLITE_NULL {
                 drops[drops.count - 1].items.append(LootItem(id: Int(sqlite3_column_int(statement, 5)), name: text(6),
-                                                             enchants: Int(sqlite3_column_int(statement, 7))))
+                                                             enchants: Int(sqlite3_column_int(statement, 7)),
+                                                             enchantIds: text(8).split(separator: ",").compactMap { Int($0) }))
             }
         }
         return drops

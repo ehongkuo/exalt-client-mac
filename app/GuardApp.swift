@@ -301,28 +301,20 @@ final class DropAlerts: ObservableObject {
     @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
+    /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
+    var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
+    /// Enchantment names to suggest while typing a rule.
+    private(set) var enchantNames: [String] = []
     private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
 
     init() {
-        var s = DropAlertSettings()
-        if let v = defaults.object(forKey: "dropAlerts") as? Bool { s.enabled = v }
-        if let v = defaults.object(forKey: "dropAlertSound") as? Bool { s.sound = v }
-        if let v = defaults.stringArray(forKey: "dropAlertBags") { s.bags = Set(v.compactMap(DropBag.init(rawValue:))) }
-        if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { s.minRarity = r }
-        if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { s.shiny = v }
-        settings = s
+        settings = DropAlertSettings(defaults: defaults)
         loadShiniesIfNeeded()
         loadBagsIfNeeded()
     }
-    private func save() {
-        defaults.set(settings.enabled, forKey: "dropAlerts")
-        defaults.set(settings.sound, forKey: "dropAlertSound")
-        defaults.set(settings.bags.map(\.rawValue).sorted(), forKey: "dropAlertBags")
-        defaults.set(settings.minRarity.rawValue, forKey: "dropAlertRarity")
-        defaults.set(settings.shiny, forKey: "dropAlertShiny")
-    }
+    private func save() { settings.save(to: defaults) }
     /// The shiny list comes from about 60 MB of XML, so it is read once, off the main thread.
     private func loadShiniesIfNeeded() {
         #if !GUARD_UI_TEST
@@ -355,7 +347,7 @@ final class DropAlerts: ObservableObject {
         let drops = log.poll()
         if log.logs != logs { logs = log.logs }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, nowMs: nowMs) }).last {
+        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
             show(alert)
         }
         #endif
@@ -402,6 +394,9 @@ struct DropPopupContent: View {
                     if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
                 }
                 Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                if !drop.rule.isEmpty {
+                    Text(drop.rule).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor).lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -1087,6 +1082,81 @@ struct GuardPanel {
         .font(.system(size: 11))
     }
 
+    /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
+        let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
+            .buttonStyle(.borderless).help("Remove rule")
+        if rule.wrappedValue.confirmed {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 16)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    let title = rule.wrappedValue.title.trimmingCharacters(in: .whitespaces)
+                    Text(title.isEmpty ? "Untitled rule" : title).fontWeight(.semibold)
+                    Text(rule.wrappedValue.summary).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Edit") { rule.wrappedValue.confirmed = false }.controlSize(.small)
+                remove
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.green.opacity(0.45)))
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    TextField("Rule name, shown in the alert", text: rule.title)
+                    remove
+                }
+                HStack(spacing: 6) {
+                    Picker("Type", selection: rule.slot) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+                    }
+                    .fixedSize()
+                    Picker("Class", selection: rule.playerClass) {
+                        Text("Any").tag(String?.none)
+                        ForEach(ItemRule.classes.keys.sorted(), id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 6) {
+                    Picker("Tier", selection: rule.minTier) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
+                    }
+                    .fixedSize()
+                    Picker("Rarity", selection: rule.minRarity) {
+                        ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                TermList(label: "Name", hint: "any of these", terms: rule.names, options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: rule.enchants,
+                         options: drops.enchantNames)
+                if rule.wrappedValue.enchants.count > 1 {
+                    Picker("Needs", selection: rule.allEnchants) {
+                        Text("All enchantments").tag(true)
+                        Text("Any one").tag(false)
+                    }
+                    .pickerStyle(.segmented).fixedSize()
+                }
+                HStack {
+                    Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Confirm") { rule.wrappedValue.confirmed = true }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(rule.wrappedValue.isBlank).help(rule.wrappedValue.isBlank ? "Set at least one part first" : "Start alerting on this rule")
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        }
+    }
+
     private func dropDetail() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch).controlSize(.small)
@@ -1116,6 +1186,11 @@ struct GuardPanel {
                 }
                 .fixedSize()
                 Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+                Divider().padding(.vertical, 2)
+                Text("Item rules").fontWeight(.semibold)
+                Text("Also alert when any item matches a rule, in any bag.").foregroundStyle(.secondary)
+                ForEach($drops.settings.rules) { $rule in itemRule($rule) }
+                Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
             }
             .disabled(!drops.settings.enabled)
             Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
@@ -1278,15 +1353,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        let noCatalog = drops.catalog.items.isEmpty
         lootQueue.async {
-            var health: CaptureHealth?
+            var health: CaptureHealth?, catalog: RuleCatalog?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
-                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
+                if GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
+                    catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
+                }
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
             }
             DispatchQueue.main.async {
                 if let health { self.rates.update(health: health); self.healthLoaded = true }
+                if let catalog { self.drops.catalog = catalog }
                 self.lootBusy = false
                 // All-time queries are heavier, so the shown stats views refresh at most every 30 s.
                 if self.rates.shown, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
@@ -1526,3 +1606,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     }
 }
 #endif
+
+/// Suggestions under a rule's text field as you type (issue #47). SwiftUI has them from macOS 15; older systems go without.
+private struct Suggestions: ViewModifier {
+    let options: [String]
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.textInputSuggestions { ForEach(options, id: \.self) { Text($0).textInputCompletion($0) } }
+        } else {
+            content
+        }
+    }
+}
+
+/// A rule's names or enchantments (issue #47): chips you can remove, and a field that adds what you type on Return.
+private struct TermList: View {
+    let label: String
+    let hint: String
+    @Binding var terms: [String]
+    let options: [String]
+    @StateObject private var typed = Typed()
+    /// What is typed but not yet added. (@State needs a compiler plugin this build doesn't load.)
+    final class Typed: ObservableObject { @Published var text = "" }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label).foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
+            Flow(spacing: 4) {
+                ForEach(terms, id: \.self) { term in
+                    HStack(spacing: 3) {
+                        Text(term)
+                        Button { terms.removeAll { $0 == term } } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Remove \(term)")
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                }
+                TextField(terms.isEmpty ? "contains…" : "add another…", text: $typed.text)
+                    .frame(width: 170)
+                    .onSubmit(add)
+                    .modifier(Suggestions(options: RuleCatalog.suggest(typed.text, from: options)))
+            }
+            if !hint.isEmpty, !terms.isEmpty { Text(hint).foregroundStyle(.tertiary) }
+        }
+        .onDisappear(perform: add)   // Confirm keeps a term typed but not yet added
+    }
+
+    private func add() {
+        let t = typed.text.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty, !terms.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) { terms.append(t) }
+        typed.text = ""
+    }
+}
+
+/// Lays views out left to right, wrapping to a new row when the width runs out.
+private struct Flow: Layout {
+    var spacing: CGFloat = 4
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, p) in zip(subviews, arrange(bounds.width, subviews).points) {
+            view.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
+        }
+    }
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (points: [CGPoint], size: CGSize) {
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing; rowHeight = max(rowHeight, size.height); widest = max(widest, x - spacing)
+        }
+        return (points, CGSize(width: widest, height: y + rowHeight))
+    }
+}
