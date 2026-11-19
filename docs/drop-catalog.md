@@ -3,15 +3,23 @@
 Goal: the Drop rates tab knows every dungeon, its mobs and their possible drops before the first kill, so new kill data
 lands in a ready slot and nothing in play is a surprise.
 
-Status: decisions made (Nov 17, see [Decisions](#decisions)). The fetch stage of `tools/drop_catalog.py` is written;
-the parser waits on sample pages from your first run.
+Status (Nov 18): the script, the data file and the app side are done; sprites up front and the "Not in the catalog
+yet" list remain. Decisions are in [Decisions](#decisions): you run the fetch yourself; this session reads the pages it
+caches; `data/drop_catalog.json` is committed; the RealmEye sprite fallback stays; `GuardDropRatesView.swift` gets only
+small edits.
 
-**Decided:** you run the fetch yourself; this session may read the pages it caches; `data/drop_catalog.json` is
-committed (check RealmEye's terms first); the RealmEye sprite fallback stays in scope; a small edit to
-`GuardDropRatesView.swift` is fine, anything bigger waits for #50.
+**Current catalog:** 82 dungeons, 1,488 mobs. `tools/drop_catalog.py check` passes. Left unmatched, with reasons in the
+file: 90 mob pages (traps, turrets, statues, a few bosses the game data names differently, such as The Shattered Queen),
+101 drop names (categories such as Pet Eggs, Cloths, Set Shards) and 6 dungeons with no game portal. The Inner
+Workings, Chess and Admin Arena list no mobs on RealmEye.
 
-**Next step:** run `tools/drop_catalog.py fetch /wiki/dungeons` plus one dungeon page and one mob page you know. The
-parser and the full crawl are written against those.
+**Refreshing after a game update:** run `tools/drop_catalog.py build`. It fetches only pages not in the cache (`--refresh`
+fetches again), prints a diff and lists mobs and items seen in play but missing from the catalog.
+
+**RealmEye page layouts found** (the parser handles all of them): mobs between Layout and Drops of Interest at any heading
+level, some listed under Layout; boss headings with no id; captions with no alt text, in bold or after `<br>`; the Realm
+as 23 biome pages; a wiki sidebar on every page that must be ignored. The Realm keeps every same-named copy of a mob,
+one per biome; elsewhere the XML id and the dungeon's file pick one copy.
 
 ## 1. Sources
 
