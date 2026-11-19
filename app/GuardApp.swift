@@ -1518,9 +1518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    private var compactMode = false
-    private var compactAfterFullScreen = false
-    /// Show the strip before hiding the main window: hiding the last regular window counts as
+    private var mode = WindowMode()
     /// A popup card above everything, including full-screen video, that never takes focus.
     private func popupPanel<V: View>(height: CGFloat, _ view: V) -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: height),
@@ -1554,24 +1552,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let bounds = screens.map { CGDisplayBounds(($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) }
         return PopupScreen.index(window: window, screens: bounds).map { screens[$0] }
     }
-    /// "last window closed", which would otherwise quit the app. A full-screen window has to
-    /// leave full screen first, or hiding it leaves an empty full-screen space behind.
-    func showCompact() {
-        if window.styleMask.contains(.fullScreen) {
-            compactAfterFullScreen = true
-            window.toggleFullScreen(nil)
-            return
+    /// The decisions live in WindowMode (tested in the model tests); this only carries them out.
+    private func run(_ steps: [WindowMode.Step]) {
+        for step in steps {
+            switch step {
+            case .leaveFullScreen: window.toggleFullScreen(nil)
+            case .showStrip: compact.orderFrontRegardless()
+            case .hideMain: window.orderOut(nil)
+            case .showMain: window.makeKeyAndOrderFront(nil)
+            case .hideStrip: compact.orderOut(nil)
+            case .activate: NSApp.activate(ignoringOtherApps: true)
+            }
         }
-        compactMode = true; compact.orderFrontRegardless(); window.orderOut(nil)
     }
-    func windowDidExitFullScreen(_ notification: Notification) {
-        guard compactAfterFullScreen else { return }
-        compactAfterFullScreen = false
-        showCompact()
-    }
-    func showFull() { compactMode = false; window.makeKeyAndOrderFront(nil); compact.orderOut(nil); NSApp.activate(ignoringOtherApps: true) }
+    func showCompact() { run(mode.toCompact(fullScreen: window.styleMask.contains(.fullScreen))) }
+    func windowDidExitFullScreen(_ notification: Notification) { run(mode.didLeaveFullScreen()) }
+    func showFull() { run(mode.toFull()) }
     /// Quit when the main window is closed, but never while the compact strip is showing.
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !compactMode }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { mode.quitsWhenLastWindowCloses }
     /// Clicking a guard banner switches to the game, if one is running.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -1587,6 +1585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showFull(); return true }
 }
 
+#if !GUARD_RENDER   // render_page.swift has its own main
 @main struct Main {
     static func main() {
         let app = NSApplication.shared
@@ -1596,6 +1595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         withExtendedLifetime(delegate) {}
     }
 }
+#endif
 
 /// Suggestions under a rule's text field as you type (issue #47). SwiftUI has them from macOS 15; older systems go without.
 private struct Suggestions: ViewModifier {
