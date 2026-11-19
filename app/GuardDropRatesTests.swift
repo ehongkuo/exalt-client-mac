@@ -344,6 +344,20 @@ enum DropRateTests {
               "a cataloged mob shows with no kills")
         let den = cataloged.dungeons.first { $0.name == "New Den" }
         check(den.map(cataloged.possibleDrops) == [700, 800, 801, 803, 2560], "a dungeon never run is listed with its mobs' drops")
+        // Sprites up front: the first report holds every catalog mob and drop with a sprite, so the tab cuts them in one batch.
+        var drawn: Set<Int> = []
+        rates.run("""
+            SELECT type FROM objects WHERE texture_file IS NOT NULL AND type IN (SELECT mob FROM catalog_mobs) UNION
+            SELECT type FROM items WHERE texture_file IS NOT NULL AND type IN (SELECT item FROM catalog_drops)
+            """) { drawn.insert(Int(sqlite3_column_int64($0, 0))) }
+        check(drawn.isSubset(of: cataloged.textures.keys), "every catalog sprite is in the first report")
+        check(cataloged.uncataloged.mobs == [DropReport.Mob(type: 2, dungeon: "The Void")] && cataloged.uncataloged.dungeons.isEmpty
+              && cataloged.uncataloged.items.contains(807) && !cataloged.uncataloged.items.contains(700),
+              "not in the catalog yet: a killed mob the catalog lacks and an uncataloged drop, not a cataloged one")
+        check(rates.exec("INSERT INTO maps(id, session, generation, name) VALUES (90, 1, 90, 'Guild Hall'); INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by) VALUES (90, 50, 1, 10, 0, 0, 'hit')"),
+              "a kill in a map the catalog lacks")
+        let guild = DropReport.load(rates).uncataloged
+        check(guild.dungeons == ["Guild Hall"] && guild.mobs == cataloged.uncataloged.mobs, "a map with kills the catalog lacks; a cataloged mob isn't listed")
         try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
         check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
               DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")

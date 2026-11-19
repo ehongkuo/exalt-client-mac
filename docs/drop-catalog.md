@@ -3,8 +3,8 @@
 Goal: the Drop rates tab knows every dungeon, its mobs and their possible drops before the first kill, so new kill data
 lands in a ready slot and nothing in play is a surprise.
 
-Status (Nov 18): the script, the data file and the app side are done; sprites up front and the "Not in the catalog
-yet" list and the game's own icons (step 7) remain. Decisions are in [Decisions](#decisions): you run the fetch yourself; this session reads the pages it
+Status (Nov 18): done. The script, the data file, the app side, sprites up front, the "Not in the catalog yet" list
+(at the bottom of the dungeon list) and the game's own icons (step 7) are in PR #52. Decisions are in [Decisions](#decisions): you run the fetch yourself; this session reads the pages it
 caches; `data/drop_catalog.json` is committed; the RealmEye sprite fallback stays; `GuardDropRatesView.swift` gets only
 small edits.
 

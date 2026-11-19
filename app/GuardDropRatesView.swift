@@ -154,7 +154,31 @@ struct DropRatesView: View {
                         .accessibilityLabel("\(d.name), \(n) kills")
                     }
                 }
+                if q.isEmpty { uncatalogedSection }
             }
+        }
+    }
+
+    /// Seen in play but missing from the drop catalog (issue #51): shown by game name until a refresh picks them up.
+    @ViewBuilder private var uncatalogedSection: some View {
+        let u = report.uncataloged
+        if !(u.dungeons.isEmpty && u.mobs.isEmpty && u.items.isEmpty) {
+            Section {
+                ForEach(u.dungeons, id: \.self) { name in uncatalogedRow(nil, name, "map") }
+                ForEach(u.mobs, id: \.self) { mob in uncatalogedRow(model.sprites[mob.type], report.name(mob.type), mob.dungeon) }
+                ForEach(u.items, id: \.self) { item in uncatalogedRow(model.sprites[item], report.name(item), "item") }
+            } header: {
+                Text("Not in the catalog yet")
+                    .help("Seen in play but missing from the drop catalog. Running tools/drop_catalog.py build picks them up.")
+            }
+        }
+    }
+    private func uncatalogedRow(_ sprite: CGImage?, _ name: String, _ kind: String) -> some View {
+        HStack(spacing: 8) {
+            SpriteIcon(image: sprite, size: 20)
+            Text(name).lineLimit(1).help(name)
+            Spacer()
+            Text(kind).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 

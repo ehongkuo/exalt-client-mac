@@ -465,6 +465,10 @@ struct DropReport: Equatable {
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
     var stackOf: [Int: Int] = [:]                   // a stack of a material → its smallest stack ("X x3" → "X x1", by the id)
     var unlocks: [Int: [Int]] = [:]                 // a blueprint → the items it unlocks in the forge, in type order
+    /// What play has seen that the drop catalog lacks, so the next `tools/drop_catalog.py build` targets it: maps with
+    /// kills, mobs that can drop (by the dungeon they were killed in), and untiered drops (tiers cover tiered loot).
+    struct Uncataloged: Equatable { var dungeons: [String] = [], mobs: [Mob] = [], items: [Int] = [] }
+    var uncataloged = Uncataloged()
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -641,6 +645,21 @@ struct DropReport: Equatable {
         }
         for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
+        if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
+            r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
+            store.run("""
+                SELECT DISTINCT k.mob_type, m.name FROM kills k JOIN maps m ON m.id = k.map LEFT JOIN objects o ON o.type = k.mob_type
+                WHERE \(died) AND coalesce(o.drop_source, 1) AND k.mob_type NOT IN (SELECT mob FROM catalog_mobs) ORDER BY m.name, k.mob_type
+                """) { r.uncataloged.mobs.append(Mob(type: int($0, 0), dungeon: text($0, 1))) }
+            let cataloged = Set(r.mobDrops.values.joined())
+            var items: Set<Int> = []
+            store.run("SELECT DISTINCT i.item_type FROM bag_items i LEFT JOIN items t ON t.type = i.item_type WHERE t.tier IS NULL") {
+                let item = int($0, 0)
+                // A shiny or another stack size of a cataloged or tiered item counts as cataloged.
+                if !cataloged.contains(item) && !cataloged.contains(r.base(item)) && r.tiers[r.base(item)] == nil { items.insert(r.names[r.base(item)] != nil ? r.base(item) : item) }
+            }
+            r.uncataloged.items = items.sorted { r.name($0) < r.name($1) }
+        }
         return r
     }
 
@@ -1035,7 +1054,8 @@ final class DropRatesModel: ObservableObject {
                 DispatchQueue.main.async { self.collectionIcons = icons }
             }
         }
-        // Sprites are cut once per type, off the main thread, as new mobs and items show up.
+        // Sprites are cut once per type, off the main thread. The first report holds every catalog mob and drop, so
+        // they are all cut in one batch when the tab opens; later reports add only types new to play.
         let wanted = report.textures.filter { !spritesAsked.contains($0.key) }
         guard !wanted.isEmpty else { return }
         spritesAsked.formUnion(wanted.keys)
