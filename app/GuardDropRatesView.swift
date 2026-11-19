@@ -66,7 +66,7 @@ struct DropRatesView: View {
     }
 
     private var report: DropReport { model.report }
-    private func kills(in dungeon: String) -> Int { report.mobs(in: dungeon).reduce(0) { $0 + report.kills[$1]! } }
+    private func kills(in dungeon: String) -> Int { report.mobs(in: dungeon).reduce(0) { $0 + (report.kills[$1] ?? 0) } }
     /// The picked dungeon, or the one with the most kills.
     private var dungeon: DropReport.Dungeon? {
         report.dungeons.first { $0.name == model.dungeon } ?? report.dungeons.max { kills(in: $0.name) < kills(in: $1.name) }
@@ -155,7 +155,31 @@ struct DropRatesView: View {
                         .accessibilityLabel("\(d.name), \(n) kills")
                     }
                 }
+                if q.isEmpty { uncatalogedSection }
             }
+        }
+    }
+
+    /// Seen in play but missing from the drop catalog (issue #51): shown by game name until a refresh picks them up.
+    @ViewBuilder private var uncatalogedSection: some View {
+        let u = report.uncataloged
+        if !(u.dungeons.isEmpty && u.mobs.isEmpty && u.items.isEmpty) {
+            Section {
+                ForEach(u.dungeons, id: \.self) { name in uncatalogedRow(nil, name, "map") }
+                ForEach(u.mobs, id: \.self) { mob in uncatalogedRow(model.sprites[mob.type], report.name(mob.type), mob.dungeon) }
+                ForEach(u.items, id: \.self) { item in uncatalogedRow(model.sprites[item], report.name(item), "item") }
+            } header: {
+                Text("Not in the catalog yet")
+                    .help("Seen in play but missing from the drop catalog. Running tools/drop_catalog.py build picks them up.")
+            }
+        }
+    }
+    private func uncatalogedRow(_ sprite: CGImage?, _ name: String, _ kind: String) -> some View {
+        HStack(spacing: 8) {
+            SpriteIcon(image: sprite, size: 20)
+            Text(name).lineLimit(1).help(name)
+            Spacer()
+            Text(kind).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
@@ -193,11 +217,19 @@ struct DropRatesView: View {
         }
     }
 
+    /// The game's collection icon for the dungeon's items (from its sheet), beside the dungeon's name.
+    @ViewBuilder private func collectionIcon(_ d: DropReport.Dungeon) -> some View {
+        if let icon = model.collectionIcons[d.name] {
+            SpriteIcon(image: icon, size: 20).help("The game's collection icon for \(d.name) items")
+        }
+    }
+
     /// Dungeon › mob › group › item; each part steps back to it.
     private func breadcrumb(_ d: DropReport.Dungeon) -> some View {
         HStack(spacing: 6) {
             Button { model.mob = nil; model.group = nil; model.item = nil } label: { Text(d.name).font(.title3.weight(.semibold)) }
                 .buttonStyle(.plain)
+            collectionIcon(d)
             if let mob = model.mob {
                 chevron
                 Button { model.group = nil; model.item = nil } label: { Text(report.name(mob.type)) }.buttonStyle(.plain)
@@ -230,7 +262,7 @@ struct DropRatesView: View {
             Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
-                let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob]!
+                let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob] ?? 0
                 chip(selected: model.mob == mob, { model.pick(mob: mob) }) {
                     SpriteIcon(image: model.sprites[mob.type], size: 20)
                     Text(name).lineLimit(1)
@@ -255,7 +287,7 @@ struct DropRatesView: View {
         let anyDropped = tile.items.contains { report.variants($0).contains(where: dropped.contains) }
         switch tile {
         case .item(let item):
-            let name = report.name(item), shiny = report.variants(item).count > 1
+            let name = report.name(item), shiny = report.variants(item).contains { report.shinyOf[$0] != nil }
             Button { model.group = nil; model.item = model.item == item ? nil : item } label: {
                 SpriteIcon(image: model.sprites[item], size: 32).opacity(anyDropped ? 1 : 0.35).padding(4)
                     .background(tileBackground(model.item == item && model.group == nil))
@@ -328,15 +360,23 @@ struct DropRatesView: View {
     /// One item, from every dungeon: its bag, where it drops (one box per dungeon, surest first, with each mob), its
     /// shiny, and the rarity of every copy.
     private func itemPane(_ item: Int) -> some View {
-        let types = report.variants(item), shinies = types.subtracting([item])
+        let types = report.variants(item), shinies = types.filter { report.shinyOf[$0] != nil }
         let sources = model.stable("sources", report.sources(types)) { $0.runsWith + $0.mobs.values.reduce(0, +) }
         let total = types.reduce(0) { $0 + report.dropped($1) }
         let possible = report.dungeons.filter { report.possibleDrops($0).contains(item) }.map(\.name)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 SpriteIcon(image: model.sprites[item], size: 44)
+                if let unlocked = report.unlocks[item] {   // a blueprint: the items it unlocks in the forge
+                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    ForEach(unlocked, id: \.self) { u in SpriteIcon(image: model.sprites[u], size: 44).help(report.name(u)) }
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(report.name(item)).font(.title3.weight(.semibold)).lineLimit(2)
+                    if let unlocked = report.unlocks[item] {
+                        Text("Unlocks \(unlocked.map(report.name).formatted(.list(type: .and))) in the forge")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
                     HStack(spacing: 6) {
                         if let bag = report.bag(item) { pill(bag.name, BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 12)) }
                         if let tier = report.group(item)?.tier { pill("T\(tier)", EmptyView()) }
@@ -411,7 +451,7 @@ struct DropRatesView: View {
             sectionTitle("SHINY")
             HStack(spacing: 12) {
                 SpriteIcon(image: model.sprites[shiny], size: 44).overlay(alignment: .topTrailing) {
-                    Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(.yellow).offset(x: 5, y: -5)
+                    ShinyMark(size: 16).offset(x: 5, y: -5)
                 }
                 .help(report.name(shiny))
                 Spacer()
@@ -437,7 +477,7 @@ struct DropRatesView: View {
     /// With nothing picked: the bosses' best bag per run.
     private func summaryPane(_ d: DropReport.Dungeon) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(d.name).font(.title3.weight(.semibold))
+            HStack(spacing: 6) { Text(d.name).font(.title3.weight(.semibold)); collectionIcon(d) }
             if let bosses = report.bossBags[d.name], let runs = report.runs[d.name] {
                 section("BEST BAG FROM THE BOSSES, PER RUN") {
                     ForEach(sortedBags(bosses[nil] ?? [:]), id: \.self) { bag in

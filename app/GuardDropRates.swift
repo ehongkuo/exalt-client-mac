@@ -131,11 +131,20 @@ final class DropRateStore {
         -- Dungeons (issue #45): each portal's <DungeonName> with the portal's type and sprite, and the labels of its
         -- <DungeonModTemplate> (its drop tag among them: ",ABYSS," for the Abyss); labels NULL when it has no template.
         CREATE TABLE IF NOT EXISTS dungeons(name TEXT PRIMARY KEY, portal INTEGER, texture_file TEXT, texture_index INTEGER, labels TEXT);
+        -- The drop catalog (issue #51), from data/drop_catalog.json, rebuilt with the game catalog: each dungeon's mobs
+        -- (dungeon is the map name kills are stored under), and each mob's tiered loot (family: weapon, ability, armor,
+        -- ring) and named drops, all by type id.
+        CREATE TABLE IF NOT EXISTS catalog_mobs(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS catalog_tiers(mob INTEGER NOT NULL, family TEXT NOT NULL, tier INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS catalog_drops(mob INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
+        CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
         CREATE INDEX IF NOT EXISTS bags_map_object ON bags(map, object_id);
         CREATE INDEX IF NOT EXISTS bag_items_item ON bag_items(item_type);
+        CREATE INDEX IF NOT EXISTS bag_stats_bag ON bag_stats(bag);   -- the report reads each bag's enchantments by bag
         """
 
     init?(path: String) {
@@ -168,6 +177,12 @@ final class DropRateStore {
         }
         if version < 6 {   // the dungeons table (issue #45): rebuild the catalog to fill it
             guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 6", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 7 {   // the drop catalog tables (issue #51)
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 7", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 8 {   // the blueprints table (issue #51)
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 8", nil, nil, nil) == SQLITE_OK else { return nil }
         }
     }
     deinit { sqlite3_close(db) }
@@ -465,6 +480,12 @@ struct DropReport: Equatable {
     var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
     var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
+    var stackOf: [Int: Int] = [:]                   // a stack of a material → its smallest stack ("X x3" → "X x1", by the id)
+    var unlocks: [Int: [Int]] = [:]                 // a blueprint → the items it unlocks in the forge, in type order
+    /// What play has seen that the drop catalog lacks, so the next `tools/drop_catalog.py build` targets it: maps with
+    /// kills, mobs that can drop (by the dungeon they were killed in), and untiered drops (tiers cover tiered loot).
+    struct Uncataloged: Equatable { var dungeons: [String] = [], mobs: [Mob] = [], items: [Int] = [] }
+    var uncataloged = Uncataloged()
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -472,6 +493,9 @@ struct DropReport: Equatable {
     struct Dungeon: Hashable { var name: String, portal: Int?, codes: Set<String> }
     var dungeons: [Dungeon] = []                    // by name
     var names: [Int: String] = [:]
+    /// The drop catalog (issue #51): dungeon → mob types, and each mob type's tier groups and named drops.
+    var catalogMobs: [String: Set<Int>] = [:]
+    var mobTiers: [Int: Set<Group>] = [:], mobDrops: [Int: Set<Int>] = [:]
     var bosses: Set<Int> = []
     var labels: [Int: Set<String>] = [:]             // mob type → its XML labels (BOSS, MINION, …)
     /// Base rates (issue #58): each mob's kills, each counted as its loot multiplier (LootState.multiplier).
@@ -501,68 +525,6 @@ struct DropReport: Equatable {
         "Oryx's Castle": ["CASTLE"],
     ]
 
-    /// Tiered loot by mob name, from each mob's RealmEye page ("We7,8" is T7 and T8 weapons; Ab abilities, Ar armor,
-    /// Ri rings). The game data has no loot tables, so this is how a group that hasn't dropped yet still shows.
-    // shortcut: by hand from RealmEye in Nov 2026, only for the mobs killed so far (the Realm and Abyss of Demons);
-    // add a mob's line when a new dungeon shows only what dropped.
-    static let realmEyeTiers: [String: String] = [
-        "Abyss Idol": "We7,9 Ab3,4 Ar6,8 Ri3,4",
-        "Archdemon Malphas": "We7,8,9,10 Ab3,4 Ar6,8,9 Ri3,4",
-        "Banshee": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Beholder": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Blacksmith of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Brimstone Wyvern": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Brute Warrior of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Brute of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Burning Bones": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Cerberus": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Colossal Mantis": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
-        "Corrupt Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Cosmic Sprite": "We7,8,9,10 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Creepy Beholder": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Demon Mage of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Demon Warrior of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Demon of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Djinn": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Ent God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Flying Brain": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Flying Vampire": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Ghastly Nun": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Ghost God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Grand Dragonfly": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
-        "Harrowed Fiend": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Hazardous Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Hunter Dragonfly": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
-        "Imp of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Infernal Ironsmith": "We7,8,9,10 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Legion Church Guardian": "We9,10 Ab4 Ar10,11 Ri4",
-        "Legion City Guardian": "We9,10 Ab4 Ar10,11 Ri4",
-        "Legion Excavator": "We8,9,10 Ab3,4 Ar8,9,10 Ri3,4",
-        "Legion Fey Guardian": "We9,10 Ab4 Ar10,11 Ri4",
-        "Legion Graveyard Guardian": "We9,10 Ab4 Ar10,11 Ri4",
-        "Legion Hell Guardian": "We9,10 Ab4 Ar10,11 Ri4",
-        "Man-Eating Flytrap": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
-        "Nameless Gladiator": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Noxious Sprite": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Pumpkin Brute": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Raging Ifrit": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Red Demon": "We7,8,9,10 Ab2,3,4 Ar6,7,8,9,10 Ri2,3,4",
-        "Risen Hellhound": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "Skeleton Worshipper": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Skeleton of the Damned": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Slime God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Spitting Arachnid": "We8,9,10 Ab4,5 Ar8,9,10 Ri4,5",
-        "Sprite Beast": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Sprite God": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Tormented Soul": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Unsung Jester": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Vagabond Satyr": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Werewolf Berserker": "We7,8,9 Ab3,4 Ar7,8,9,10 Ri3,4",
-        "White Demon": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "White Demon of the Abyss": "We7 Ab3 Ar7 Ri3",
-        "Wraith": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4",
-        "Zombie Cleric": "We6,7,8 Ab3,4 Ar6,7,8,9 Ri3,4"
-    ]
     /// Catalog items with a <Tier> that RealmEye lists as no tier or has no page for (Nov 2026): test and event items,
     /// never tiered loot. Every other tiered item has a RealmEye page, and spot-checked sprites match.
     static let notLoot: Set<String> = [
@@ -570,16 +532,12 @@ struct DropReport: Equatable {
         "Test Trap VIT", "Test Trap DEX 2", "Magic Nova Spell BulletNova", "Magic Nova Spell DamageNova", "Trick Sheath",
         "Trick Star", "Trick Lute", "Ring of Minor Defense",
     ]
-    /// Every item of the tier groups in a `realmEyeTiers` line.
-    func tierItems(_ codes: String) -> Set<Int> {
-        let families: [Substring: Group.Family] = ["We": .weapons, "Ab": .abilities, "Ar": .armors, "Ri": .rings]
-        return Set(codes.split(separator: " ").flatMap { code -> [Int] in
-            guard let family = families[code.prefix(2)] else { return [] }
-            return code.dropFirst(2).split(separator: ",").flatMap { members[Group(tier: Int($0) ?? -1, family: family)] ?? [] }
-        })
+    /// A mob's possible drops by the drop catalog: every item of its tier groups, and its named drops.
+    func catalogDrops(_ mob: Mob) -> Set<Int> {
+        Set((mobTiers[mob.type] ?? []).flatMap { members[$0] ?? [] }).union(mobDrops[mob.type] ?? [])
     }
-    /// A mob's tiered loot by RealmEye.
-    func tierItems(_ mob: Mob) -> Set<Int> { Self.realmEyeTiers[name(mob.type)].map(tierItems) ?? [] }
+    /// The drop catalog's tier families (data/drop_catalog.json).
+    static let catalogFamilies: [String: Group.Family] = ["weapon": .weapons, "ability": .abilities, "armor": .armors, "ring": .rings]
 
     /// A bag object type's place in `DropBag.allCases` (higher is better), as SQL over `bags b`.
     static let rank = "CASE b.bag_type " + (1200...1800).compactMap { id in
@@ -650,24 +608,31 @@ struct DropReport: Equatable {
             anyBoss[map] = (dungeon, better(anyBoss[map]?.bag, top))
         }
         for (dungeon, top) in anyBoss.values { r.bossBags[dungeon, default: [:]][nil, default: [:]][top, default: 0] += 1 }
+        store.run("SELECT dungeon, mob FROM catalog_mobs") { r.catalogMobs[text($0, 0), default: []].insert(int($0, 1)) }
+        store.run("SELECT mob, family, tier FROM catalog_tiers") {
+            if let family = Self.catalogFamilies[text($0, 1)] { r.mobTiers[int($0, 0), default: []].insert(Group(tier: int($0, 2), family: family)) }
+        }
+        store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
+        let row = { (stmt: OpaquePointer) in
+            let type = int(stmt, 0)
+            r.names[type] = text(stmt, 1)
+            if sqlite3_column_type(stmt, 5) != SQLITE_NULL, let bag = DropBag(bagType: int(stmt, 5)) { r.bags[type] = bag }
+            if sqlite3_column_type(stmt, 6) != SQLITE_NULL { r.origins[type] = text(stmt, 6) }
+            if int(stmt, 2) != 0 { r.bosses.insert(type) }
+            if sqlite3_column_type(stmt, 9) != SQLITE_NULL { r.labels[type] = Self.labelSet(text(stmt, 9)) }
+            if sqlite3_column_type(stmt, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text(stmt, 3), index: int(stmt, 4)) }
+            if sqlite3_column_type(stmt, 7) != SQLITE_NULL { r.tiers[type] = int(stmt, 7) }
+            if sqlite3_column_type(stmt, 8) != SQLITE_NULL { r.slots[type] = int(stmt, 8) }
+        }
         store.run("""
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
-            WHERE type IN (SELECT mob_type FROM kills) UNION ALL
+            WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) UNION ALL
             SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
-            WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
+            WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
+                OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
                 OR name IN (SELECT name || ' Shiny' FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
-            """) {
-            let type = int($0, 0)
-            r.names[type] = text($0, 1)
-            if sqlite3_column_type($0, 5) != SQLITE_NULL, let bag = DropBag(bagType: int($0, 5)) { r.bags[type] = bag }
-            if sqlite3_column_type($0, 6) != SQLITE_NULL { r.origins[type] = text($0, 6) }
-            if int($0, 2) != 0 { r.bosses.insert(type) }
-            if sqlite3_column_type($0, 9) != SQLITE_NULL { r.labels[type] = Self.labelSet(text($0, 9)) }
-            if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
-            if sqlite3_column_type($0, 7) != SQLITE_NULL { r.tiers[type] = int($0, 7) }
-            if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
-        }
+            """, row: row)
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
         // Base rates: each kill counts as its loot multiplier then, from the factors captured on its map.
         var lines: [Int: LootTimeline] = [:]   // by map
@@ -693,6 +658,21 @@ struct DropReport: Equatable {
             r.weight[Mob(type: int($0, 2), dungeon: text($0, 3)), default: 0] += state.multiplier(catalog, labels: Self.labelSet(text($0, 4)))
         }
         store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
+        r.stackOf = Self.stacks(store)
+        store.run("SELECT blueprint, item FROM blueprints ORDER BY item") { if r.names[int($0, 0)] != nil { r.unlocks[int($0, 0), default: []].append(int($0, 1)) } }
+        // Rows shown but maybe never dropped: a folded tile's smallest stack (only "x3" dropped), what a blueprint
+        // unlocks (its name and sprite on the blueprint's page), and the shiny of an item only the catalog lists (the
+        // query above finds shinies of dropped or tagged items only).
+        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).union(r.unlocks.values.joined())
+            .union(r.shinyOf.filter { r.names[$0.value] != nil }.keys).filter { r.names[$0] == nil }
+        if !missing.isEmpty {
+            store.run("""
+                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
+                WHERE type IN (\(missing.map(String.init).joined(separator: ",")))
+                """, row: row)
+        }
+        // The folded tile stands for every stack size, so its name drops "x1" (Divine Coin x1 → Divine Coin).
+        for base in Set(r.stackOf.values) { if let n = r.names[base], n.hasSuffix(" x1") { r.names[base] = String(n.dropLast(3)) } }
         for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name(item)) {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
@@ -704,12 +684,27 @@ struct DropReport: Equatable {
             let name = text($0, 0), portal = sqlite3_column_type($0, 1) == SQLITE_NULL ? nil : int($0, 1)
             if let portal, sqlite3_column_type($0, 2) != SQLITE_NULL { r.textures[portal] = GameTexture(file: text($0, 2), index: int($0, 3)) }
             let labels = sqlite3_column_type($0, 4) == SQLITE_NULL ? nil : Set(text($0, 4).split(separator: ",").map(String.init))
-            if labels != nil || Self.dropTags[name] != nil || r.kills.keys.contains(where: { $0.dungeon == name }) {
+            if labels != nil || Self.dropTags[name] != nil || r.catalogMobs[name] != nil || r.kills.keys.contains(where: { $0.dungeon == name }) {
                 listed[name] = Dungeon(name: name, portal: portal, codes: Self.dropTags[name] ?? labels?.intersection(tags) ?? [])
             }
         }
-        for mob in r.kills.keys where listed[mob.dungeon] == nil { listed[mob.dungeon] = Dungeon(name: mob.dungeon, portal: nil, codes: []) }
+        for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
+        if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
+            r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
+            store.run("""
+                SELECT DISTINCT k.mob_type, m.name FROM kills k JOIN maps m ON m.id = k.map LEFT JOIN objects o ON o.type = k.mob_type
+                WHERE \(died) AND coalesce(o.drop_source, 1) AND k.mob_type NOT IN (SELECT mob FROM catalog_mobs) ORDER BY m.name, k.mob_type
+                """) { r.uncataloged.mobs.append(Mob(type: int($0, 0), dungeon: text($0, 1))) }
+            let cataloged = Set(r.mobDrops.values.joined())
+            var items: Set<Int> = []
+            store.run("SELECT DISTINCT i.item_type FROM bag_items i LEFT JOIN items t ON t.type = i.item_type WHERE t.tier IS NULL") {
+                let item = int($0, 0)
+                // A shiny or another stack size of a cataloged or tiered item counts as cataloged.
+                if !cataloged.contains(item) && !cataloged.contains(r.base(item)) && r.tiers[r.base(item)] == nil { items.insert(r.names[r.base(item)] != nil ? r.base(item) : item) }
+            }
+            r.uncataloged.items = items.sorted { r.name($0) < r.name($1) }
+        }
         return r
     }
 
@@ -733,26 +728,44 @@ struct DropReport: Equatable {
     var items: [Int] { Set(copies.values.flatMap(\.keys)).sorted { name($0) < name($1) } }
     func bag(_ item: Int) -> DropBag? { bags[item] ?? itemBag[item] }
 
-    /// A dungeon's possible drops: items the catalog tags with one of its drop tags, its mobs' tiered loot by RealmEye,
-    /// and every item that dropped there.
+    /// A dungeon's possible drops: items the game data tags with one of its drop tags, its mobs' drops by the drop
+    /// catalog, and every item that dropped there.
     func possibleDrops(_ dungeon: Dungeon) -> Set<Int> {
         tagged(dungeon).union(drops.filter { $0.mob.dungeon == dungeon.name }.map(\.item))
-            .union(kills.keys.filter { $0.dungeon == dungeon.name }.flatMap(tierItems))
+            .union(mobs(in: dungeon.name).flatMap(catalogDrops))
     }
     /// Items the catalog tags with one of a dungeon's drop tags.
     func tagged(_ dungeon: Dungeon) -> Set<Int> {
         Set(origins.filter { item in dungeon.codes.contains { item.value.contains(",\($0),") } }.keys)
     }
-    /// A mob's possible drops: what it dropped and its tiered loot by RealmEye; a boss also gets its dungeon's tagged
+    /// A mob's possible drops: what it dropped and its drop catalog entry (tiers and named drops); a boss also gets its dungeon's tagged
     /// items, which the catalog lists per dungeon, not per mob (so a minion doesn't).
     func possibleDrops(_ mob: Mob) -> Set<Int> {
         let dungeon = bosses.contains(mob.type) ? dungeons.first { $0.name == mob.dungeon } : nil
-        return Set((copies[mob] ?? [:]).keys).union(tierItems(mob)).union(dungeon.map(tagged) ?? [])
+        return Set((copies[mob] ?? [:]).keys).union(catalogDrops(mob)).union(dungeon.map(tagged) ?? [])
     }
-    /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
-    func base(_ item: Int) -> Int { shinyOf[item] ?? item }
-    /// An item and its shiny.
-    func variants(_ item: Int) -> Set<Int> { Set(shinyOf.filter { $0.value == item }.keys).union([item]) }
+    /// An item's base: a shiny's plain item, a stack's smallest stack, else the item itself. They show as the base's tile.
+    func base(_ item: Int) -> Int { shinyOf[item] ?? stackOf[item] ?? item }
+    /// An item, its shiny and its other stack sizes.
+    func variants(_ item: Int) -> Set<Int> {
+        Set(shinyOf.filter { $0.value == item }.keys).union(stackOf.filter { $0.value == item }.keys).union([item])
+    }
+    /// The game has one item per stack size of a material ("Adamantine Ingot x1" … "x10", one display name): each
+    /// larger stack → the smallest one.
+    static func stacks(_ store: DropRateStore) -> [Int: Int] {
+        var sizes: [String: [(n: Int, type: Int)]] = [:]
+        store.run("SELECT type, name FROM items WHERE name GLOB '* x[0-9]*'") {
+            let name = String(cString: sqlite3_column_text($0, 1))
+            guard let cut = name.range(of: " x", options: .backwards), let n = Int(name[cut.upperBound...]) else { return }
+            sizes[String(name[..<cut.lowerBound]), default: []].append((n, Int(sqlite3_column_int64($0, 0))))
+        }
+        var out: [Int: Int] = [:]
+        for list in sizes.values where list.count > 1 {
+            let smallest = list.min { $0.n < $1.n }!.type
+            for s in list where s.type != smallest { out[s.type] = smallest }
+        }
+        return out
+    }
     /// Runs in a dungeon with at least one copy of any of the items.
     func runsWith(_ dungeon: String, _ items: Set<Int>) -> Int {
         items.reduce(into: Set<Int>()) { $0.formUnion(runMaps[dungeon]?[$1] ?? []) }.count
@@ -862,10 +875,10 @@ struct DropReport: Equatable {
         }.count
     }
 
-    /// The mobs killed in a dungeon, bosses first, then most kills.
+    /// A dungeon's mobs, killed or in the drop catalog: bosses first, then most kills.
     func mobs(in dungeon: String) -> [Mob] {
-        kills.keys.filter { $0.dungeon == dungeon }
-            .sorted { (bosses.contains($0.type) ? 1 : 0, kills[$0]!, $1.type) > (bosses.contains($1.type) ? 1 : 0, kills[$1]!, $0.type) }
+        Set(kills.keys.filter { $0.dungeon == dungeon }).union((catalogMobs[dungeon] ?? []).map { Mob(type: $0, dungeon: dungeon) })
+            .sorted { (bosses.contains($0.type) ? 1 : 0, kills[$0] ?? 0, $1.type) > (bosses.contains($1.type) ? 1 : 0, kills[$1] ?? 0, $0.type) }
     }
 }
 
@@ -891,6 +904,7 @@ enum GameNames {
         var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
         var texture: GameTexture? = nil
         var dungeon: String? = nil   // a portal's <DungeonName>
+        var unlocks: [String] = []   // a blueprint's <Activate id="a,b">UnlockForgeBlueprint</Activate>: the items' XML ids
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -936,7 +950,8 @@ enum GameNames {
                 labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
-                tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName")))
+                tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName"),
+                unlocks: value("<Activate id=\"", "\">UnlockForgeBlueprint</Activate>", close, end).map { $0.contains("\"") ? [] : $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } } ?? []))
         }
         return objects
     }
@@ -944,13 +959,17 @@ enum GameNames {
         objects(inXML: text).reduce(into: [:]) { $0[$1.type] = $1.name }
     }
 
-    /// Rebuilds the `objects` and `items` tables when RealmHound's XML changed (a new game build).
-    /// With no XML (RealmHound not installed) the last catalog stays. Returns whether it rebuilt.
+    /// The drop catalog the app ships (data/drop_catalog.json, issue #51).
+    static var bundledCatalog: URL? { Bundle.main.url(forResource: "drop_catalog", withExtension: "json") }
+
+    /// Rebuilds the `objects` and `items` tables when RealmHound's XML changed (a new game build), and the drop catalog
+    /// tables from `catalog` when it changed. With no XML (RealmHound not installed) the last catalog stays. Returns
+    /// whether it rebuilt.
     @discardableResult
-    static func refreshCatalog(_ store: DropRateStore, folder: URL) -> Bool {
+    static func refreshCatalog(_ store: DropRateStore, folder: URL, catalog: URL? = bundledCatalog) -> Bool {
         let files = xmlFiles(folder)
         guard !files.isEmpty else { return false }
-        let signature = files.map { file -> String in
+        let signature = (files + [catalog].compactMap { $0 }).map { file -> String in
             let v = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             return "\(file.lastPathComponent) \(v?.fileSize ?? 0) \(v?.contentModificationDate?.timeIntervalSince1970 ?? 0)"
         }.joined(separator: "\n")
@@ -969,7 +988,7 @@ enum GameNames {
         }
         guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return false }
         store.failed = false
-        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM catalog_source")
+        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM blueprints; DELETE FROM catalog_source")
         // A dungeon's portal: the lowest type whose <DungeonName> it is.
         var portals: [String: Object] = [:]
         for o in objects.values.sorted(by: { $0.type < $1.type }) where o.objectClass == "Portal" {
@@ -998,9 +1017,40 @@ enum GameNames {
                           minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels, o.texture?.file, o.texture?.index])
             }
         }
+        let itemByID = Dictionary(objects.values.filter(\.item).map { ($0.name, $0.type) }) { a, b in min(a, b) }
+        for o in objects.values { for item in o.unlocks.compactMap({ itemByID[$0] }) {
+            store.run("INSERT INTO blueprints(blueprint, item) VALUES (?, ?)", [o.type, item])
+        } }
+        store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops")
+        if let catalog, let data = try? Data(contentsOf: catalog) {
+            guard let rows = dropCatalog(data) else { store.exec("ROLLBACK"); return false }   // a broken file keeps the last catalog
+            for (dungeon, mob) in rows.mobs { store.run("INSERT INTO catalog_mobs(dungeon, mob) VALUES (?, ?)", [dungeon, mob]) }
+            for (mob, family, tier) in rows.tiers { store.run("INSERT INTO catalog_tiers(mob, family, tier) VALUES (?, ?, ?)", [mob, family, tier]) }
+            for (mob, item) in rows.drops { store.run("INSERT INTO catalog_drops(mob, item) VALUES (?, ?)", [mob, item]) }
+        }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
         guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return false }
         return true
+    }
+
+    /// The rows of a drop catalog file (tools/drop_catalog.py writes it): ids are hex strings ("0x0d50"). nil when it
+    /// isn't a catalog.
+    static func dropCatalog(_ data: Data) -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)])? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dungeons = root["dungeons"] as? [[String: Any]], let mobs = root["mobs"] as? [[String: Any]] else { return nil }
+        func ids(_ value: Any?) -> [Int] {
+            ((value as? [String]) ?? []).compactMap { $0.hasPrefix("0x") ? Int($0.dropFirst(2), radix: 16) : nil }
+        }
+        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)]) = ([], [], [])
+        for d in dungeons { if let name = d["name"] as? String { rows.mobs += ids(d["mobs"]).map { (name, $0) } } }
+        for m in mobs {
+            let tiers = (m["tiers"] as? [String: [Int]]) ?? [:]
+            for type in ids(m["types"]) {
+                rows.tiers += tiers.flatMap { family, list in list.map { (type, family, $0) } }
+                rows.drops += ids(m["drops"]).map { (type, $0) }
+            }
+        }
+        return rows
     }
 
     /// Each `<DungeonModTemplate id="name">`'s `<IncludedLabels>`, by dungeon name.
@@ -1041,7 +1091,9 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var report = DropReport()
     @Published private(set) var health = CaptureHealth()
     @Published private(set) var sprites: [Int: CGImage] = [:]
-    private var spritesAsked: Set<Int> = []
+    @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
+    private var spritesAsked: Set<Int> = [], iconsAsked = false
+    private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
     /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
     @Published private(set) var now: LootNow?
     var catalog = LootCatalog()
@@ -1061,16 +1113,30 @@ final class DropRatesModel: ObservableObject {
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }
     func update(_ report: DropReport) {
         if report != self.report { self.report = report }
+        if !iconsAsked {
+            iconsAsked = true
+            DispatchQueue.global(qos: .utility).async {
+                let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: GameNames.bundledCatalog)
+                let realmEye = GameIcons.realmEye(catalog: GameNames.bundledCatalog, folder: Bundle.main.resourceURL?.appendingPathComponent("sprites"))
+                DispatchQueue.main.async {
+                    self.collectionIcons = icons
+                    self.fallbacks = realmEye
+                    self.sprites.merge(realmEye) { _, new in new }
+                }
+            }
+        }
         cutSprites(report.textures)
     }
-    /// Sprites are cut once per type, off the main thread, as new mobs and items show up.
+    /// Sprites are cut once per type, off the main thread. The first report holds every catalog mob and drop, so they
+    /// are all cut in one batch when the tab opens; later reports and the loot bar add only types new to play.
     private func cutSprites(_ textures: [Int: GameTexture]) {
         let wanted = textures.filter { !spritesAsked.contains($0.key) }
         guard !wanted.isEmpty else { return }
         spritesAsked.formUnion(wanted.keys)
         DispatchQueue.global(qos: .utility).async {
             let cut = GameSprites.load(assets: RealmHoundPaths.assets, wanted)
-            DispatchQueue.main.async { self.sprites.merge(cut) { _, new in new } }
+            // A game sprite that draws nothing (the "invisible" sheet) keeps RealmEye's.
+            DispatchQueue.main.async { self.sprites.merge(cut.filter { self.fallbacks[$0.key] == nil }) { _, new in new } }
         }
     }
     /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.

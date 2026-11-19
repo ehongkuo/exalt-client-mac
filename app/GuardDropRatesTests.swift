@@ -135,7 +135,7 @@ enum DropRateTests {
                 <Texture xOffset="-2" yOffset="0"><File>d2LofiObjEmbed</File><Index>0x214</Index></Texture>
                 <SlotType>14</SlotType><Tier>13</Tier><BagType>3</BagType><Labels>EQUIPMENT,ARMOR,ROBE,TIERED,T13</Labels></Object>
               <Object type="0x0a01" id="Void Blade Blueprint"><Class>Equipment</Class><Item /><BagType>7</BagType>
-                <Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
+                <Activate id="Bow of the Void, MoonWizardST">UnlockForgeBlueprint</Activate><Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
             </Objects>
             """
         try! abyss.write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
@@ -173,6 +173,11 @@ enum DropRateTests {
               names("SELECT count(*) FROM objects WHERE texture_file IS NULL") == ["3"] &&
               names("SELECT texture_index FROM items WHERE type = 2560") == ["532"], "sprite sheet and index, hex or decimal, attributes or not")
         check(names("SELECT count(*) FROM objects WHERE type IN (SELECT type FROM items)") == ["0"], "items are not objects")
+        check(names("SELECT blueprint || ' ' || item FROM blueprints ORDER BY item") == ["2561 588", "2561 3088"], "a blueprint and the items it unlocks, by XML id")
+        catalog.exec("INSERT INTO bags(id, map, time, bag_type, kill) VALUES (50, 1, 9, 1287, 1); INSERT INTO bag_items(bag, slot, item_type) VALUES (50, 0, 2561)")
+        let unlocking = DropReport.load(catalog)
+        check(unlocking.unlocks == [2561: [588, 3088]] && unlocking.name(3088) == "Robe of the Moon Wizard" && unlocking.textures[588] != nil,
+              "a dropped blueprint loads what it unlocks, with its sprite")
         try! (abyss + "<Object type=\"0x0904\" id=\"Malphas Egg\"><Class>Character</Class></Object>")
             .write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
         check(GameNames.refreshCatalog(catalog, folder: xmlFolder) && names("SELECT name FROM objects WHERE type = 2308") == ["Malphas Egg"],
@@ -258,6 +263,21 @@ enum DropRateTests {
         let weapons = DropReport.Group(tier: 12, family: .weapons)
         check(tiled.base(802) == 800 && tiled.variants(800) == [800, 802] && tiled.group(802) == weapons && tiled.group(9) == nil,
               "a shiny's base, and its group")
+        check(rates.exec("""
+            INSERT INTO items(type, name) VALUES (804, 'Test Ingot x1'), (805, 'Test Ingot x2'), (806, 'Test Ingot x10'), (807, 'Lone x2');
+            INSERT INTO bags(id, map, time, bag_type, kill) VALUES (9, 99, 5, 1280, 9);
+            INSERT INTO bag_items(bag, slot, item_type) VALUES (9, 0, 805), (9, 1, 807);
+            INSERT INTO items(type, name, texture_file, texture_index) VALUES (808, 'Test Gun', 'a', 1), (809, 'Test Gun Shiny', 'a', 2);
+            INSERT INTO catalog_drops(mob, item) VALUES (1, 808);
+            """),
+              "stack rows")
+        let stacked = DropReport.load(rates)
+        check(stacked.base(805) == 804 && stacked.base(806) == 804 && stacked.base(807) == 807 && stacked.variants(804) == [804, 805, 806]
+              && stacked.name(804) == "Test Ingot" && stacked.name(807) == "Lone x2",   // only x2 dropped: x1's row is loaded
+              "a material's stack sizes fold into its smallest stack")
+        check(stacked.textures[809] == GameTexture(file: "a", index: 2) && stacked.variants(808) == [808, 809],
+              "the shiny of an item only the catalog lists loads with its sprite")
+        check(stacked.tiles([805, 806]).values.joined().count == 1 && stacked.variants(800) == [800, 802], "one tile for every stack size")
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
@@ -268,8 +288,7 @@ enum DropRateTests {
               "kinds in rotation order; two items of one kind share a turn; unplaced last")
         var alt = tiled; alt.slots[801] = 1; alt.subtypes = [800]   // two swords, 800 the alternate
         check(alt.kinds([800, 801, 802]) == [[801], [800, 802]], "a slot's base type before its alternate, the shiny with its base")
-        check(tiled.members[weapons] == [800, 801] && tiled.tierItems("We12 Ar12,13 Xx1") == [800, 801, 803],
-              "a tier group holds every catalog item of it; RealmEye codes expand to their groups")
+        check(tiled.members[weapons] == [800, 801], "a tier group holds every catalog item of it")
         let sources = tiled.sources(tiled.variants(800))
         check(sources.count == 1 && sources[0].runs == 2 && sources[0].runsWith == 1 && sources[0].mobs == [boss: 2],
               "an item's sources: per dungeon, runs with one, copies by mob")
@@ -303,5 +322,44 @@ enum DropRateTests {
         check(tab.mob == nil, "esc from the mob page goes back to the dungeon")
         tab.pick(mob: minion); tab.pick(mob: minion)
         check(tab.mob == nil, "clicking the open mob again closes its page")
+
+        // The drop catalog (issue #51): loaded with the game catalog, it lists a dungeon's mobs before any kill, and each
+        // mob's tier groups and named drops.
+        let catalogFile = folder.appendingPathComponent("drop_catalog.json")
+        try! """
+            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]}],
+             "mobs": [{"name": "Den Rat", "types": ["0x0003"], "tiers": {"weapon": [12], "armor": [12, 13], "wand": [1]},
+                       "drops": ["0x02bc"]}]}
+            """.write(to: catalogFile, atomically: false, encoding: .utf8)
+        check(GameNames.dropCatalog(Data("[]".utf8)) == nil, "not a catalog")
+        check(GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile), "catalog file loaded with the game catalog")
+        check(rates.exec("""
+            INSERT INTO items(type, name, bag_type, tier, slot_type) VALUES (800, 'Test Sword', 4, 12, 1), (801, 'Test Dagger', 4, 12, 2),
+                (803, 'Test Robe', 4, 12, 14), (700, 'Void Blade', 6, NULL, 1);
+            """), "items again: the rebuild replaced them with the XML's")
+        let cataloged = DropReport.load(rates)
+        let rat = DropReport.Mob(type: 3, dungeon: "The Void")
+        check(cataloged.catalogDrops(rat) == [700, 800, 801, 803, 2560], "a mob's drops: its tier groups (unknown families skipped) and named drops")
+        check(cataloged.mobs(in: "The Void").contains(rat) && cataloged.mobs(in: "New Den") == [DropReport.Mob(type: 3, dungeon: "New Den")],
+              "a cataloged mob shows with no kills")
+        let den = cataloged.dungeons.first { $0.name == "New Den" }
+        check(den.map(cataloged.possibleDrops) == [700, 800, 801, 803, 2560], "a dungeon never run is listed with its mobs' drops")
+        // Sprites up front: the first report holds every catalog mob and drop with a sprite, so the tab cuts them in one batch.
+        var drawn: Set<Int> = []
+        rates.run("""
+            SELECT type FROM objects WHERE texture_file IS NOT NULL AND type IN (SELECT mob FROM catalog_mobs) UNION
+            SELECT type FROM items WHERE texture_file IS NOT NULL AND type IN (SELECT item FROM catalog_drops)
+            """) { drawn.insert(Int(sqlite3_column_int64($0, 0))) }
+        check(drawn.isSubset(of: cataloged.textures.keys), "every catalog sprite is in the first report")
+        check(cataloged.uncataloged.mobs == [DropReport.Mob(type: 2, dungeon: "The Void")] && cataloged.uncataloged.dungeons.isEmpty
+              && cataloged.uncataloged.items.contains(807) && !cataloged.uncataloged.items.contains(700),
+              "not in the catalog yet: a killed mob the catalog lacks and an uncataloged drop, not a cataloged one")
+        check(rates.exec("INSERT INTO maps(id, session, generation, name) VALUES (90, 1, 90, 'Guild Hall'); INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by) VALUES (90, 50, 1, 10, 0, 0, 'hit')"),
+              "a kill in a map the catalog lacks")
+        let guild = DropReport.load(rates).uncataloged
+        check(guild.dungeons == ["Guild Hall"] && guild.mobs == cataloged.uncataloged.mobs, "a map with kills the catalog lacks; a cataloged mob isn't listed")
+        try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
+        check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
+              DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")
     }
 }

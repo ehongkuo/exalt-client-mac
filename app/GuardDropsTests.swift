@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import SQLite3
 
 private func check(_ condition: Bool, _ message: String, line: Int = #line) {
@@ -138,6 +140,31 @@ enum DropTests {
             let mobAndItem = GameSprites.load(assets: RealmHoundPaths.assets, [
                 "Malphas": GameTexture(file: "abyssOfDemonsChars16x16", index: 0), "Bow": GameTexture(file: "lostHallsObjects8x8", index: 0xa7)])
             check(mobAndItem["Malphas"]?.width == 16 && mobAndItem["Bow"]?.width == 8, "a mob's first frame and an item's sprite")
+        }
+        check(GameIcons.cell(0) == CGRect(x: 0, y: 0, width: 16, height: 16) && GameIcons.cell(133) == CGRect(x: 208, y: 96, width: 16, height: 16),
+              "a dungeon icon's cell: 20 a row from the top left")
+        check(GameIcons.rarity(.common) == nil, "common has no rarity mark")
+        let iconCatalog = FileManager.default.temporaryDirectory.appendingPathComponent("icon-catalog-\(getpid()).json")
+        try! Data(#"{"dungeons": [{"name": "Abyss of Demons", "icon": 133}, {"name": "Off the sheet", "icon": 999}, {"name": "No icon"}]}"#.utf8).write(to: iconCatalog)
+        defer { try? FileManager.default.removeItem(at: iconCatalog) }
+        check(GameIcons.dungeons(assets: URL(fileURLWithPath: "/nonexistent"), catalog: iconCatalog).isEmpty, "no icon sheet: no dungeon icons")
+        // RealmEye's sprites: by the catalog's hex type → file map, from the app's sprites folder.
+        let spriteFolder = FileManager.default.temporaryDirectory.appendingPathComponent("realmeye-sprites-\(getpid())")
+        try? FileManager.default.createDirectory(at: spriteFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: spriteFolder) }
+        let dot = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+        let png = CGImageDestinationCreateWithURL(spriteFolder.appendingPathComponent("0x0d61.png") as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(png, dot, nil); _ = CGImageDestinationFinalize(png)
+        let spriteCatalog = spriteFolder.appendingPathComponent("catalog.json")
+        try! Data(#"{"sprites": {"0x0d61": "0x0d61.png", "0x0d62": "missing.png", "0x0d63": "../escape.png"}}"#.utf8).write(to: spriteCatalog)
+        let fallback = GameIcons.realmEye(catalog: spriteCatalog, folder: spriteFolder)
+        check(Set(fallback.keys) == [0x0d61] && fallback[0x0d61]?.width == 8, "RealmEye sprites by type; a missing file or a path out is skipped")
+        check(GameIcons.realmEye(catalog: spriteCatalog, folder: nil).isEmpty, "no sprites folder: no RealmEye sprites")
+        check(GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: nil).isEmpty, "no catalog: no dungeon icons")
+        if FileManager.default.fileExists(atPath: RealmHoundPaths.assets.appendingPathComponent("sprites/CollectionIcon.png").path) {
+            let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: iconCatalog)
+            check(Set(icons.keys) == ["Abyss of Demons"] && icons["Abyss of Demons"]?.width == 16, "dungeon icons from RealmHound's sheet; a cell off it is skipped")
         }
         if FileManager.default.fileExists(atPath: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml").path) {
             let names = RuleCatalog.enchantNames(inXML: try! String(contentsOf: RealmHoundPaths.xml.appendingPathComponent("enchantments.xml"), encoding: .utf8))
