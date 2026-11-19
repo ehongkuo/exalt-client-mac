@@ -135,7 +135,7 @@ enum DropRateTests {
                 <Texture xOffset="-2" yOffset="0"><File>d2LofiObjEmbed</File><Index>0x214</Index></Texture>
                 <SlotType>14</SlotType><Tier>13</Tier><BagType>3</BagType><Labels>EQUIPMENT,ARMOR,ROBE,TIERED,T13</Labels></Object>
               <Object type="0x0a01" id="Void Blade Blueprint"><Class>Equipment</Class><Item /><BagType>7</BagType>
-                <Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
+                <Activate id="Bow of the Void, MoonWizardST">UnlockForgeBlueprint</Activate><Labels>CONSUMABLE,ORG_VOID_S</Labels></Object>
             </Objects>
             """
         try! abyss.write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
@@ -173,6 +173,11 @@ enum DropRateTests {
               names("SELECT count(*) FROM objects WHERE texture_file IS NULL") == ["3"] &&
               names("SELECT texture_index FROM items WHERE type = 2560") == ["532"], "sprite sheet and index, hex or decimal, attributes or not")
         check(names("SELECT count(*) FROM objects WHERE type IN (SELECT type FROM items)") == ["0"], "items are not objects")
+        check(names("SELECT blueprint || ' ' || item FROM blueprints ORDER BY item") == ["2561 588", "2561 3088"], "a blueprint and the items it unlocks, by XML id")
+        catalog.exec("INSERT INTO bags(id, map, time, bag_type, kill) VALUES (50, 1, 9, 1287, 1); INSERT INTO bag_items(bag, slot, item_type) VALUES (50, 0, 2561)")
+        let unlocking = DropReport.load(catalog)
+        check(unlocking.unlocks == [2561: [588, 3088]] && unlocking.name(3088) == "Robe of the Moon Wizard" && unlocking.textures[588] != nil,
+              "a dropped blueprint loads what it unlocks, with its sprite")
         try! (abyss + "<Object type=\"0x0904\" id=\"Malphas Egg\"><Class>Character</Class></Object>")
             .write(to: xmlFolder.appendingPathComponent("abyssOfDemonsObjects.xml"), atomically: false, encoding: .utf8)
         check(GameNames.refreshCatalog(catalog, folder: xmlFolder) && names("SELECT name FROM objects WHERE type = 2308") == ["Malphas Egg"],

@@ -341,8 +341,16 @@ struct DropRatesView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 SpriteIcon(image: model.sprites[item], size: 44)
+                if let unlocked = report.unlocks[item] {   // a blueprint: the items it unlocks in the forge
+                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    ForEach(unlocked, id: \.self) { u in SpriteIcon(image: model.sprites[u], size: 44).help(report.name(u)) }
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(report.name(item)).font(.title3.weight(.semibold)).lineLimit(2)
+                    if let unlocked = report.unlocks[item] {
+                        Text("Unlocks \(unlocked.map(report.name).formatted(.list(type: .and))) in the forge")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
                     HStack(spacing: 6) {
                         if let bag = report.bag(item) { pill(bag.name, BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 12)) }
                         if let tier = report.group(item)?.tier { pill("T\(tier)", EmptyView()) }

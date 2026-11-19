@@ -133,6 +133,8 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_mobs(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_tiers(mob INTEGER NOT NULL, family TEXT NOT NULL, tier INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_drops(mob INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
+        CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -173,6 +175,9 @@ final class DropRateStore {
         }
         if version < 7 {   // the drop catalog tables (issue #51)
             guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 7", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 8 {   // the blueprints table (issue #51)
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 8", nil, nil, nil) == SQLITE_OK else { return nil }
         }
     }
     deinit { sqlite3_close(db) }
@@ -459,6 +464,7 @@ struct DropReport: Equatable {
     var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
     var stackOf: [Int: Int] = [:]                   // a stack of a material → its smallest stack ("X x3" → "X x1", by the id)
+    var unlocks: [Int: [Int]] = [:]                 // a blueprint → the items it unlocks in the forge, in type order
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -604,8 +610,10 @@ struct DropReport: Equatable {
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
         store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
         r.stackOf = Self.stacks(store)
-        // A folded tile shows its smallest stack, which may never have dropped itself (only "x3" did): load its row too.
-        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).filter { r.names[$0] == nil }
+        store.run("SELECT blueprint, item FROM blueprints ORDER BY item") { if r.names[int($0, 0)] != nil { r.unlocks[int($0, 0), default: []].append(int($0, 1)) } }
+        // Rows shown but maybe never dropped: a folded tile's smallest stack (only "x3" dropped), and what a blueprint
+        // unlocks (its name and sprite on the blueprint's page).
+        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).union(r.unlocks.values.joined()).filter { r.names[$0] == nil }
         if !missing.isEmpty {
             store.run("""
                 SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
@@ -827,6 +835,7 @@ enum GameNames {
         var bagType: Int? = nil, slotType: Int? = nil, tier: Int? = nil
         var texture: GameTexture? = nil
         var dungeon: String? = nil   // a portal's <DungeonName>
+        var unlocks: [String] = []   // a blueprint's <Activate id="a,b">UnlockForgeBlueprint</Activate>: the items' XML ids
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -872,7 +881,8 @@ enum GameNames {
                 labels: element("Labels")?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? [],
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
-                tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName")))
+                tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName"),
+                unlocks: value("<Activate id=\"", "\">UnlockForgeBlueprint</Activate>", close, end).map { $0.contains("\"") ? [] : $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } } ?? []))
         }
         return objects
     }
@@ -909,7 +919,7 @@ enum GameNames {
         }
         guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return false }
         store.failed = false
-        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM catalog_source")
+        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM blueprints; DELETE FROM catalog_source")
         // A dungeon's portal: the lowest type whose <DungeonName> it is.
         var portals: [String: Object] = [:]
         for o in objects.values.sorted(by: { $0.type < $1.type }) where o.objectClass == "Portal" {
@@ -938,6 +948,10 @@ enum GameNames {
                           minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels, o.texture?.file, o.texture?.index])
             }
         }
+        let itemByID = Dictionary(objects.values.filter(\.item).map { ($0.name, $0.type) }) { a, b in min(a, b) }
+        for o in objects.values { for item in o.unlocks.compactMap({ itemByID[$0] }) {
+            store.run("INSERT INTO blueprints(blueprint, item) VALUES (?, ?)", [o.type, item])
+        } }
         store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops")
         if let catalog, let data = try? Data(contentsOf: catalog) {
             guard let rows = dropCatalog(data) else { store.exec("ROLLBACK"); return false }   // a broken file keeps the last catalog
