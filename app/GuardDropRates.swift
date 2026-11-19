@@ -6,7 +6,7 @@ import SQLite3
 /// Drop-rate capture (issue #38). The guard registers drops as RealmHound does, for every bag type:
 /// each hit mob the server removes (a kill), each bag once per map, and which kill each bag came from, to
 /// logs/loot-<started>-<pid>.tsv (guard/loot_core.h has the columns). This imports those lines into
-/// drop_rates.db and removes each file once it is fully imported and its game has ended.
+/// drop_rates_v2.db and removes each file once it is fully imported and its game has ended.
 /// Nothing here computes a rate: the rows stay raw so any later question can be asked of them.
 
 struct LootKill: Equatable {
@@ -33,7 +33,8 @@ enum LootLine: Equatable {
     case drop(time: Double, generation: Int, bag: Int, killer: Int)
     /// The map's info message, raw: your class, then its ints and strings in guard order.
     case mapInfo(time: Double, generation: Int, values: [Int], texts: [String])
-    case playerStat(time: Double, generation: Int, stat: Int, value: Int)
+    /// Text only for stat 80, your equipment's enchantments (format 4).
+    case playerStat(time: Double, generation: Int, stat: Int, value: Int, text: String = "")
     case gap(time: Double, lost: Int, reason: String)
     case status(time: Double, text: String)
     case summary(String)
@@ -71,8 +72,8 @@ enum LootLine: Equatable {
             guard f.count == 14, values.count == 8, let t = d(1), let g = n(2) else { return nil }
             self = .mapInfo(time: t, generation: g, values: values, texts: Array(f[11...]))
         case "player_stat":
-            guard f.count == 5, let t = d(1), let g = n(2), let s = n(3), let v = n(4) else { return nil }
-            self = .playerStat(time: t, generation: g, stat: s, value: v)
+            guard f.count == 5 || f.count == 6, let t = d(1), let g = n(2), let s = n(3), let v = n(4) else { return nil }
+            self = .playerStat(time: t, generation: g, stat: s, value: v, text: f.count == 6 ? f[5] : "")
         case "gap":
             guard let t = d(1), let lost = n(2) else { return nil }
             self = .gap(time: t, lost: lost, reason: f.count > 3 ? f[3] : "")
@@ -111,6 +112,9 @@ final class DropRateStore {
         -- Your own int stats (not HP, MP or experience), each time one changes and again on each map.
         CREATE TABLE IF NOT EXISTS player_stats(map INTEGER NOT NULL, time REAL NOT NULL, stat_type INTEGER, value INTEGER);
         CREATE INDEX IF NOT EXISTS player_stats_map ON player_stats(map, stat_type);
+        -- Your text stats (issue #58): stat 80, the enchantments of your four equipment slots, each time they change and
+        -- again on each map.
+        CREATE TABLE IF NOT EXISTS player_texts(map INTEGER NOT NULL, time REAL NOT NULL, stat_type INTEGER, text TEXT);
         -- Game catalog (issue #40), rebuilt from RealmHound's XML by GameNames.refreshCatalog. name is the
         -- XML id; display_name the in-game name when it differs (show coalesce(display_name, name)). Labels and
         -- origin are wrapped in commas (",UT,TAB_UT,"), so `labels LIKE '%,UT,%'` matches one label exactly.
@@ -220,7 +224,10 @@ final class DropRateStore {
 }
 
 enum LootImport {
-    static func dbPath(data: URL) -> String { data.appendingPathComponent("drop_rates.db").path }
+    /// drop_rates_v2.db from issue #58 on: base rates need every kill's loot factors, so it starts empty. drop_rates.db,
+    /// the data captured before, stays as it was for builds from before #58.
+    static let dbName = "drop_rates_v2.db"
+    static func dbPath(data: URL) -> String { data.appendingPathComponent(dbName).path }
 
     /// Imports every loot file in `logs`. Returns the number of lines stored.
     @discardableResult
@@ -314,7 +321,10 @@ enum LootImport {
                         INSERT OR REPLACE INTO map_info(map, class, info_30, info_34, info_38, info_50, info_54, connection_10c,
                             connection_110, info_28, info_48, info_58) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, [map(generation, time)] + values.map { $0 as Any? } + texts.map { $0 as Any? })
-                case let .playerStat(time, generation, stat, value):
+                case let .playerStat(time, generation, stat, _, text) where !text.isEmpty:
+                    store.run("INSERT INTO player_texts(map, time, stat_type, text) VALUES (?, ?, ?, ?)",
+                              [map(generation, time), time, stat, text])
+                case let .playerStat(time, generation, stat, value, _):
                     store.run("INSERT INTO player_stats(map, time, stat_type, value) VALUES (?, ?, ?, ?)",
                               [map(generation, time), time, stat, value])
                 case let .gap(time, lost, reason):
@@ -372,14 +382,16 @@ struct CaptureHealth: Equatable {
 /// enchant_count on staging run 1. A slot's count is nil where its part is empty or cut short (run 1's guard
 /// kept only 64 characters).
 enum Enchantments {
-    static func counts(_ stat: String) -> [Int?] {
-        stat.split(separator: ",", omittingEmptySubsequences: false).map { part -> Int? in
+    static func counts(_ stat: String) -> [Int?] { ids(stat).map { $0?.count } }
+    /// Each slot's enchantment ids (fffd and other negative ids, empty slots, left out).
+    static func ids(_ stat: String) -> [[Int]?] {
+        stat.split(separator: ",", omittingEmptySubsequences: false).map { part -> [Int]? in
             var text = part.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
             while text.count % 4 != 0 { text += "=" }
             guard let data = Data(base64Encoded: text), data.count >= 3 else { return nil }
             let b = [UInt8](data), n = Int(b[2])
             guard b.count >= 3 + 2 * n else { return nil }
-            return (0..<n).filter { Int16(bitPattern: UInt16(b[3 + 2 * $0]) | UInt16(b[4 + 2 * $0]) << 8) >= 0 }.count
+            return (0..<n).map { Int(Int16(bitPattern: UInt16(b[3 + 2 * $0]) | UInt16(b[4 + 2 * $0]) << 8)) }.filter { $0 >= 0 }
         }
     }
 }
@@ -388,14 +400,18 @@ enum Enchantments {
 /// (Poisson, docs/drop-rates-investigation.md section 4).
 struct DropRate: Equatable {
     var count: Int, of: Int
-    var rate: Double { of > 0 ? Double(count) / Double(of) : 0 }
+    /// Base rates (issue #58): the kills, each counted as its loot multiplier, so a ×1.5 kill counts 1.5. The rate
+    /// and its range divide by this; the ± stays the drops' (it depends on the count only).
+    var exposure: Double?
+    private var per: Double { of > 0 ? exposure ?? Double(of) : 0 }
+    var rate: Double { per > 0 ? Double(count) / per : 0 }
     /// How far off the rate may be, at 95%, as a fraction (0.44 reads ±44%): about 1.96 ÷ √drops. Nil under 4 drops,
     /// too few to say. It shrinks as data grows; there is no threshold where a rate becomes "solid".
     var precision: Double? { count >= 4 ? 1.96 / Double(count).squareRoot() : nil }
     var range: ClosedRange<Double> {
-        guard of > 0 else { return 0...0 }
+        guard per > 0 else { return 0...0 }
         let (low, high) = Self.poissonRange(count)
-        return low / Double(of)...high / Double(of)
+        return low / per...high / per
     }
 
     /// The 95% range of a Poisson mean given `x` events: exact below 50, Byar's approximation above (within 0.1% there).
@@ -481,6 +497,10 @@ struct DropReport: Equatable {
     var catalogMobs: [String: Set<Int>] = [:]
     var mobTiers: [Int: Set<Group>] = [:], mobDrops: [Int: Set<Int>] = [:]
     var bosses: Set<Int> = []
+    var labels: [Int: Set<String>] = [:]             // mob type → its XML labels (BOSS, MINION, …)
+    /// Base rates (issue #58): each mob's kills, each counted as its loot multiplier (LootState.multiplier).
+    var weight: [Mob: Double] = [:]
+    var gearUnknown = 0                             // kills before the capture had your gear's enchantments (counted ×1)
     var textures: [Int: GameTexture] = [:]
 
     /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
@@ -524,7 +544,7 @@ struct DropReport: Equatable {
         DropBag(id: id).map { "WHEN \(id) THEN \(DropBag.allCases.firstIndex(of: $0)!)" }
     }.joined(separator: " ") + " END"
 
-    static func load(_ store: DropRateStore) -> DropReport {
+    static func load(_ store: DropRateStore, catalog: LootCatalog = LootCatalog()) -> DropReport {
         var r = DropReport()
         let died = Self.died, rank = Self.rank
         let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
@@ -599,20 +619,44 @@ struct DropReport: Equatable {
             if sqlite3_column_type(stmt, 5) != SQLITE_NULL, let bag = DropBag(bagType: int(stmt, 5)) { r.bags[type] = bag }
             if sqlite3_column_type(stmt, 6) != SQLITE_NULL { r.origins[type] = text(stmt, 6) }
             if int(stmt, 2) != 0 { r.bosses.insert(type) }
+            if sqlite3_column_type(stmt, 9) != SQLITE_NULL { r.labels[type] = Self.labelSet(text(stmt, 9)) }
             if sqlite3_column_type(stmt, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text(stmt, 3), index: int(stmt, 4)) }
             if sqlite3_column_type(stmt, 7) != SQLITE_NULL { r.tiers[type] = int(stmt, 7) }
             if sqlite3_column_type(stmt, 8) != SQLITE_NULL { r.slots[type] = int(stmt, 8) }
         }
         store.run("""
-            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL FROM objects
+            SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
             WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
                 OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
                 OR name IN (SELECT name || ' Shiny' FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
             """, row: row)
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
+        // Base rates: each kill counts as its loot multiplier then, from the factors captured on its map.
+        var lines: [Int: LootTimeline] = [:]   // by map
+        store.run("SELECT map, time, stat_type, value FROM player_stats WHERE stat_type IN (\(LootTimeline.statTypes)) ORDER BY time") {
+            lines[int($0, 0), default: LootTimeline()].stats[int($0, 2), default: []].append((sqlite3_column_double($0, 1), int($0, 3)))
+        }
+        store.run("SELECT map, time, text FROM player_texts WHERE stat_type = 80 ORDER BY time") {
+            lines[int($0, 0), default: LootTimeline()].gear.append((sqlite3_column_double($0, 1), text($0, 2)))
+        }
+        store.run("""
+            SELECT map, time, 1 FROM player_texts WHERE stat_type = 128 UNION ALL SELECT map, time, 0 FROM player_stats WHERE stat_type = 128 ORDER BY 2
+            """) { lines[int($0, 0), default: LootTimeline()].crucible.append((sqlite3_column_double($0, 1), int($0, 2) != 0)) }
+        store.run("SELECT map, coalesce(info_58, ''), class FROM map_info") {
+            lines[int($0, 0), default: LootTimeline()].modifiers = LootMath.modifiers(text($0, 1))
+            lines[int($0, 0), default: LootTimeline()].heard = int($0, 2) != 0
+        }
+        store.run("""
+            SELECT k.map, k.time, k.mob_type, coalesce(m.name, ''), coalesce(o.labels, '') FROM kills k JOIN maps m ON m.id = k.map
+            LEFT JOIN objects o ON o.type = k.mob_type WHERE \(died)
+            """) {
+            let state = (lines[int($0, 0)] ?? LootTimeline()).state(at: sqlite3_column_double($0, 1))
+            if state.enchants == nil { r.gearUnknown += 1 }
+            r.weight[Mob(type: int($0, 2), dungeon: text($0, 3)), default: 0] += state.multiplier(catalog, labels: Self.labelSet(text($0, 4)))
+        }
         store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
         r.stackOf = Self.stacks(store)
         store.run("SELECT blueprint, item FROM blueprints ORDER BY item") { if r.names[int($0, 0)] != nil { r.unlocks[int($0, 0), default: []].append(int($0, 1)) } }
@@ -623,7 +667,7 @@ struct DropReport: Equatable {
             .union(r.shinyOf.filter { r.names[$0.value] != nil }.keys).filter { r.names[$0] == nil }
         if !missing.isEmpty {
             store.run("""
-                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
+                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
                 WHERE type IN (\(missing.map(String.init).joined(separator: ",")))
                 """, row: row)
         }
@@ -665,6 +709,9 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
+    /// A mob's base rate per kill for `n` kills with a drop (issue #58).
+    func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
     /// The best rarity (as an enchantment count) of any copy of an item, from every mob or one dungeon's; nil when none was read.
     func bestEnchants(_ item: Int, dungeon: String? = nil, mob: Mob? = nil) -> Int? {
         rarity.filter { (dungeon == nil || $0.key.dungeon == dungeon) && (mob == nil || $0.key == mob) }.compactMap { $0.value[item]?.lastIndex { $0 > 0 } }.max()
@@ -814,7 +861,7 @@ struct DropReport: Equatable {
         let all = mobs.map { Source(dungeon: $0.key, runs: runs[$0.key] ?? 0, runsWith: runsWith($0.key, items), mobs: $0.value) }
         func key(_ s: Source) -> (Int, Double) {
             if let r = s.perRun { return (1, r.range.lowerBound) }
-            return (0, s.mobs.map { DropRate(count: $0.value, of: kills[$0.key] ?? 0).range.lowerBound }.max() ?? 0)
+            return (0, s.mobs.map { perKill($0.key, $0.value).range.lowerBound }.max() ?? 0)
         }
         return all.sorted { (key($0).0, key($0).1, $1.dungeon) > (key($1).0, key($1).1, $0.dungeon) }
     }
@@ -1029,10 +1076,12 @@ enum GameNames {
 final class DropRatesModel: ObservableObject {
     /// The main window shows the Drop rates tab instead of the Guard tab.
     @Published var shown = false { didSet { resetOrders() } }
-    @Published var dungeon: String? { didSet { resetOrders() } }
-    @Published var mob: DropReport.Mob? { didSet { resetOrders() } }   // its page on the right; the grid stays dungeon-wide
-    @Published var group: DropReport.Group? { didSet { resetOrders() } }
-    @Published var item: Int? { didSet { resetOrders() } }
+    @Published var dungeon: String? { didSet { resetOrders(); lootDetails = false } }
+    @Published var mob: DropReport.Mob? { didSet { resetOrders(); if mob != nil { lootDetails = false } } }   // its page on the right; the grid stays dungeon-wide
+    @Published var group: DropReport.Group? { didSet { resetOrders(); if group != nil { lootDetails = false } } }
+    @Published var item: Int? { didSet { resetOrders(); if item != nil { lootDetails = false } } }
+    /// The loot bar's Details: the Loot profile in the right pane until something else is picked (issue #58).
+    @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
     @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
@@ -1045,6 +1094,21 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
     private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
+    /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
+    @Published private(set) var now: LootNow?
+    var catalog = LootCatalog()
+
+    func update(now: LootNow?) {
+        if now != self.now { self.now = now }
+        if let now { cutSprites(now.textures) }
+    }
+    /// Your rate now: the base rate times your multiplier for this mob, and its dungeon's modifiers only while you're in
+    /// it. Nil when no game runs, nothing dropped yet or nothing boosts it.
+    func yours(_ rate: DropRate, _ mob: DropReport.Mob, at time: Double = Date().timeIntervalSince1970) -> Double? {
+        guard let now, rate.count > 0 else { return nil }
+        let m = now.state(at: time).multiplier(catalog, labels: report.labels[mob.type] ?? [], inDungeon: mob.dungeon == now.map)
+        return abs(m - 1) < 0.001 ? nil : min(1, rate.rate * m)
+    }
 
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }
     func update(_ report: DropReport) {
@@ -1061,9 +1125,12 @@ final class DropRatesModel: ObservableObject {
                 }
             }
         }
-        // Sprites are cut once per type, off the main thread. The first report holds every catalog mob and drop, so
-        // they are all cut in one batch when the tab opens; later reports add only types new to play.
-        let wanted = report.textures.filter { !spritesAsked.contains($0.key) }
+        cutSprites(report.textures)
+    }
+    /// Sprites are cut once per type, off the main thread. The first report holds every catalog mob and drop, so they
+    /// are all cut in one batch when the tab opens; later reports and the loot bar add only types new to play.
+    private func cutSprites(_ textures: [Int: GameTexture]) {
+        let wanted = textures.filter { !spritesAsked.contains($0.key) }
         guard !wanted.isEmpty else { return }
         spritesAsked.formUnion(wanted.keys)
         DispatchQueue.global(qos: .utility).async {
@@ -1083,7 +1150,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
     func back() {
-        if !search.isEmpty { search = "" } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
+        if !search.isEmpty { search = "" } else if lootDetails { lootDetails = false } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
     }
 
     // Live data reloads every 30 s while you look. Rows keep the order they were first shown in (new ones go last),

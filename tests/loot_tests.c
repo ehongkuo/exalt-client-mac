@@ -117,6 +117,15 @@ static void test_format(void) {
     LootEvent player = {.map = 4, .kind = LOOT_PLAYER_STAT, .v = {39, 2500}};
     loot_format(&player, 1763300001, line, sizeof line);
     assert(!strcmp(line, "player_stat\t1763300001.000\t4\t39\t2500\n"));
+    LootEvent gear = {.map = 4, .kind = LOOT_PLAYER_STAT, .v = {80, 0}};
+    strcpy(gear.text, "AAIB,AAIC,,AAID,AAIE,AAIF");
+    loot_gear_parts(gear.text);
+    assert(!strcmp(gear.text, "AAIB,AAIC,,AAID"));
+    loot_format(&gear, 1763300001, line, sizeof line);
+    assert(!strcmp(line, "player_stat\t1763300001.000\t4\t80\t0\tAAIB,AAIC,,AAID\n"));
+    strcpy(gear.text, "AAIB");
+    loot_gear_parts(gear.text);
+    assert(!strcmp(gear.text, "AAIB"));
     LootEvent odd = {.kind = LOOT_KILL, .source = 200};
     loot_format(&odd, 0, line, sizeof line);
     assert(strstr(line, "\tunknown\t0\t0\n"));

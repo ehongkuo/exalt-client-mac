@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define LOOT_FORMAT 3
+#define LOOT_FORMAT 4   /* 4: player_stat lines may carry text (stat 80, your gear's enchantments) */
 enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP };
 /* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
  * is the server removing a mob someone hit, so every kill is "removed". */
@@ -164,6 +164,12 @@ static inline int loot_is_bag(uint16_t type) {
 static inline int loot_player_stat_kept(int stat) { return stat >= 0 && stat < 256 && stat != 1 && stat != 4 && stat != 6; }
 /* Container slots 0-7 are stat types 8-15; anything else on a bag is kept raw. */
 static inline int loot_item_slot(int stat) { return stat >= 8 && stat <= 15 ? stat - 8 : -1; }
+/* Your stat 80 has one comma-separated part per inventory slot; the first four are your equipment, the
+ * only slots whose enchantments count (issue #58). Cuts the text after them. */
+static inline void loot_gear_parts(char *text) {
+    int parts = 0;
+    for (char *c = text; *c; ++c) if (*c == ',' && ++parts == 4) { *c = 0; return; }
+}
 
 /* One TSV line per event; the app's importer parses these columns. */
 static inline int loot_format(const LootEvent *e, double epoch, char *out, size_t size) {
@@ -184,6 +190,7 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
         return snprintf(out, size, "map_info\t%.3f\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
                         epoch, e->map, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], e->text);
     case LOOT_PLAYER_STAT:
+        if (e->text[0]) return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\t%s\n", epoch, e->map, v[0], v[1], e->text);
         return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
     case LOOT_DROP:
         return snprintf(out, size, "drop\t%.3f\t%u\t%d\t%d\n", epoch, e->map, e->id, v[0]);

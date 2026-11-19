@@ -131,6 +131,9 @@ static void loot_prepare(const void *game) {
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
 static int32_t loot_player_values[256];
 static uint8_t loot_player_known[256];
+/* Your text stats as last written; loot_player_known says which are set. Stat 80 is your gear's enchantments, stat 128
+ * your Crucible (non-empty when it's on, as RealmHound reads it); the rest are kept raw (issue #58). */
+static char loot_player_texts[256][sizeof ((LootEvent *)0)->text];
 /* Ids restart with each map, so hits, waiting bags and kills are forgotten when the server gives
  * you a new object id. The seen bags are per map already. */
 static void loot_new_map(void) {
@@ -236,8 +239,19 @@ static void loot_status(void *connection, void *status) {
         uint8_t stat = 0; int32_t value = 0;
         il2cpp_field_get_value(stats[i], loot_stat_type_field, &stat);
         void *text = read_reference(stats[i], loot_stat_text_field);
-        if (!loot_player_stat_kept(stat) || (text && il2cpp_string_length(text) > 0)) continue;
+        if (!loot_player_stat_kept(stat)) continue;
+        if (text && il2cpp_string_length(text) > 0) {
+            LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, 0}};
+            read_text(text, e.text, sizeof e.text);
+            if (stat == 80) loot_gear_parts(e.text);
+            if (loot_player_known[stat] && !strcmp(loot_player_texts[stat], e.text)) continue;
+            loot_player_known[stat] = 1;
+            memcpy(loot_player_texts[stat], e.text, sizeof e.text);
+            loot_push(&loot_ring, &e);
+            continue;
+        }
         il2cpp_field_get_value(stats[i], loot_stat_int_field, &value);
+        if (loot_player_texts[stat][0]) { loot_player_texts[stat][0] = 0; loot_player_known[stat] = 0; }   /* text went empty: write it */
         if (loot_player_known[stat] && loot_player_values[stat] == value) continue;
         loot_player_known[stat] = 1; loot_player_values[stat] = value;
         LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, value}};
@@ -348,8 +362,15 @@ static void loot_tick(void *player) {
     int32_t id = 0;
     il2cpp_field_get_value(player, loot_id_field, &id);
     if (loot_map == loot_named_map || !last_map_info || !id || id != loot_self_id) return;
-    loot_named_map = loot_map;
+    /* Your class is your object's type, which can come a few ticks after your id: wait for it, up to 3 s. */
+    static uint64_t waiting_since;
     uint64_t now = monotonic_ns();
+    if (!loot_type_get(loot_types, id)) {
+        if (!waiting_since) waiting_since = now;
+        if (now - waiting_since < 3 * NSEC_PER_SEC) return;
+    }
+    waiting_since = 0;
+    loot_named_map = loot_map;
     LootEvent e = {.ns = now, .map = loot_map, .kind = LOOT_MAP};
     snprintf(e.text, sizeof e.text, "%s", live_data.map);
     loot_push(&loot_ring, &e);

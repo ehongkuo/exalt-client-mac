@@ -74,7 +74,7 @@ for i in {1..300}; do [[ -s "$cross" ]] && break; sleep 0.01; done
 [[ -s "$cross" ]] || { print 'FAIL: the cross-architecture writer never started'; exit 1; }
 "$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
-    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardDropRatesTests.swift" "$src/app/GuardModelTests.swift" \
+    "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardLootProfile.swift" "$src/app/GuardLootProfileTests.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardDropRatesTests.swift" "$src/app/GuardModelTests.swift" \
     "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
     -o "$tests/model-tests"
 "$tests/model-tests"
@@ -130,7 +130,7 @@ cp "$src"/data/icons/*.png "$app/Contents/Resources/"     # the game's rarity an
 
 print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \
-    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardDropRatesView.swift" "$src/app/GuardApp.swift" \
+    -import-objc-header "$src/app/GuardBridge.h" "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardLootProfile.swift" "$src/app/GuardDropRatesView.swift" "$src/app/GuardLootProfileView.swift" "$src/app/GuardApp.swift" \
     -o "$app/Contents/MacOS/ExaltClientMac"
 # Icon: DECA's launcher icon with the red lettering turned yellow (drawn fallback if missing).
 icons="$(mktemp -d)"
