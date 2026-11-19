@@ -73,7 +73,6 @@ enum LootProfileTests {
             map\t100.000\t1\tAbyss of Demons
             map_info\t100.100\t1\t782\t0\t0\t0\t0\t0\t0\t0\tAbyss\tx\tLOOTING;|D
             player_stat\t100.100\t1\t67\t60
-            crucible\t100.100\t1\t1100\t31\t0\t1\t0\t1\t0\tS31
             player_stat\t100.100\t1\t7\t20
             player_stat\t100.100\t1\t24\t1
             player_stat\t100.100\t1\t8\t2712
@@ -90,9 +89,6 @@ enum LootProfileTests {
         var texts = 0
         store.run("SELECT count(*) FROM player_texts WHERE stat_type = 80") { texts = Int(sqlite3_column_int64($0, 0)) }
         check(texts == 1, "your gear's enchantments kept as text")
-        var crucible = ""
-        store.run("SELECT f_70 || ',' || b_90 || ',' || b_a0 || ',' || s_98 FROM crucible_info") { crucible = String(cString: sqlite3_column_text($0, 0)) }
-        check(crucible == "1100,1,1,S31", "the Crucible manager's fields kept raw, per map")
 
         let report = DropReport.load(store, catalog: catalog)
         let mob = DropReport.Mob(type: 3340, dungeon: "Abyss of Demons")
@@ -110,6 +106,34 @@ enum LootProfileTests {
         check(now.map { near($0.state.potion, 30.1) && near($0.state(at: 140).potion, 20.1) } == true &&
               now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"], "your boosts now")
         check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5) } == true, "your multiplier now")
+        let json = """
+            {"characters": {"characters": [
+              {"char_id": 1, "class_id": 782, "level": 20, "seasonal": true, "crucible_active": true, "loot_boost_secs": 0,
+               "equipment": [{"item_id": 2712, "enchant_ids": [1457]}, {"item_id": -1}, {"item_id": 7}, {"item_id": 8}], "last_live_update": 99000},
+              {"char_id": 2, "class_id": 784, "level": 5, "seasonal": false, "crucible_active": false, "loot_boost_secs": 1192,
+               "equipment": [{"item_id": 3}, {"item_id": 4, "enchant_ids": [1, 2]}, {"item_id": 5}, {"item_id": 6}], "last_live_update": 50000}]}}
+            """
+        let rh = RealmHoundLive.parse(Data(json.utf8))
+        check(rh == RealmHoundLive(classType: 782, level: 20, seasonal: true, crucible: true, potion: 0, equipment: [2712, -1, 7, 8],
+                                   enchants: [[1457], [], [], []], seen: 99), "RealmHound's live character: the newest live update")
+        check(LootNow.load(store, now: 130, realmHound: rh, alive: { _ in true })?.state.crucible == true &&
+              near(LootNow.load(store, now: 130, realmHound: rh, alive: { _ in true })!.state.potion, 30.1), "Crucible from RealmHound; the guard's own readings win")
+        var other = rh!; other.classType = 784
+        check(LootNow.load(store, now: 130, realmHound: other, alive: { _ in true })?.state.crucible == nil, "another class: not this character")
+        var old = rh!; old.seen = 0
+        check(LootNow.load(store, now: 130, realmHound: old, alive: { _ in true })?.state.crucible == nil, "seen before this game: stale")
+        // The first map: the guard's hooks went in after you loaded, so RealmHound fills in everything.
+        let first = folder.appendingPathComponent("first")
+        try! FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+        try! "loot_session\t4\tabc\t90.000\t4243\nmap\t95.000\t1\tNexus\nmap_info\t95.000\t1\t0\t0\t0\t0\t0\t0\t0\t0\tNexus\tx\t\n"
+            .write(to: first.appendingPathComponent("loot-90-4243.tsv"), atomically: false, encoding: .utf8)
+        let firstStore = DropRateStore(path: first.appendingPathComponent("drop_rates.db").path)!
+        LootImport.run(logs: first, store: firstStore, appVersion: "t", alive: { _ in true })
+        var rh2 = rh!; rh2.potion = 1192
+        let filled = LootNow.load(firstStore, now: 130, realmHound: rh2, alive: { _ in true })
+        check(filled?.classType == 782 && filled?.level == 20 && filled?.seasonal == true && filled?.equipment == [2712, -1, 7, 8] &&
+              filled?.state.enchants == [[1457], [], [], []] && filled?.state.potion == 1192 && filled?.state.crucible == true,
+              "first map: class, gear, enchantments, potion and Crucible from RealmHound")
         check(LootNow.load(store, now: 130, alive: { _ in false }) == nil, "no game running: nothing live")
         store.run("UPDATE sessions SET status = 'complete'")
         check(LootNow.load(store, now: 130, alive: { _ in true }) == nil, "a finished game isn't live")

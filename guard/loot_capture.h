@@ -51,9 +51,6 @@ static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_
 /* Raw, until a staging run shows what they hold: two connection ints (character id?), and the map
  * info message's ints and strings (seed, difficulty, dungeon modifiers?). */
 static void *loot_connection_ints[2], *loot_info_ints[5], *loot_info_texts[2], *loot_info_list;
-/* Raw too: the Crucible manager's candidate fields (float, 2 ints, 4 bools, id string). Optional:
- * without them only the crucible line is skipped. */
-static void *loot_crucible_class, *loot_crucible_fields[8];
 static ListFields loot_stat_list;
 static uintptr_t loot_base;
 static int loot_prepared, loot_attempted, loot_installed;
@@ -119,13 +116,6 @@ static void loot_prepare(const void *game) {
         loot_info_texts[1] = typed_field(map_info, "NDFKPKPKPCP", "System.String");
         loot_info_list = typed_field(map_info, "DGGDBIMMDHE", "System.String[]");
     }
-    loot_crucible_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers", "CruciblesManager");
-    static const char *const crucible_names[8][2] = {
-        {"GMFCEKNEBGI", "System.Single"}, {"MOOLFALCGOK", "System.Int32"}, {"DAONLGNNKII", "System.Int32"},
-        {"PHGPAOODNPG", "System.Boolean"}, {"KNIOIDLOBKK", "System.Boolean"}, {"<PIDFDICJKJF>k__BackingField", "System.Boolean"},
-        {"ENKOHKBAPPD", "System.Boolean"}, {"<IIDBBEMEHGM>k__BackingField", "System.String"}};
-    for (int i = 0; loot_crucible_class && i < 8; ++i)
-        if (!(loot_crucible_fields[i] = typed_field(loot_crucible_class, crucible_names[i][0], crucible_names[i][1]))) loot_crucible_class = NULL;
     if (!(loot_id_field && loot_shooter_field && loot_type_field && loot_status_field && loot_status_id_field &&
           loot_pos_field && loot_stats_field && loot_x_field && loot_y_field && loot_stat_type_field &&
           loot_stat_int_field && loot_stat_text_field && loot_own_field && loot_connection_ints[0] && loot_connection_ints[1] &&
@@ -136,65 +126,6 @@ static void loot_prepare(const void *game) {
     if (!dladdr((const void *)il2cpp_domain_get, &info) || !info.dli_fbase) { loot_refuse("game_base"); return; }
     loot_base = (uintptr_t)info.dli_fbase;
     loot_prepared = 1;
-}
-
-/* shortcut: discovery only (issue #58), to find which player fields hold your stats so the guard can read
- * them instead of waiting for the server; remove once they're named. Writes player-<pid>.txt: the player
- * object's nonzero int words, its strings, int arrays and int lists, and its ObjectProperties. */
-static char loot_folder[PATH_MAX];
-static uint64_t loot_snapshot_at;
-static void loot_snapshot(void *player) {
-    char path[PATH_MAX], text[512];
-    snprintf(path, sizeof path, "%s/player-%d.txt", loot_folder, getpid());
-    FILE *out = fopen(path, "a");
-    if (!out) return;
-    void *klass = il2cpp_object_get_class(player);
-    fprintf(out, "snapshot\t%.3f\tmap %u\tclass %s\n", start_epoch + (monotonic_ns() - start_ns) / 1e9, loot_map,
-            safe(il2cpp_class_get_name(klass)));
-    for (uint32_t at = 0x10; at < 0x770; at += 4) {
-        int32_t word; memcpy(&word, (char *)player + at, sizeof word);
-        if (word) fprintf(out, "%x=%d ", at, word);
-    }
-    fputc('\n', out);
-    static const char *const strings[] = {"DPGEBOCBKEF", "CMMKIJPOBBL", "FGKEIECMOKD", "IIEJPELFJAJ", "NFJGJKLPLBA", "HKGPJPCHOFF",
-                                          "CMDGOAAPPGL", "FKIHLOKHKIA", "OHBHOAMMHAP", "GJNDOIKLNKP", "PINCMINGIGA"};
-    for (size_t i = 0; i < sizeof strings / sizeof *strings; ++i) {
-        void *field = typed_field(klass, strings[i], "System.String");
-        read_text(field ? read_reference(player, field) : NULL, text, sizeof text);
-        fprintf(out, "string %s %s\n", strings[i], field ? text : "(no field)");
-    }
-    static const char *const arrays[] = {"COHCKAPOLCA", "PGFBFGLNPOG"};
-    for (size_t i = 0; i < 2; ++i) {
-        void *field = typed_field(klass, arrays[i], "System.Int32[]");
-        void *array = field ? read_reference(player, field) : NULL;
-        fprintf(out, "ints %s", arrays[i]);
-        for (uint32_t j = 0, n = array ? il2cpp_array_length(array) : 0; j < n && j < 64; ++j)
-            fprintf(out, " %d", ((const int32_t *)((char *)array + 0x20))[j]);
-        fputc('\n', out);
-    }
-    static const char *const lists[] = {"OCEDJMCGPEJ", "KELCBLCGGPB", "IMONLKLEPJJ"};
-    for (size_t i = 0; i < 3; ++i) {
-        void *field = typed_field(klass, lists[i], "System.Collections.Generic.List<System.Int32>");
-        void *list = field ? read_reference(player, field) : NULL;
-        void *items = list ? *(void **)((char *)list + 0x10) : NULL;
-        int32_t size = list ? *(int32_t *)((char *)list + 0x18) : 0;
-        fprintf(out, "list %s", lists[i]);
-        for (int32_t j = 0; items && j < size && j < 64 && (uint32_t)j < il2cpp_array_length(items); ++j)
-            fprintf(out, " %d", ((const int32_t *)((char *)items + 0x20))[j]);
-        fputc('\n', out);
-    }
-    static const char *const props[] = {"OBAKMCCDBJA", "KKENJFFDMPO", "NJMFNHEPIMK", "NGEHILHNGKE", "GGBCADDBAPN"};
-    for (size_t i = 0; i < 5; ++i) {
-        void *field = typed_field(klass, props[i], "DecaGames.RotMG.Objects.Map.Data.ObjectProperties");
-        void *object = field ? read_reference(player, field) : NULL;
-        void *pklass = object ? il2cpp_object_get_class(object) : NULL;
-        void *id = pklass ? typed_field(pklass, "id", "System.String") : NULL, *type = pklass ? typed_field(pklass, "TypeAttribute", "System.String") : NULL;
-        char a[80] = "", b[80] = "";
-        if (id) read_text(read_reference(object, id), a, sizeof a);
-        if (type) read_text(read_reference(object, type), b, sizeof b);
-        fprintf(out, "props %s %s %s\n", props[i], a, b);
-    }
-    fclose(out);
 }
 
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
@@ -315,7 +246,6 @@ static void loot_status(void *connection, void *status) {
             if (loot_player_known[stat] && !strcmp(loot_player_gear, e.text)) continue;
             loot_player_known[stat] = 1;
             memcpy(loot_player_gear, e.text, sizeof loot_player_gear);
-            loot_snapshot_at = now + 2 * NSEC_PER_SEC;
             loot_push(&loot_ring, &e);
             continue;
         }
@@ -429,7 +359,6 @@ static void loot_tick(void *player) {
      * info before your id, so by then the name is this map's, never the previous one's. */
     int32_t id = 0;
     il2cpp_field_get_value(player, loot_id_field, &id);
-    if (loot_snapshot_at && monotonic_ns() >= loot_snapshot_at && id && id == loot_self_id) { loot_snapshot_at = 0; loot_snapshot(player); }
     if (loot_map == loot_named_map || !last_map_info || !id || id != loot_self_id) return;
     /* Your class is your object's type, which can come a few ticks after your id: wait for it, up to 3 s. */
     static uint64_t waiting_since;
@@ -440,7 +369,6 @@ static void loot_tick(void *player) {
     }
     waiting_since = 0;
     loot_named_map = loot_map;
-    loot_snapshot_at = now + 5 * NSEC_PER_SEC;
     LootEvent e = {.ns = now, .map = loot_map, .kind = LOOT_MAP};
     snprintf(e.text, sizeof e.text, "%s", live_data.map);
     loot_push(&loot_ring, &e);
@@ -462,21 +390,9 @@ static void loot_tick(void *player) {
     }
     snprintf(info.text, sizeof info.text, "%s\t%s\t%s", a, b, list);
     loot_push(&loot_ring, &info);
-    void *crucibles = loot_crucible_class ? find_object(loot_crucible_class) : NULL;
-    if (crucibles) {
-        LootEvent c = {.ns = now, .map = loot_map, .kind = LOOT_CRUCIBLE};
-        float f = 0; uint8_t flag;
-        il2cpp_field_get_value(crucibles, loot_crucible_fields[0], &f);
-        c.v[0] = (int32_t)lroundf(f * 1000);
-        for (int i = 1; i < 3; ++i) il2cpp_field_get_value(crucibles, loot_crucible_fields[i], &c.v[i]);
-        for (int i = 3; i < 7; ++i) { flag = 0; il2cpp_field_get_value(crucibles, loot_crucible_fields[i], &flag); c.v[i] = flag; }
-        read_text(read_reference(crucibles, loot_crucible_fields[7]), c.text, sizeof c.text);
-        loot_push(&loot_ring, &c);
-    }
 }
 
 static void loot_open(const char *folder) {
-    snprintf(loot_folder, sizeof loot_folder, "%s", folder);
     char path[PATH_MAX];
     int n = snprintf(path, sizeof path, "%s/loot-%.0f-%d.tsv", folder, start_epoch, getpid());
     int fd = n > 0 && (size_t)n < sizeof path ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) : -1;

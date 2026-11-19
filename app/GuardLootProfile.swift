@@ -159,12 +159,14 @@ struct LootNow: Equatable {
         return s
     }
 
-    /// The newest session whose game still runs, or nil.
-    static func load(_ store: DropRateStore, now: Double = Date().timeIntervalSince1970,
+    /// The newest session whose game still runs, or nil. `realmHound` is the character RealmHound saw last: it gives
+    /// the Crucible, and fills what the guard hasn't captured yet (the first map, before the guard's hooks are in).
+    static func load(_ store: DropRateStore, now: Double = Date().timeIntervalSince1970, realmHound: RealmHoundLive? = nil,
                      alive: (Int) -> Bool = { kill(pid_t($0), 0) == 0 || errno == EPERM }) -> LootNow? {
-        var session: Int64 = 0, pid = 0, status = ""
-        store.run("SELECT id, coalesce(pid, 0), coalesce(status, '') FROM sessions ORDER BY id DESC LIMIT 1") {
+        var session: Int64 = 0, pid = 0, status = "", started = 0.0
+        store.run("SELECT id, coalesce(pid, 0), coalesce(status, ''), coalesce(started, 0) FROM sessions ORDER BY id DESC LIMIT 1") {
             session = sqlite3_column_int64($0, 0); pid = Int(sqlite3_column_int64($0, 1)); status = String(cString: sqlite3_column_text($0, 2))
+            started = sqlite3_column_double($0, 3)
         }
         guard session != 0, status != "complete", alive(pid) else { return nil }
         var n = LootNow(at: now)
@@ -195,6 +197,16 @@ struct LootNow: Equatable {
         n.level = latest[7] ?? 0
         n.seasonal = (latest[24] ?? 0) != 0
         n.equipment = (8...11).map { latest[$0] ?? -1 }
+        // RealmHound's character counts if it was seen during this game and is the class the guard saw (when it saw one).
+        if let rh = realmHound, rh.seen >= started - 60, n.classType == 0 || n.classType == rh.classType {
+            n.state.crucible = rh.crucible
+            if n.classType == 0 { n.classType = rh.classType }
+            if latest[7] == nil { n.level = rh.level }
+            if latest[24] == nil { n.seasonal = rh.seasonal }
+            if (8...11).allSatisfy({ latest[$0] == nil }) { n.equipment = rh.equipment }
+            if n.state.enchants == nil { n.state.enchants = rh.enchants }
+            if line.stats[67] == nil { n.state.potion = rh.potion }   // saved in a safe zone, where it doesn't count down
+        }
         n.textures = sprites
         let types = ([n.classType] + n.equipment).filter { $0 > 0 }.map(String.init).joined(separator: ",")
         store.run("""
@@ -209,4 +221,41 @@ struct LootNow: Equatable {
         }
         return n
     }
+}
+
+/// The character RealmHound saw last, from its account_data.json (read only). Each character there carries its
+/// Crucible, loot boost and gear; `last_live_update` says which one is live.
+struct RealmHoundLive: Equatable {
+    var classType = 0, level = 0
+    var seasonal = false, crucible = false
+    var potion = 0.0
+    var equipment: [Int] = []
+    var enchants: [[Int]] = []
+    var seen = 0.0   // seconds since 1970
+
+    static func parse(_ data: Data) -> RealmHoundLive? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = (root["characters"] as? [String: Any])?["characters"] as? [[String: Any]],
+              let c = list.max(by: { ($0["last_live_update"] as? Double ?? 0) < ($1["last_live_update"] as? Double ?? 0) }),
+              let seen = c["last_live_update"] as? Double, let type = c["class_id"] as? Int else { return nil }
+        let gear = (c["equipment"] as? [[String: Any]] ?? []).prefix(4)
+        return RealmHoundLive(classType: type, level: c["level"] as? Int ?? 0, seasonal: c["seasonal"] as? Bool ?? false,
+                              crucible: c["crucible_active"] as? Bool ?? false, potion: c["loot_boost_secs"] as? Double ?? 0,
+                              equipment: gear.map { $0["item_id"] as? Int ?? -1 }, enchants: gear.map { $0["enchant_ids"] as? [Int] ?? [] },
+                              seen: seen / 1000)
+    }
+
+    /// The newest live character over all accounts. Files are parsed again only when they change.
+    static func read(accounts: URL) -> RealmHoundLive? {
+        let folders = (try? FileManager.default.contentsOfDirectory(at: accounts, includingPropertiesForKeys: nil)) ?? []
+        var best: RealmHoundLive?
+        for folder in folders {
+            let file = folder.appendingPathComponent("account_data.json")
+            guard let changed = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { continue }
+            if cache[file]?.changed != changed { cache[file] = (changed, (try? Data(contentsOf: file)).flatMap(parse)) }
+            if let c = cache[file]?.live, c.seen > best?.seen ?? 0 { best = c }
+        }
+        return best
+    }
+    private static var cache: [URL: (changed: Date, live: RealmHoundLive?)] = [:]   // used from the loot queue only
 }

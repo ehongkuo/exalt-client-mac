@@ -1368,7 +1368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 }
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
-                now = LootNow.load(store)
+                now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }
             let loot = self.catalog()
             DispatchQueue.main.async {

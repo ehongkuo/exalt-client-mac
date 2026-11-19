@@ -497,7 +497,7 @@ struct DropRatesView: View {
                         Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
                             .foregroundStyle(.secondary)
                     }
-                    Text("The Crucible, drop accelerators and server loot events aren't captured yet, so they're left out.").foregroundStyle(.secondary)
+                    Text("Base rates leave out the Crucible (kills don't record it yet), drop accelerators and server loot events. Your Crucible now comes from RealmHound.").foregroundStyle(.secondary)
                     Text("**Per run** and bag colour rates are as seen, boosts included.").foregroundStyle(.secondary)
                 }
                 .font(.callout).frame(width: 340).padding(14)

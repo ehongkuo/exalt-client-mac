@@ -9,7 +9,7 @@
 #include <string.h>
 
 #define LOOT_FORMAT 4   /* 4: player_stat lines may carry text (stat 80, your gear's enchantments) */
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP, LOOT_CRUCIBLE };
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP };
 /* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
  * is the server removing a mob someone hit, so every kill is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
@@ -194,9 +194,6 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
         return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
     case LOOT_DROP:
         return snprintf(out, size, "drop\t%.3f\t%u\t%d\t%d\n", epoch, e->map, e->id, v[0]);
-    case LOOT_CRUCIBLE:   /* raw: a float ×1000, two ints, four bools, then the id string */
-        return snprintf(out, size, "crucible\t%.3f\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
-                        epoch, e->map, v[0], v[1], v[2], v[3], v[4], v[5], v[6], e->text);
     default: return 0;
     }
 }

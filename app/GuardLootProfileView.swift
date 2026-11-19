@@ -58,7 +58,7 @@ struct LootProfileView: View {
                         Text(s.potion > 0 ? LootMath.clock(s.potion) + " left" : "not running").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                     }
                     small(LootNow.tierSprite, on: s.tier > 0, "Loot Tier Potion" + (s.tier > 0 ? ": \(LootMath.clock(s.tier)) left" : ": off"))
-                    small(LootNow.crucibleSprite, on: s.crucible == true, "Crucible: " + (s.crucible == nil ? "not captured yet" : s.crucible! ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
+                    small(LootNow.crucibleSprite, on: s.crucible == true, "Crucible: " + (s.crucible == nil ? "unknown (from RealmHound, not running)" : s.crucible! ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
                     small(LootNow.ritualSprite, on: s.ritual > 0, "Blood Ritual: " + (s.ritual > 0 ? "−\(s.ritual * 5)% HP, ×" + LootMath.times(LootMath.ritual(s.ritual)) : "off"))
                 }
                 barDivider
@@ -131,7 +131,7 @@ struct LootProfileView: View {
                 boost(LootNow.tierSprite, "Loot Tier Potion", on: s.tier > 0,
                       detail: (s.tier > 0 ? "\(LootMath.clock(s.tier)) left · " : "") + "better tiers, not more drops", value: nil)
                 boost(LootNow.crucibleSprite, "Crucible", on: s.crucible == true,
-                      detail: s.crucible == nil ? "not captured yet: left out" : s.crucible! ? "this season's loot bonus" : "off",
+                      detail: s.crucible == nil ? "unknown without RealmHound: left out" : s.crucible! ? "this season's loot bonus" : "off",
                       value: "×" + LootMath.times(LootMath.crucible))
                 boost(LootNow.ritualSprite, "Blood Ritual", on: LootMath.ritual(s.ritual) > 1,
                       detail: s.ritual > 0 ? "−\(s.ritual * 5)% HP" : "off · up to ×1.25 at −20% HP",

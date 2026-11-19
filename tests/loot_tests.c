@@ -95,10 +95,6 @@ static void test_format(void) {
     LootEvent drop = {.id = 1002, .map = 3, .kind = LOOT_DROP, .v = {1001}};
     loot_format(&drop, 1763300000.5, line, sizeof line);
     assert(!strcmp(line, "drop\t1763300000.500\t3\t1002\t1001\n"));
-    LootEvent crucible = {.map = 3, .kind = LOOT_CRUCIBLE, .v = {1100, 31, 0, 1, 0, 1, 0}};
-    strcpy(crucible.text, "S31");
-    loot_format(&crucible, 1763300000.5, line, sizeof line);
-    assert(!strcmp(line, "crucible\t1763300000.500\t3\t1100\t31\t0\t1\t0\t1\t0\tS31\n"));
     LootEvent bag = {.id = 1002, .map = 3, .type = 1295, .kind = LOOT_BAG, .pos = {12.5f, 30.25f},
                      .v = {2856, 2856, -1, -1, -1, -1, -1, -1}};
     loot_format(&bag, 1763300000.5, line, sizeof line);
