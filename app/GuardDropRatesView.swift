@@ -629,7 +629,20 @@ struct MobPage: View {
                     Divider()
                 }
             }
-            Text("Drop chance: a bag's is the share of kills that dropped one; an item's or tier group's counts every copy, so two in one kill count 2 and it can top 100%. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
+            if let portals = report.portals[mob], !portals.isEmpty {
+                Text("PORTALS · per kill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                ForEach(portals.sorted { ($1.value, report.name($0.key)) < ($0.value, report.name($1.key)) }, id: \.key) { type, n in
+                    HStack(spacing: 10) {
+                        SpriteIcon(image: model.sprites[type], size: 28).frame(width: 36, height: 36)
+                        Text(report.name(type)).font(.callout.weight(.medium)).lineLimit(1)
+                        Spacer()
+                        numbers(n, stacked: false, asSeen: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    Divider()
+                }
+            }
+            Text("Drop chance: a bag's is the share of kills that dropped one; an item's or tier group's counts every copy, so two in one kill count 2 and it can top 100%. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). A portal's is the share of kills that opened one where the mob died, loot boosts included. Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -684,15 +697,16 @@ struct MobPage: View {
 
     /// "45%" over "9/20 · ±65%" ("too few" under 4 drops, "under 18%" with none), faded when looser than ±50% as elsewhere in the tab.
     /// The % is the base rate; while you play, "→ 68%" in gold is yours now (issue #58).
-    private func numbers(_ n: Int, stacked: Bool) -> some View {
+    /// `asSeen`: per kill as seen, not a base rate (portals: whether boosts change them is still open, #64).
+    private func numbers(_ n: Int, stacked: Bool, asSeen: Bool = false) -> some View {
         let report = model.report, kills = report.kills[mob] ?? 0
-        let rate = report.perKill(mob, n), counts = "\(n.formatted())/\(kills.formatted())"
+        let rate = asSeen ? DropRate(count: n, of: kills) : report.perKill(mob, n), counts = "\(n.formatted())/\(kills.formatted())"
         // None yet: the top of the 95% range, as "rarer than 1 in N" reads elsewhere in the tab.
         let detail = n == 0 ? "under \(DropRate.percent(rate.range.upperBound))" : rate.plusMinus ?? "too few"
         return VStack(alignment: stacked ? .center : .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Text(rate.percent).font(.system(size: 14, weight: .semibold))
-                if let yours = model.yours(rate, mob) {
+                if !asSeen, let yours = model.yours(rate, mob) {
                     Text("→ \(DropRate.percent(yours))").font(.system(size: 12, weight: .semibold)).foregroundStyle(lootGold)
                         .help("Yours now, with your loot boosts")
                 }

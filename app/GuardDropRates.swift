@@ -529,6 +529,8 @@ struct DropReport: Equatable {
     var weight: [Mob: Double] = [:]
     var gearUnknown = 0                             // kills before the capture had your gear's enchantments (counted ×1)
     var textures: [Int: GameTexture] = [:]
+    /// Portals (issue #64): mob → portal type → its kills that dropped one, as seen (loot boosts not taken out).
+    var portals: [Mob: [Int: Int]] = [:]
 
     /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
     /// that left your view.
@@ -639,6 +641,12 @@ struct DropReport: Equatable {
         store.run("SELECT mob, family, tier FROM catalog_tiers") {
             if let family = Self.catalogFamilies[text($0, 1)] { r.mobTiers[int($0, 0), default: []].insert(Group(tier: int($0, 2), family: family)) }
         }
+        // A portal counts as a kill's drop only on the kill's spot: the link is the nearest kill at any distance, so a
+        // portal that came into view during a fight is linked too. shortcut: 1.5 tiles is a guess; set it from live drops.
+        store.run("""
+            SELECT k.mob_type, coalesce(m.name, ''), p.portal_type, count(DISTINCT k.id) FROM portals p JOIN kills k ON k.id = p.kill
+            JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= 2.25 GROUP BY 1, 2, 3
+            """) { r.portals[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][int($0, 2)] = int($0, 3) }
         store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
         let row = { (stmt: OpaquePointer) in
             let type = int(stmt, 0)
@@ -653,7 +661,8 @@ struct DropReport: Equatable {
         }
         store.run("""
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
-            WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) UNION ALL
+            WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) OR type IN (SELECT portal_type FROM portals)
+            UNION ALL
             SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
                 OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
