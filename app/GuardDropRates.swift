@@ -404,7 +404,7 @@ struct DropRate: Equatable {
     /// and its range divide by this; the ± stays the drops' (it depends on the count only).
     var exposure: Double?
     private var per: Double { of > 0 ? exposure ?? Double(of) : 0 }
-    var rate: Double { per > 0 ? Double(count) / per : 0 }
+    var rate: Double { per > 0 ? Double(count) / per : 0 }   // copies per kill: 1.3 is one sure and a 30% chance of a second (#62)
     /// How far off the rate may be, at 95%, as a fraction (0.44 reads ±44%): about 1.96 ÷ √drops. Nil under 4 drops,
     /// too few to say. It shrinks as data grows; there is no threshold where a rate becomes "solid".
     var precision: Double? { count >= 4 ? 1.96 / Double(count).squareRoot() : nil }
@@ -710,7 +710,7 @@ struct DropReport: Equatable {
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
     static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
-    /// A mob's base rate per kill for `n` kills with a drop (issue #58).
+    /// A mob's base rate per kill for `n` drops (copies, or kills with a bag) (issue #58).
     func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
     /// The best rarity (as an enchantment count) of any copy of an item, from every mob or one dungeon's; nil when none was read.
     func bestEnchants(_ item: Int, dungeon: String? = nil, mob: Mob? = nil) -> Int? {
@@ -869,6 +869,8 @@ struct DropReport: Equatable {
     /// A mob's possible drops as the grid's tiles, by bag, for its page.
     func tiles(of mob: Mob) -> [DropBag?: [Tile]] { tiles(possibleDrops(mob)) }
     /// A mob's kills that dropped at least one of the tiles' items (or their shinies): the mob page's drop chance.
+    /// Copies of the tiles' items (and their shinies and stack sizes) from a mob's kills: a double drop counts 2 (issue #62).
+    func copies(_ mob: Mob, _ tiles: [Tile]) -> Int { copies(mob, Set(tiles.flatMap(\.items).flatMap(variants))) }
     func killsWith(_ mob: Mob, _ tiles: [Tile]) -> Int {
         tiles.flatMap(\.items).reduce(into: Set<Int>()) { kills, item in
             for v in variants(item) { kills.formUnion(killsWith[mob]?[v] ?? []) }
@@ -1103,11 +1105,11 @@ final class DropRatesModel: ObservableObject {
         if let now { cutSprites(now.textures) }
     }
     /// Your rate now: the base rate times your multiplier for this mob, and its dungeon's modifiers only while you're in
-    /// it. Nil when no game runs, nothing dropped yet or nothing boosts it.
+    /// it. Nil when no game runs, nothing dropped yet or nothing boosts it. Over 1 is more than a copy per kill (#62).
     func yours(_ rate: DropRate, _ mob: DropReport.Mob, at time: Double = Date().timeIntervalSince1970) -> Double? {
         guard let now, rate.count > 0 else { return nil }
         let m = now.state(at: time).multiplier(catalog, labels: report.labels[mob.type] ?? [], inDungeon: mob.dungeon == now.map)
-        return abs(m - 1) < 0.001 ? nil : min(1, rate.rate * m)
+        return abs(m - 1) < 0.001 ? nil : rate.rate * m
     }
 
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }

@@ -531,7 +531,7 @@ struct DropRatesView: View {
                     Text("**Per run** counts runs where a boss died with at least one copy. **Surest first** sorts by the low end of each range, so a lucky early drop doesn't come out on top.")
                     Divider()
                     Text("How rates are calculated").font(.headline)
-                    Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual.")
+                    Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual. **Items count every copy**: two vits from one kill count 2. So a rate can top 100%: 130% is one sure and a 30% chance of a second.")
                     Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
                     if model.report.gearUnknown > 0 {
                         Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
@@ -629,7 +629,7 @@ struct MobPage: View {
                     Divider()
                 }
             }
-            Text("Drop chance: the share of kills that dropped at least one. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
+            Text("Drop chance: a bag's is the share of kills that dropped one; an item's or tier group's counts every copy, so two in one kill count 2 and it can top 100%. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -642,7 +642,7 @@ struct MobPage: View {
     }
 
     private func cell(_ tile: DropReport.Tile, kills: Int) -> some View {
-        let report = model.report, n = report.killsWith(mob, [tile])
+        let report = model.report, n = report.copies(mob, [tile]), rate = report.perKill(mob, n).rate
         let name: String, open: Bool?
         switch tile {
         case .item(let item): name = report.name(item); open = nil
@@ -676,7 +676,9 @@ struct MobPage: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(n > 0 ? "\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills" : "\(name): not dropped by this mob yet")
+        .help(n > 0 ? "\(name): \(n.formatted()) \(n == 1 ? "copy" : "copies") in \(kills.formatted()) kills" + (rate >= 1
+              ? ". \(DropRate.percent(rate)) per kill: \(Int(rate)) sure" + (rate - rate.rounded(.down) < 0.005 ? "" : ", and a \(DropRate.percent(rate - rate.rounded(.down))) chance of one more") : "")
+              : "\(name): not dropped by this mob yet")
         .accessibilityLabel("\(name), \(report.perKill(mob, n).percent) per kill")
     }
 

@@ -114,6 +114,19 @@ enum LootProfileTests {
         check(now.map { near($0.state.potion, 30.1) && near($0.state(at: 140).potion, 20.1) } == true &&
               now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"] && now?.state.crucible == true, "your boosts now")
         check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5 * 1.1) } == true, "your multiplier now")
+
+        // Double drops (issue #62): every copy counts, so a sure drop at ×2 (2 copies a kill) reads 100%, and over 100% shows as is.
+        var doubles = DropReport()
+        doubles.kills[mob] = 20; doubles.weight[mob] = 40
+        doubles.copies[mob] = [1: 40, 2: 2, 3: 52]; doubles.killsWith[mob] = [1: Set(1...20), 2: [5, 9], 3: Set(1...20)]
+        check(doubles.copies(mob, [.item(1)]) == 40 && doubles.killsWith(mob, [.item(1)]) == 20 && doubles.perKill(mob, 40).rate == 1,
+              "a sure drop at ×2: 2 copies a kill, 100%")
+        check(near(doubles.perKill(mob, doubles.copies(mob, [.item(2)])).rate, 2.0 / 40), "a single drop's base rate is unchanged")
+        check(near(doubles.perKill(mob, doubles.copies(mob, [.item(3)])).rate, 1.3), "no cap: 130% is one sure and a 30% chance of a second")
+        let tab = DropRatesModel()
+        tab.update(now: now)
+        let sure = doubles.perKill(mob, 40)
+        check(tab.yours(sure, mob, at: 130).map { $0 > 1 } == true, "yours isn't capped either")
         let json = """
             {"characters": {"characters": [
               {"char_id": 1, "class_id": 782, "level": 20, "seasonal": true, "crucible_active": true, "loot_boost_secs": 0,
