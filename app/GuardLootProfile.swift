@@ -97,8 +97,8 @@ struct LootState: Equatable {
     var potion: Double = 0          // seconds left on the Loot Drop Potion (stat 67)
     var tier: Double = 0            // seconds left on the Loot Tier Potion (stat 68): better tiers, not more drops
     var enchants: [[Int]]?          // your four equipment slots' enchantment ids; nil before the capture had them
-    /// Nil: not captured. Stat 128 never arrives, so it isn't the crucible; the client keeps it in CruciblesManager,
-    /// which needs a hook of its own. Only a known crucible counts.
+    /// Stat 128: a text while the Crucible is on (RealmHound reads it the same way). Nil: not heard yet, as on the
+    /// first map after launch. Only a known crucible counts.
     var crucible: Bool?
     var ritual = 0                  // stat 155, the Blood Ritual's tier
     var modifiers: [String] = []    // the map's dungeon modifiers
@@ -115,6 +115,10 @@ struct LootTimeline {
     var stats: [Int: [(time: Double, value: Int)]] = [:]
     var gear: [(time: Double, text: String)] = []   // your stat 80
     var modifiers: [String] = []
+    /// Stat 128 readings: text (on) or an int (off). `heard` says the map's first full reading came, with stat 128
+    /// in it when the Crucible is on, so no reading means off there; without it, unknown.
+    var crucible: [(time: Double, on: Bool)] = []
+    var heard = false
 
     func last(_ stat: Int, at time: Double) -> (time: Double, value: Int)? { stats[stat]?.last { $0.time <= time } }
     /// The state at `time`. A timer counts down from its last reading unless `ticking` is off (a safe zone pauses it).
@@ -126,6 +130,7 @@ struct LootTimeline {
         }
         return LootState(potion: left(67), tier: left(68),
                          enchants: gear.last { $0.time <= time }.map { Enchantments.ids($0.text).prefix(4).map { $0 ?? [] } },
+                         crucible: crucible.last { $0.time <= time }?.on ?? (heard ? false : nil),
                          ritual: last(155, at: time)?.value ?? 0,
                          modifiers: modifiers)
     }
@@ -159,8 +164,8 @@ struct LootNow: Equatable {
         return s
     }
 
-    /// The newest session whose game still runs, or nil. `realmHound` is the character RealmHound saw last: it gives
-    /// the Crucible, and fills what the guard hasn't captured yet (the first map, before the guard's hooks are in).
+    /// The newest session whose game still runs, or nil. `realmHound` is the character RealmHound saw last, if it runs:
+    /// it only fills what the guard hasn't captured yet (the first map, before the guard's hooks are in).
     static func load(_ store: DropRateStore, now: Double = Date().timeIntervalSince1970, realmHound: RealmHoundLive? = nil,
                      alive: (Int) -> Bool = { kill(pid_t($0), 0) == 0 || errno == EPERM }) -> LootNow? {
         var session: Int64 = 0, pid = 0, status = "", started = 0.0
@@ -189,7 +194,13 @@ struct LootNow: Equatable {
         store.run("""
             SELECT t.time, t.text FROM player_texts t JOIN maps m ON m.id = t.map WHERE m.session = ? AND t.stat_type = 80 ORDER BY t.time
             """, [session]) { line.gear.append((sqlite3_column_double($0, 0), String(cString: sqlite3_column_text($0, 1)))) }
-        store.run("SELECT coalesce(info_58, '') FROM map_info WHERE map = ?", [map]) { line.modifiers = LootMath.modifiers(String(cString: sqlite3_column_text($0, 0))) }
+        store.run("""
+            SELECT time, 1 FROM player_texts WHERE map = ?1 AND stat_type = 128
+            UNION ALL SELECT time, 0 FROM player_stats WHERE map = ?1 AND stat_type = 128 ORDER BY 1
+            """, [map]) { line.crucible.append((sqlite3_column_double($0, 0), sqlite3_column_int64($0, 1) != 0)) }
+        store.run("SELECT coalesce(info_58, ''), class FROM map_info WHERE map = ?", [map]) {
+            line.modifiers = LootMath.modifiers(String(cString: sqlite3_column_text($0, 0))); line.heard = sqlite3_column_int64($0, 1) != 0
+        }
         store.run("""
             SELECT i.class FROM map_info i JOIN maps m ON m.id = i.map WHERE m.session = ? AND i.class <> 0 ORDER BY i.map DESC LIMIT 1
             """, [session]) { n.classType = Int(sqlite3_column_int64($0, 0)) }
@@ -199,7 +210,7 @@ struct LootNow: Equatable {
         n.equipment = (8...11).map { latest[$0] ?? -1 }
         // RealmHound's character counts if it was seen during this game and is the class the guard saw (when it saw one).
         if let rh = realmHound, rh.seen >= started - 60, n.classType == 0 || n.classType == rh.classType {
-            n.state.crucible = rh.crucible
+            if n.state.crucible == nil { n.state.crucible = rh.crucible }
             if n.classType == 0 { n.classType = rh.classType }
             if latest[7] == nil { n.level = rh.level }
             if latest[24] == nil { n.seasonal = rh.seasonal }

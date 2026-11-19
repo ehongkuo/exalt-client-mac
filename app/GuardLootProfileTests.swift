@@ -50,6 +50,13 @@ enum LootProfileTests {
               near(all.multiplier(catalog, labels: [], inDungeon: false), 1.5 * 1.03 * 1.1 * 1.25), "every factor multiplies; the dungeon's only inside")
         check(LootState().multiplier(catalog, labels: []) == 1, "nothing on: ×1")
 
+        var cru = LootTimeline()
+        check(cru.state(at: 10).crucible == nil, "Crucible: nothing heard, unknown")
+        cru.heard = true
+        check(cru.state(at: 10).crucible == false, "Crucible: the map's stats came without stat 128, off")
+        cru.crucible = [(5, true), (20, false)]
+        check(cru.state(at: 10).crucible == true && cru.state(at: 30).crucible == false, "Crucible: text on, then an empty one off")
+
         let gear = [slot([0x5B1]), slot([]), "", slot([0x5B1, 0x22])].joined(separator: ",")
         check(Enchantments.ids(gear) == [[0x5B1], [], nil, [0x5B1, 0x22]] && Enchantments.counts(gear) == [1, 0, nil, 2], "ids per slot")
         var line = LootTimeline()
@@ -73,6 +80,7 @@ enum LootProfileTests {
             map\t100.000\t1\tAbyss of Demons
             map_info\t100.100\t1\t782\t0\t0\t0\t0\t0\t0\t0\tAbyss\tx\tLOOTING;|D
             player_stat\t100.100\t1\t67\t60
+            player_stat\t100.100\t1\t128\t0\tS31
             player_stat\t100.100\t1\t7\t20
             player_stat\t100.100\t1\t24\t1
             player_stat\t100.100\t1\t8\t2712
@@ -92,20 +100,20 @@ enum LootProfileTests {
 
         let report = DropReport.load(store, catalog: catalog)
         let mob = DropReport.Mob(type: 3340, dungeon: "Abyss of Demons")
-        // Kill 1: potion on (×1.5), gear +1.5%, Looting ×1.5. Kill 2: the potion ran out at 160.
-        let weight = 1.5 * 1.015 * 1.5 + 1.015 * 1.5
+        // Kill 1: potion on (×1.5), gear +1.5%, Looting ×1.5, Crucible ×1.1. Kill 2: the potion ran out at 160.
+        let weight = (1.5 * 1.015 * 1.5 + 1.015 * 1.5) * 1.1
         check(report.kills[mob] == 2 && near(report.weight[mob] ?? 0, weight) && report.gearUnknown == 0, "each kill counts as its multiplier")
         let base = report.perKill(mob, 1)
         check(near(base.rate, 1 / weight) && base.precision == nil && near(base.range.upperBound, DropRate(count: 1, of: 2).range.upperBound * 2 / weight),
               "base rate: drops ÷ the kills' multipliers")
-        check(DropReport.load(store).weight[mob].map { near($0, 2.5) } == true, "no game data: only the potion counts")
+        check(DropReport.load(store).weight[mob].map { near($0, 2.5 * 1.1) } == true, "no game data: only the potion and Crucible count")
 
         let now = LootNow.load(store, now: 130, alive: { _ in true })
         check(now?.map == "Abyss of Demons" && now?.classType == 782 && now?.level == 20 && now?.seasonal == true && now?.safe == false &&
               now?.equipment == [2712, -1, -1, -1], "who you are, from your stats")
         check(now.map { near($0.state.potion, 30.1) && near($0.state(at: 140).potion, 20.1) } == true &&
-              now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"], "your boosts now")
-        check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5) } == true, "your multiplier now")
+              now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"] && now?.state.crucible == true, "your boosts now")
+        check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5 * 1.1) } == true, "your multiplier now")
         let json = """
             {"characters": {"characters": [
               {"char_id": 1, "class_id": 782, "level": 20, "seasonal": true, "crucible_active": true, "loot_boost_secs": 0,
@@ -116,12 +124,9 @@ enum LootProfileTests {
         let rh = RealmHoundLive.parse(Data(json.utf8))
         check(rh == RealmHoundLive(classType: 782, level: 20, seasonal: true, crucible: true, potion: 0, equipment: [2712, -1, 7, 8],
                                    enchants: [[1457], [], [], []], seen: 99), "RealmHound's live character: the newest live update")
-        check(LootNow.load(store, now: 130, realmHound: rh, alive: { _ in true })?.state.crucible == true &&
-              near(LootNow.load(store, now: 130, realmHound: rh, alive: { _ in true })!.state.potion, 30.1), "Crucible from RealmHound; the guard's own readings win")
-        var other = rh!; other.classType = 784
-        check(LootNow.load(store, now: 130, realmHound: other, alive: { _ in true })?.state.crucible == nil, "another class: not this character")
-        var old = rh!; old.seen = 0
-        check(LootNow.load(store, now: 130, realmHound: old, alive: { _ in true })?.state.crucible == nil, "seen before this game: stale")
+        var off = rh!; off.crucible = false; off.potion = 999
+        check(LootNow.load(store, now: 130, realmHound: off, alive: { _ in true }).map { $0.state.crucible == true && near($0.state.potion, 30.1) } == true,
+              "the guard's own readings win over RealmHound's")
         // The first map: the guard's hooks went in after you loaded, so RealmHound fills in everything.
         let first = folder.appendingPathComponent("first")
         try! FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
@@ -134,6 +139,12 @@ enum LootProfileTests {
         check(filled?.classType == 782 && filled?.level == 20 && filled?.seasonal == true && filled?.equipment == [2712, -1, 7, 8] &&
               filled?.state.enchants == [[1457], [], [], []] && filled?.state.potion == 1192 && filled?.state.crucible == true,
               "first map: class, gear, enchantments, potion and Crucible from RealmHound")
+        check(LootNow.load(firstStore, now: 130, alive: { _ in true })?.state.crucible == nil, "first map, no RealmHound: Crucible unknown")
+        var other = rh!; other.classType = 784
+        check(LootNow.load(firstStore, now: 130, realmHound: other, alive: { _ in true })?.state.crucible == true &&
+              LootNow.load(firstStore, now: 130, realmHound: other, alive: { _ in true })?.classType == 784, "the guard saw no class: any class fills")
+        var old = rh!; old.seen = 0
+        check(LootNow.load(firstStore, now: 130, realmHound: old, alive: { _ in true })?.state.crucible == nil, "seen before this game: stale")
         check(LootNow.load(store, now: 130, alive: { _ in false }) == nil, "no game running: nothing live")
         store.run("UPDATE sessions SET status = 'complete'")
         check(LootNow.load(store, now: 130, alive: { _ in true }) == nil, "a finished game isn't live")

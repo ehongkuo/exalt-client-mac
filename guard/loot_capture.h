@@ -131,7 +131,9 @@ static void loot_prepare(const void *game) {
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
 static int32_t loot_player_values[256];
 static uint8_t loot_player_known[256];
-static char loot_player_gear[sizeof ((LootEvent *)0)->text];   /* stat 80 as last written; loot_player_known[80] says it's set */
+/* Your text stats as last written; loot_player_known says which are set. Stat 80 is your gear's enchantments, stat 128
+ * your Crucible (non-empty when it's on, as RealmHound reads it); the rest are kept raw (issue #58). */
+static char loot_player_texts[256][sizeof ((LootEvent *)0)->text];
 /* Ids restart with each map, so hits, waiting bags and kills are forgotten when the server gives
  * you a new object id. The seen bags are per map already. */
 static void loot_new_map(void) {
@@ -238,18 +240,18 @@ static void loot_status(void *connection, void *status) {
         il2cpp_field_get_value(stats[i], loot_stat_type_field, &stat);
         void *text = read_reference(stats[i], loot_stat_text_field);
         if (!loot_player_stat_kept(stat)) continue;
-        if (text && il2cpp_string_length(text) > 0) {   /* text stats: only your gear's enchantments (issue #58) */
-            if (stat != 80) continue;
+        if (text && il2cpp_string_length(text) > 0) {
             LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, 0}};
             read_text(text, e.text, sizeof e.text);
-            loot_gear_parts(e.text);
-            if (loot_player_known[stat] && !strcmp(loot_player_gear, e.text)) continue;
+            if (stat == 80) loot_gear_parts(e.text);
+            if (loot_player_known[stat] && !strcmp(loot_player_texts[stat], e.text)) continue;
             loot_player_known[stat] = 1;
-            memcpy(loot_player_gear, e.text, sizeof loot_player_gear);
+            memcpy(loot_player_texts[stat], e.text, sizeof e.text);
             loot_push(&loot_ring, &e);
             continue;
         }
         il2cpp_field_get_value(stats[i], loot_stat_int_field, &value);
+        if (loot_player_texts[stat][0]) { loot_player_texts[stat][0] = 0; loot_player_known[stat] = 0; }   /* text went empty: write it */
         if (loot_player_known[stat] && loot_player_values[stat] == value) continue;
         loot_player_known[stat] = 1; loot_player_values[stat] = value;
         LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, value}};

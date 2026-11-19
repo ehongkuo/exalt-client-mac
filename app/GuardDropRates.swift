@@ -677,7 +677,13 @@ struct DropReport: Equatable {
         store.run("SELECT map, time, text FROM player_texts WHERE stat_type = 80 ORDER BY time") {
             lines[int($0, 0), default: LootTimeline()].gear.append((sqlite3_column_double($0, 1), text($0, 2)))
         }
-        store.run("SELECT map, coalesce(info_58, '') FROM map_info") { lines[int($0, 0), default: LootTimeline()].modifiers = LootMath.modifiers(text($0, 1)) }
+        store.run("""
+            SELECT map, time, 1 FROM player_texts WHERE stat_type = 128 UNION ALL SELECT map, time, 0 FROM player_stats WHERE stat_type = 128 ORDER BY 2
+            """) { lines[int($0, 0), default: LootTimeline()].crucible.append((sqlite3_column_double($0, 1), int($0, 2) != 0)) }
+        store.run("SELECT map, coalesce(info_58, ''), class FROM map_info") {
+            lines[int($0, 0), default: LootTimeline()].modifiers = LootMath.modifiers(text($0, 1))
+            lines[int($0, 0), default: LootTimeline()].heard = int($0, 2) != 0
+        }
         store.run("""
             SELECT k.map, k.time, k.mob_type, coalesce(m.name, ''), coalesce(o.labels, '') FROM kills k JOIN maps m ON m.id = k.map
             LEFT JOIN objects o ON o.type = k.mob_type WHERE \(died)
