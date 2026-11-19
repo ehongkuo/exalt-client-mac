@@ -262,7 +262,7 @@ struct DropRatesView: View {
         let anyDropped = tile.items.contains { report.variants($0).contains(where: dropped.contains) }
         switch tile {
         case .item(let item):
-            let name = report.name(item), shiny = report.variants(item).count > 1
+            let name = report.name(item), shiny = report.variants(item).contains { report.shinyOf[$0] != nil }
             Button { model.group = nil; model.item = model.item == item ? nil : item } label: {
                 SpriteIcon(image: model.sprites[item], size: 32).opacity(anyDropped ? 1 : 0.35).padding(4)
                     .background(tileBackground(model.item == item && model.group == nil))
@@ -334,7 +334,7 @@ struct DropRatesView: View {
     /// One item, from every dungeon: its bag, where it drops (one box per dungeon, surest first, with each mob), its
     /// shiny, and the rarity of every copy.
     private func itemPane(_ item: Int) -> some View {
-        let types = report.variants(item), shinies = types.subtracting([item])
+        let types = report.variants(item), shinies = types.filter { report.shinyOf[$0] != nil }
         let sources = model.stable("sources", report.sources(types)) { $0.runsWith + $0.mobs.values.reduce(0, +) }
         let total = types.reduce(0) { $0 + report.dropped($1) }
         let possible = report.dungeons.filter { report.possibleDrops($0).contains(item) }.map(\.name)

@@ -458,6 +458,7 @@ struct DropReport: Equatable {
     var bags: [Int: DropBag] = [:]                  // item → the bag the catalog puts it in (<BagType>)
     var tiers: [Int: Int] = [:], slots: [Int: Int] = [:]   // item → <Tier>, <SlotType>
     var shinyOf: [Int: Int] = [:]                   // shiny item → its base item ("X Shiny" → "X", by the id)
+    var stackOf: [Int: Int] = [:]                   // a stack of a material → its smallest stack ("X x3" → "X x1", by the id)
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -581,6 +582,16 @@ struct DropReport: Equatable {
             if let family = Self.catalogFamilies[text($0, 1)] { r.mobTiers[int($0, 0), default: []].insert(Group(tier: int($0, 2), family: family)) }
         }
         store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
+        let row = { (stmt: OpaquePointer) in
+            let type = int(stmt, 0)
+            r.names[type] = text(stmt, 1)
+            if sqlite3_column_type(stmt, 5) != SQLITE_NULL, let bag = DropBag(bagType: int(stmt, 5)) { r.bags[type] = bag }
+            if sqlite3_column_type(stmt, 6) != SQLITE_NULL { r.origins[type] = text(stmt, 6) }
+            if int(stmt, 2) != 0 { r.bosses.insert(type) }
+            if sqlite3_column_type(stmt, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text(stmt, 3), index: int(stmt, 4)) }
+            if sqlite3_column_type(stmt, 7) != SQLITE_NULL { r.tiers[type] = int(stmt, 7) }
+            if sqlite3_column_type(stmt, 8) != SQLITE_NULL { r.slots[type] = int(stmt, 8) }
+        }
         store.run("""
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL FROM objects
             WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) UNION ALL
@@ -589,18 +600,20 @@ struct DropReport: Equatable {
                 OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
                 OR name IN (SELECT name || ' Shiny' FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
-            """) {
-            let type = int($0, 0)
-            r.names[type] = text($0, 1)
-            if sqlite3_column_type($0, 5) != SQLITE_NULL, let bag = DropBag(bagType: int($0, 5)) { r.bags[type] = bag }
-            if sqlite3_column_type($0, 6) != SQLITE_NULL { r.origins[type] = text($0, 6) }
-            if int($0, 2) != 0 { r.bosses.insert(type) }
-            if sqlite3_column_type($0, 3) != SQLITE_NULL { r.textures[type] = GameTexture(file: text($0, 3), index: int($0, 4)) }
-            if sqlite3_column_type($0, 7) != SQLITE_NULL { r.tiers[type] = int($0, 7) }
-            if sqlite3_column_type($0, 8) != SQLITE_NULL { r.slots[type] = int($0, 8) }
-        }
+            """, row: row)
         store.run("SELECT s.type, b.type FROM items s JOIN items b ON s.name = b.name || ' Shiny'") { r.shinyOf[int($0, 0)] = int($0, 1) }
         store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
+        r.stackOf = Self.stacks(store)
+        // A folded tile shows its smallest stack, which may never have dropped itself (only "x3" did): load its row too.
+        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).filter { r.names[$0] == nil }
+        if !missing.isEmpty {
+            store.run("""
+                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
+                WHERE type IN (\(missing.map(String.init).joined(separator: ",")))
+                """, row: row)
+        }
+        // The folded tile stands for every stack size, so its name drops "x1" (Divine Coin x1 → Divine Coin).
+        for base in Set(r.stackOf.values) { if let n = r.names[base], n.hasSuffix(" x1") { r.names[base] = String(n.dropLast(3)) } }
         for item in r.tiers.keys where r.shinyOf[item] == nil && !r.name(item).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name(item)) {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
@@ -654,10 +667,28 @@ struct DropReport: Equatable {
         let dungeon = bosses.contains(mob.type) ? dungeons.first { $0.name == mob.dungeon } : nil
         return Set((copies[mob] ?? [:]).keys).union(catalogDrops(mob)).union(dungeon.map(tagged) ?? [])
     }
-    /// An item's base: a shiny's plain item, else the item itself. Shinies show as their base item's tile.
-    func base(_ item: Int) -> Int { shinyOf[item] ?? item }
-    /// An item and its shiny.
-    func variants(_ item: Int) -> Set<Int> { Set(shinyOf.filter { $0.value == item }.keys).union([item]) }
+    /// An item's base: a shiny's plain item, a stack's smallest stack, else the item itself. They show as the base's tile.
+    func base(_ item: Int) -> Int { shinyOf[item] ?? stackOf[item] ?? item }
+    /// An item, its shiny and its other stack sizes.
+    func variants(_ item: Int) -> Set<Int> {
+        Set(shinyOf.filter { $0.value == item }.keys).union(stackOf.filter { $0.value == item }.keys).union([item])
+    }
+    /// The game has one item per stack size of a material ("Adamantine Ingot x1" … "x10", one display name): each
+    /// larger stack → the smallest one.
+    static func stacks(_ store: DropRateStore) -> [Int: Int] {
+        var sizes: [String: [(n: Int, type: Int)]] = [:]
+        store.run("SELECT type, name FROM items WHERE name GLOB '* x[0-9]*'") {
+            let name = String(cString: sqlite3_column_text($0, 1))
+            guard let cut = name.range(of: " x", options: .backwards), let n = Int(name[cut.upperBound...]) else { return }
+            sizes[String(name[..<cut.lowerBound]), default: []].append((n, Int(sqlite3_column_int64($0, 0))))
+        }
+        var out: [Int: Int] = [:]
+        for list in sizes.values where list.count > 1 {
+            let smallest = list.min { $0.n < $1.n }!.type
+            for s in list where s.type != smallest { out[s.type] = smallest }
+        }
+        return out
+    }
     /// Runs in a dungeon with at least one copy of any of the items.
     func runsWith(_ dungeon: String, _ items: Set<Int>) -> Int {
         items.reduce(into: Set<Int>()) { $0.formUnion(runMaps[dungeon]?[$1] ?? []) }.count

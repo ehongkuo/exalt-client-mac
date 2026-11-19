@@ -258,6 +258,17 @@ enum DropRateTests {
         let weapons = DropReport.Group(tier: 12, family: .weapons)
         check(tiled.base(802) == 800 && tiled.variants(800) == [800, 802] && tiled.group(802) == weapons && tiled.group(9) == nil,
               "a shiny's base, and its group")
+        check(rates.exec("""
+            INSERT INTO items(type, name) VALUES (804, 'Test Ingot x1'), (805, 'Test Ingot x2'), (806, 'Test Ingot x10'), (807, 'Lone x2');
+            INSERT INTO bags(id, map, time, bag_type, kill) VALUES (9, 99, 5, 1280, 9);
+            INSERT INTO bag_items(bag, slot, item_type) VALUES (9, 0, 805), (9, 1, 807);
+            """),
+              "stack rows")
+        let stacked = DropReport.load(rates)
+        check(stacked.base(805) == 804 && stacked.base(806) == 804 && stacked.base(807) == 807 && stacked.variants(804) == [804, 805, 806]
+              && stacked.name(804) == "Test Ingot" && stacked.name(807) == "Lone x2",   // only x2 dropped: x1's row is loaded
+              "a material's stack sizes fold into its smallest stack")
+        check(stacked.tiles([805, 806]).values.joined().count == 1 && stacked.variants(800) == [800, 802], "one tile for every stack size")
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
