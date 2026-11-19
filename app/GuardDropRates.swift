@@ -611,9 +611,11 @@ struct DropReport: Equatable {
         store.run("SELECT type FROM items WHERE labels LIKE '%,SUBTYPE,%'") { r.subtypes.insert(int($0, 0)) }
         r.stackOf = Self.stacks(store)
         store.run("SELECT blueprint, item FROM blueprints ORDER BY item") { if r.names[int($0, 0)] != nil { r.unlocks[int($0, 0), default: []].append(int($0, 1)) } }
-        // Rows shown but maybe never dropped: a folded tile's smallest stack (only "x3" dropped), and what a blueprint
-        // unlocks (its name and sprite on the blueprint's page).
-        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).union(r.unlocks.values.joined()).filter { r.names[$0] == nil }
+        // Rows shown but maybe never dropped: a folded tile's smallest stack (only "x3" dropped), what a blueprint
+        // unlocks (its name and sprite on the blueprint's page), and the shiny of an item only the catalog lists (the
+        // query above finds shinies of dropped or tagged items only).
+        let missing = Set(r.stackOf.filter { r.names[$0.key] != nil }.values).union(r.unlocks.values.joined())
+            .union(r.shinyOf.filter { r.names[$0.value] != nil }.keys).filter { r.names[$0] == nil }
         if !missing.isEmpty {
             store.run("""
                 SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type FROM items
