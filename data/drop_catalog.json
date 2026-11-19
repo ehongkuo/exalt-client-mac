@@ -117,13 +117,22 @@
    "name": "Battle for the Nexus",
    "portal": "0x075e",
    "realmeye": "battle-for-the-nexus",
-   "mobs": []
+   "mobs": [
+    "0x718e",
+    "0x718f",
+    "0x719a",
+    "0x719c",
+    "0x719d",
+    "0x719e"
+   ]
   },
   {
    "name": "Beachzone",
    "portal": "0x0742",
    "realmeye": "beachzone",
-   "mobs": []
+   "mobs": [
+    "0x0e56"
+   ]
   },
   {
    "name": "Belladonna's Garden",
@@ -153,10 +162,14 @@
     "0x5e33",
     "0x5e34",
     "0x5e35",
+    "0x5e36",
     "0x5e37",
     "0x5e38",
     "0x5e39",
+    "0x5e3e",
+    "0x5e40",
     "0x5e41",
+    "0x5e42",
     "0x5e44",
     "0x5e45",
     "0x5e46",
@@ -168,7 +181,17 @@
    "name": "Cave of A Thousand Treasures",
    "portal": "0x5e2e",
    "realmeye": "cave-of-a-thousand-treasures",
-   "mobs": []
+   "mobs": [
+    "0x1e17",
+    "0x5e1d",
+    "0x5e2a",
+    "0x5e2b",
+    "0x5e2c",
+    "0x5e3a",
+    "0x5e3c",
+    "0x5e3d",
+    "0x5e4a"
+   ]
   },
   {
    "name": "Chess",
@@ -180,13 +203,22 @@
    "name": "Cnidarian Reef",
    "portal": "0x09fa",
    "realmeye": "cnidarian-reef",
-   "mobs": []
+   "mobs": [
+    "0x09f3",
+    "0x09f4",
+    "0x09f5",
+    "0x09f7",
+    "0x09f8"
+   ]
   },
   {
    "name": "Court of Oryx",
    "portal": "0x2001",
    "realmeye": "court-of-oryx",
-   "mobs": []
+   "mobs": [
+    "0xc05b",
+    "0xc061"
+   ]
   },
   {
    "name": "Crystal Cavern",
@@ -305,6 +337,9 @@
    "portal": "0x075d",
    "realmeye": "deadwater-docks",
    "mobs": [
+    "0x026c",
+    "0x026d",
+    "0x026e",
     "0x05f1",
     "0x05f2",
     "0x05f3",
@@ -361,7 +396,17 @@
    "name": "Forbidden Jungle",
    "portal": "0x0733",
    "realmeye": "forbidden-jungle",
-   "mobs": []
+   "mobs": [
+    "0x0dc3",
+    "0x0dcc",
+    "0x0dcd",
+    "0x0dce",
+    "0x0dcf",
+    "0x0dd0",
+    "0x0dd1",
+    "0x0dd2",
+    "0x0dd3"
+   ]
   },
   {
    "name": "Forest Maze",
@@ -384,10 +429,71 @@
     "0x159e",
     "0x159f",
     "0x15a0",
+    "0xb270",
+    "0xb272",
+    "0xb274",
+    "0xb275",
     "0xb28f",
+    "0xb290",
+    "0xb291",
+    "0xb292",
+    "0xb293",
+    "0xb297",
+    "0xb298",
+    "0xb299",
+    "0xb29a",
+    "0xb29c",
+    "0xb29d",
+    "0xb29e",
+    "0xb29f",
+    "0xb2a0",
     "0xb2a1",
     "0xb2a2",
-    "0xb2a3"
+    "0xb2a3",
+    "0xb2a9",
+    "0xb2aa",
+    "0xb2ab",
+    "0xb2ac",
+    "0xb2ad",
+    "0xb2ae",
+    "0xb2af",
+    "0xb2b0",
+    "0xb2b1",
+    "0xb2b2",
+    "0xb2b3",
+    "0xb2b4",
+    "0xb2b5",
+    "0xb2b6",
+    "0xb304",
+    "0xb306",
+    "0xb308",
+    "0xb502",
+    "0xb503",
+    "0xb504",
+    "0xb505",
+    "0xb506",
+    "0xb507",
+    "0xb508",
+    "0xb50a",
+    "0xb50b",
+    "0xb50c",
+    "0xb50d",
+    "0xb50e",
+    "0xb50f",
+    "0xb510",
+    "0xb511",
+    "0xb512",
+    "0xb513",
+    "0xb514",
+    "0xb515",
+    "0xb516",
+    "0xb517",
+    "0xb518",
+    "0xb519",
+    "0xb51a",
+    "0xb51b",
+    "0xb51c",
+    "0xb51d"
    ]
   },
   {
@@ -448,13 +554,56 @@
    "name": "Hidden Interregnum",
    "portal": "0xc268",
    "realmeye": "hidden-interregnum",
-   "mobs": []
+   "mobs": [
+    "0x388a",
+    "0x388d",
+    "0x43ef",
+    "0x4500",
+    "0x4501",
+    "0x4502",
+    "0x4503",
+    "0x4504",
+    "0x4505",
+    "0x4506",
+    "0x47aa",
+    "0x74ad",
+    "0x74ae",
+    "0x74af",
+    "0x74b0",
+    "0xc22b",
+    "0xc22c",
+    "0xc235",
+    "0xc236",
+    "0xc241",
+    "0xc242",
+    "0xc24f",
+    "0xc25b",
+    "0xc276",
+    "0xca62",
+    "0xca63",
+    "0xca64",
+    "0xca65"
+   ]
   },
   {
    "name": "High Tech Terror",
    "portal": "0x3d72",
    "realmeye": "high-tech-terror",
-   "mobs": []
+   "mobs": [
+    "0x099a",
+    "0x2f43",
+    "0x2f44",
+    "0x2f45",
+    "0x2f46",
+    "0x2f47",
+    "0x2f48",
+    "0x2f49",
+    "0x2f4a",
+    "0x2f50",
+    "0x3d68",
+    "0x3d7b",
+    "0x3d7c"
+   ]
   },
   {
    "name": "Ice Citadel",
@@ -501,13 +650,42 @@
    "name": "Ice Tomb",
    "portal": "0x7fb8",
    "realmeye": "ice-tomb",
-   "mobs": []
+   "mobs": [
+    "0x7fa7",
+    "0x7fab",
+    "0x7fac",
+    "0x7fad",
+    "0x7fae",
+    "0x7faf",
+    "0x7fb0",
+    "0x7fb1",
+    "0x7fb2",
+    "0x7fb3",
+    "0x7fb4",
+    "0x7fb5",
+    "0x7fb6",
+    "0x7fd0"
+   ]
   },
   {
    "name": "Katalund",
    "portal": "0xb2ce",
    "realmeye": "katalund",
-   "mobs": []
+   "mobs": [
+    "0xb307",
+    "0xb309",
+    "0xb30a",
+    "0xb30b",
+    "0xb30c",
+    "0xb30d",
+    "0xb315",
+    "0xb316",
+    "0xb317",
+    "0xb318",
+    "0xb319",
+    "0xb35e",
+    "0xb35f"
+   ]
   },
   {
    "name": "Kogbold Steamworks",
@@ -570,13 +748,60 @@
    "name": "Lair of Draconis",
    "portal": "0xb217",
    "realmeye": "lair-of-draconis",
-   "mobs": []
+   "mobs": [
+    "0x02eb",
+    "0x742e",
+    "0x742f",
+    "0x7432",
+    "0x7434",
+    "0x7504",
+    "0x7531",
+    "0x7533",
+    "0x7534",
+    "0x7545",
+    "0x7546",
+    "0x754a",
+    "0x7551",
+    "0xb174",
+    "0xb17a",
+    "0xb17b",
+    "0xb17e",
+    "0xb182",
+    "0xb189",
+    "0xb18f",
+    "0xb190",
+    "0xb191",
+    "0xb1a0",
+    "0xb1a1",
+    "0xb1a2",
+    "0xb1a3",
+    "0xb1a4",
+    "0xb1a5",
+    "0xb21e",
+    "0xb241",
+    "0xb242",
+    "0xb243",
+    "0xb244",
+    "0xb24b",
+    "0xb24c",
+    "0xb24d",
+    "0xb24e",
+    "0xb25d",
+    "0xb261",
+    "0xb262"
+   ]
   },
   {
    "name": "Lair of Shaitan",
    "portal": "0x6d99",
    "realmeye": "lair-of-shaitan",
-   "mobs": []
+   "mobs": [
+    "0x6d97",
+    "0x6d9a",
+    "0x6e09",
+    "0x741b",
+    "0x7428"
+   ]
   },
   {
    "name": "Legacy Heroic Abyss of Demons",
@@ -743,6 +968,7 @@
    "portal": "0x0739",
    "realmeye": "manor-of-the-immortals",
    "mobs": [
+    "0x1720",
     "0x1722",
     "0x1727",
     "0x1728",
@@ -751,6 +977,7 @@
     "0x172b",
     "0x172c",
     "0x172d",
+    "0x1737",
     "0x1738"
    ]
   },
@@ -760,6 +987,11 @@
    "realmeye": "memory-of-the-infected",
    "mobs": [
     "0x1647",
+    "0xbed7",
+    "0xbed8",
+    "0xbed9",
+    "0xbeda",
+    "0xbedb",
     "0xbee6",
     "0xbef1",
     "0xbef2",
@@ -837,7 +1069,31 @@
    "name": "Neo Katalund",
    "portal": "0xdc64",
    "realmeye": "neo-katalund",
-   "mobs": []
+   "mobs": [
+    "0xb307",
+    "0xb309",
+    "0xb30a",
+    "0xb30b",
+    "0xb30c",
+    "0xb30d",
+    "0xb315",
+    "0xb316",
+    "0xb317",
+    "0xb318",
+    "0xdc4d",
+    "0xdc4e",
+    "0xdc4f",
+    "0xdc50",
+    "0xdc51",
+    "0xdc52",
+    "0xdc53",
+    "0xdc54",
+    "0xdc55",
+    "0xdc56",
+    "0xdc57",
+    "0xdc59",
+    "0xdc5a"
+   ]
   },
   {
    "name": "Neo Malogia",
@@ -873,7 +1129,39 @@
    "name": "Neo Untaris",
    "portal": "0xdc62",
    "realmeye": "neo-untaris",
-   "mobs": []
+   "mobs": [
+    "0xb2e6",
+    "0xb2e7",
+    "0xb2e8",
+    "0xb2e9",
+    "0xb2ea",
+    "0xb2eb",
+    "0xb2ec",
+    "0xb2ed",
+    "0xb2ef",
+    "0xb2f0",
+    "0xb2f1",
+    "0xb2f2",
+    "0xdc27",
+    "0xdc28",
+    "0xdc29",
+    "0xdc2a",
+    "0xdc2b",
+    "0xdc2c",
+    "0xdc2d",
+    "0xdc2e",
+    "0xdc2f",
+    "0xdc30",
+    "0xdc31",
+    "0xdc32",
+    "0xdc33",
+    "0xdc35",
+    "0xdc37",
+    "0xdc39",
+    "0xdc3a",
+    "0xdc60",
+    "0xdc9f"
+   ]
   },
   {
    "name": "Ocean Trench",
@@ -940,16 +1228,44 @@
    "portal": "0x0634",
    "realmeye": "oryx-s-chamber",
    "mobs": [
+    "0x054f",
+    "0x06dc",
+    "0x0932",
+    "0x0d46",
+    "0x0e17",
+    "0x1740",
+    "0x1741",
+    "0x1742",
+    "0x1743",
+    "0x1744",
+    "0x1745",
+    "0x1746",
+    "0x1747",
+    "0x1748",
+    "0x1749",
     "0x174a",
     "0x174b",
     "0x174c",
     "0x174d",
     "0x174e",
+    "0x713d",
+    "0x718e",
+    "0x79e4",
+    "0xb01a",
+    "0xb096",
+    "0xb133",
+    "0xb1dc",
+    "0xb1dd",
+    "0xb1de",
+    "0xb1e9",
+    "0xb395",
     "0xb39f",
     "0xb3a0",
     "0xb3a1",
     "0xb3a2",
-    "0xb3a3"
+    "0xb3a3",
+    "0xb3aa",
+    "0xb3ab"
    ]
   },
   {
@@ -977,6 +1293,7 @@
     "0x2748",
     "0x2749",
     "0x274a",
+    "0xb133",
     "0xb1e0",
     "0xb22d"
    ]
@@ -986,8 +1303,58 @@
    "portal": "0x0798",
    "realmeye": "parasite-chambers",
    "mobs": [
+    "0x0787",
+    "0x0788",
+    "0x0789",
+    "0x0790",
+    "0x0791",
+    "0x0793",
+    "0x0794",
+    "0x0795",
+    "0x07a4",
+    "0x07a5",
+    "0x07a6",
+    "0x07a7",
+    "0x07a8",
+    "0x07a9",
+    "0x07aa",
+    "0x07b6",
+    "0x07be",
     "0x07c0",
-    "0x07c1"
+    "0x07c1",
+    "0x07c6",
+    "0x07c7",
+    "0x07c8",
+    "0x07c9",
+    "0x0800",
+    "0x080f",
+    "0x081e",
+    "0x095a",
+    "0x095b",
+    "0x095c",
+    "0x095d",
+    "0x095e",
+    "0x095f",
+    "0x0f1c",
+    "0x0f1d",
+    "0x7306",
+    "0xb3a4",
+    "0xb3a5",
+    "0xb3ae",
+    "0xb3af",
+    "0xb3b0",
+    "0xb3b1",
+    "0xb3b2",
+    "0xb3b3",
+    "0xb3b4",
+    "0xb3b5",
+    "0xb3b6",
+    "0xb3b7",
+    "0xb3b8",
+    "0xb3b9",
+    "0xb3ba",
+    "0xb3bb",
+    "0xbf00"
    ]
   },
   {
@@ -1078,7 +1445,22 @@
    "name": "Puppet Master's Encore",
    "portal": "0x7466",
    "realmeye": "puppet-master-s-encore",
-   "mobs": []
+   "mobs": [
+    "0x054a",
+    "0x054b",
+    "0x054c",
+    "0x054d",
+    "0x7419",
+    "0x7433",
+    "0x7458",
+    "0x7465",
+    "0x7474",
+    "0x7489",
+    "0x748a",
+    "0x74a1",
+    "0x74a5",
+    "0x74a6"
+   ]
   },
   {
    "name": "Puppet Master's Theatre",
@@ -1091,6 +1473,7 @@
     "0x174d",
     "0x174e",
     "0x7433",
+    "0x7438",
     "0x743b",
     "0x7444",
     "0x7445",
@@ -1107,7 +1490,12 @@
    "name": "Queen Bunny Chamber",
    "portal": "0x0596",
    "realmeye": "queen-bunny-chamber",
-   "mobs": []
+   "mobs": [
+    "0x0595",
+    "0x0597",
+    "0x0598",
+    "0x059b"
+   ]
   },
   {
    "name": "Rainbow Road",
@@ -1340,6 +1728,7 @@
     "0x2668",
     "0x266e",
     "0x397a",
+    "0x41b4",
     "0x420b",
     "0x421e",
     "0x4225",
@@ -1354,6 +1743,8 @@
     "0x426c",
     "0x426d",
     "0x427b",
+    "0x43fa",
+    "0x43fb",
     "0x445f",
     "0x4485",
     "0x4544",
@@ -1722,7 +2113,11 @@
     "0xac7c",
     "0xac7e",
     "0xac84",
+    "0xb00f",
+    "0xb027",
     "0xb030",
+    "0xb132",
+    "0xb13a",
     "0xb198",
     "0xb1d1",
     "0xb1d4",
@@ -1810,7 +2205,18 @@
    "name": "Secluded Thicket",
    "portal": "0x369f",
    "realmeye": "secluded-thicket",
-   "mobs": []
+   "mobs": [
+    "0x36a6",
+    "0x36a7",
+    "0x36ad",
+    "0x36ae",
+    "0x36af",
+    "0x36b0",
+    "0x36b1",
+    "0x36b2",
+    "0x36ca",
+    "0x36cb"
+   ]
   },
   {
    "name": "Snake Pit",
@@ -1917,7 +2323,52 @@
    "name": "Spider Den",
    "portal": "0x0719",
    "realmeye": "spider-den",
-   "mobs": []
+   "mobs": [
+    "0x021b",
+    "0x021c",
+    "0x021d",
+    "0x021e",
+    "0x021f",
+    "0x0220",
+    "0x0936",
+    "0x0937",
+    "0x0938",
+    "0x0939",
+    "0x093a",
+    "0x093b",
+    "0x093c",
+    "0x093d",
+    "0x093e",
+    "0x093f",
+    "0x374c",
+    "0x3e02",
+    "0x3e03",
+    "0x3e04",
+    "0x3e05",
+    "0x3e06",
+    "0x3e07",
+    "0x3e08",
+    "0x3e09",
+    "0x3e0a",
+    "0x702b",
+    "0x702c",
+    "0x702d",
+    "0x702e",
+    "0x702f",
+    "0x703a",
+    "0x703b",
+    "0x703c",
+    "0x703d",
+    "0xcdca",
+    "0xcdcb",
+    "0xcdcc",
+    "0xcdcd",
+    "0xcdce",
+    "0xcdcf",
+    "0xcdd0",
+    "0xcdd1",
+    "0xcdd2"
+   ]
   },
   {
    "name": "Sprite World",
@@ -1946,7 +2397,8 @@
    "realmeye": "stoneborn-memory",
    "mobs": [
     "0xbbe1",
-    "0xbbe2"
+    "0xbbe2",
+    "0xbbf5"
    ]
   },
   {
@@ -1972,6 +2424,7 @@
     "0x63fa",
     "0x63fe",
     "0x65ae",
+    "0x6614",
     "0x6616",
     "0x6617",
     "0x6618",
@@ -2011,7 +2464,15 @@
    "name": "The Hive",
    "portal": "0x011d",
    "realmeye": "the-hive",
-   "mobs": []
+   "mobs": [
+    "0x0126",
+    "0x0127",
+    "0x0128",
+    "0x0129",
+    "0x0d44",
+    "0x0d45",
+    "0x0e46"
+   ]
   },
   {
    "name": "The Inner Workings",
@@ -2091,14 +2552,157 @@
    "realmeye": "the-shatters",
    "mobs": [
     "0x5e85",
-    "0x726a"
+    "0x710a",
+    "0x710b",
+    "0x710d",
+    "0x710e",
+    "0x711a",
+    "0x711b",
+    "0x711c",
+    "0x711d",
+    "0x711e",
+    "0x713c",
+    "0x713f",
+    "0x714b",
+    "0x715a",
+    "0x715d",
+    "0x716f",
+    "0x717e",
+    "0x717f",
+    "0x725c",
+    "0x725d",
+    "0x725e",
+    "0x725f",
+    "0x726a",
+    "0x726c",
+    "0x726d",
+    "0x727a",
+    "0x728a",
+    "0x728b",
+    "0x728c",
+    "0x729b",
+    "0x729c",
+    "0x729d",
+    "0x729e",
+    "0x730d",
+    "0x730e",
+    "0x730f",
+    "0x731e",
+    "0x731f",
+    "0x732a",
+    "0x732b",
+    "0x732c",
+    "0x733d",
+    "0x733f",
+    "0x80fb",
+    "0x80fc",
+    "0x80fd",
+    "0x80fe",
+    "0x80ff",
+    "0x8103",
+    "0x8104",
+    "0x810b",
+    "0x811e",
+    "0x811f",
+    "0x8120",
+    "0x8121",
+    "0x8160",
+    "0x816a",
+    "0x816b",
+    "0x816c",
+    "0x816d",
+    "0x816e",
+    "0x816f",
+    "0x8192",
+    "0x8193",
+    "0x8194",
+    "0x8195",
+    "0x8196",
+    "0x8197",
+    "0x8198",
+    "0x8199",
+    "0x819a",
+    "0x819b",
+    "0x819c",
+    "0x819d",
+    "0x819e",
+    "0x819f",
+    "0x81bc",
+    "0x81bd",
+    "0x81be",
+    "0x81c3",
+    "0x81c4",
+    "0x81de",
+    "0x81df",
+    "0x81fd",
+    "0x823e",
+    "0x823f",
+    "0x8240",
+    "0x8241",
+    "0x8242",
+    "0x826a",
+    "0x826c",
+    "0x82a5",
+    "0x8315",
+    "0x8316",
+    "0x8324",
+    "0x8325",
+    "0x8326",
+    "0x8327",
+    "0x8378",
+    "0xb677",
+    "0xb67a",
+    "0xb67b",
+    "0xb67c",
+    "0xb67f",
+    "0xb681",
+    "0xb682",
+    "0xb683",
+    "0xb688",
+    "0xb68a",
+    "0xb699",
+    "0xb6b3",
+    "0xb6c0",
+    "0xb6c1",
+    "0xb6c2"
    ]
   },
   {
    "name": "The Tavern",
    "portal": "0x4550",
    "realmeye": "the-tavern",
-   "mobs": []
+   "mobs": [
+    "0x4525",
+    "0x4526",
+    "0x4527",
+    "0x4528",
+    "0x4529",
+    "0x4551",
+    "0x4552",
+    "0x4553",
+    "0x4556",
+    "0x4557",
+    "0x4558",
+    "0x4559",
+    "0x455a",
+    "0x455b",
+    "0x455c",
+    "0x455d",
+    "0x455e",
+    "0x455f",
+    "0x4560",
+    "0x4561",
+    "0x4562",
+    "0x4563",
+    "0x4564",
+    "0x4565",
+    "0x4566",
+    "0x4567",
+    "0x4568",
+    "0x456d",
+    "0x456e",
+    "0x456f"
+   ]
   },
   {
    "name": "The Third Dimension",
@@ -2110,6 +2714,7 @@
     "0x0610",
     "0x420a",
     "0x420c",
+    "0x420d",
     "0x420e",
     "0x420f",
     "0x4219",
@@ -2193,6 +2798,7 @@
     "0xbac4",
     "0xbac5",
     "0xbac6",
+    "0xbac7",
     "0xbb15",
     "0xbb16",
     "0xbb18",
@@ -2204,13 +2810,25 @@
    "name": "The Void",
    "portal": "0xb013",
    "realmeye": "the-void",
-   "mobs": []
+   "mobs": [
+    "0xb014",
+    "0xb019",
+    "0xb023",
+    "0xb026",
+    "0xb150",
+    "0xb151",
+    "0xb152",
+    "0xb153"
+   ]
   },
   {
    "name": "Time Chamber",
    "portal": "0xcfbd",
    "realmeye": "time-chamber",
-   "mobs": []
+   "mobs": [
+    "0xc05b",
+    "0xc061"
+   ]
   },
   {
    "name": "Tomb of the Ancients",
@@ -2245,6 +2863,7 @@
     "0x0d2a",
     "0x0d2b",
     "0x0d2c",
+    "0x0d2d",
     "0x0d3a",
     "0x0d3b",
     "0x0d3c"
@@ -2256,6 +2875,7 @@
    "realmeye": "toxic-sewers",
    "mobs": [
     "0x017f",
+    "0x3a44",
     "0x714c",
     "0x714d",
     "0x714e",
@@ -2267,6 +2887,7 @@
     "0x7154",
     "0x7155",
     "0x7158",
+    "0x715f",
     "0x7163",
     "0x7165",
     "0x7168",
@@ -2326,7 +2947,40 @@
    "name": "Untaris",
    "portal": "0xb2b7",
    "realmeye": "untaris",
-   "mobs": []
+   "mobs": [
+    "0x1ad5",
+    "0x1ad6",
+    "0x1ad7",
+    "0x1ad8",
+    "0xb2e6",
+    "0xb2e7",
+    "0xb2e8",
+    "0xb2e9",
+    "0xb2ea",
+    "0xb2eb",
+    "0xb2ec",
+    "0xb2ed",
+    "0xb2ef",
+    "0xb2f0",
+    "0xb2f1",
+    "0xb2f2",
+    "0xb2f3",
+    "0xb352",
+    "0xb353",
+    "0xb354",
+    "0xb355",
+    "0xb35a",
+    "0xb35b",
+    "0xdc28",
+    "0xdc69",
+    "0xdc6a",
+    "0xdc6b",
+    "0xdc6c",
+    "0xdc6d",
+    "0xdc6e",
+    "0xdc6f",
+    "0xdc70"
+   ]
   },
   {
    "name": "White Snake Invasion I",
@@ -2411,13 +3065,18 @@
    "name": "White Snake Invasion III",
    "portal": "0xe9f0",
    "realmeye": "white-snake-invasion-iii",
-   "mobs": []
+   "mobs": [
+    "0xea12",
+    "0xea13",
+    "0xea14"
+   ]
   },
   {
    "name": "Wine Cellar",
    "portal": "0x0242",
    "realmeye": "wine-cellar",
    "mobs": [
+    "0x0932",
     "0x0944",
     "0x0de0",
     "0x0de1",
@@ -2459,6 +3118,19 @@
  ],
  "mobs": [
   {
+   "name": "A.E.G.I.S.",
+   "types": [
+    "0x3d7b",
+    "0x3d7c"
+   ],
+   "realmeye": "a-e-g-i-s",
+   "tiers": {},
+   "drops": [
+    "0x3794",
+    "0x3795"
+   ]
+  },
+  {
    "name": "Aberrant Blaster",
    "types": [
     "0x0de4"
@@ -2482,6 +3154,19 @@
     "0x0de0"
    ],
    "realmeye": "abomination-of-oryx",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Abundant Shield",
+   "types": [
+    "0x02eb",
+    "0x7545",
+    "0x7546",
+    "0xb25d",
+    "0xb262"
+   ],
+   "realmeye": "abundant-shield",
    "tiers": {},
    "drops": []
   },
@@ -2813,6 +3498,15 @@
    ]
   },
   {
+   "name": "Adult Basilisk",
+   "types": [
+    "0x36a7"
+   ],
+   "realmeye": "adult-basilisk",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Adult White Dragon",
    "types": [
     "0x0209",
@@ -3044,6 +3738,24 @@
    "drops": []
   },
   {
+   "name": "Ancient Stone Sword (Purple)",
+   "types": [
+    "0xbbf5"
+   ],
+   "realmeye": "ancient-stone-sword-purple",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Ancient Stone Sword (Red)",
+   "types": [
+    "0xbbf5"
+   ],
+   "realmeye": "ancient-stone-sword-red",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Animal Merchant",
    "types": [
     "0x5dd7"
@@ -3115,6 +3827,15 @@
    ]
   },
   {
+   "name": "Anti-Spectator",
+   "types": [
+    "0x1747"
+   ],
+   "realmeye": "anti-spectator",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Apparition",
    "types": [
     "0x1b9b",
@@ -3123,6 +3844,93 @@
    "realmeye": "apparition",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Aqua Artifact",
+   "types": [
+    "0x7fae",
+    "0x7faf",
+    "0x7fb0"
+   ],
+   "realmeye": "aqua-artifact",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Arachna Element",
+   "types": [
+    "0x0937",
+    "0x0938",
+    "0x0939",
+    "0x093a",
+    "0x093b",
+    "0x093c",
+    "0x093d",
+    "0x093e",
+    "0x093f",
+    "0x3e02",
+    "0x3e03",
+    "0x3e04",
+    "0x3e05",
+    "0x3e06",
+    "0x3e07",
+    "0x3e08",
+    "0x3e09",
+    "0x3e0a",
+    "0x702b",
+    "0x702c",
+    "0x702d",
+    "0x702e",
+    "0x702f",
+    "0x703a",
+    "0x703b",
+    "0x703c",
+    "0x703d",
+    "0xcdca",
+    "0xcdcb",
+    "0xcdcc",
+    "0xcdcd",
+    "0xcdce",
+    "0xcdcf",
+    "0xcdd0",
+    "0xcdd1",
+    "0xcdd2"
+   ],
+   "realmeye": "arachna-element",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Arachna the Spider Queen",
+   "types": [
+    "0x0936"
+   ],
+   "realmeye": "arachna-the-spider-queen",
+   "tiers": {
+    "ability": [
+     3
+    ],
+    "armor": [
+     5,
+     6
+    ],
+    "ring": [
+     3
+    ],
+    "weapon": [
+     5,
+     6,
+     7
+    ]
+   },
+   "drops": [
+    "0x0707",
+    "0x0708",
+    "0x0709",
+    "0x17fd",
+    "0x3745",
+    "0x7682"
+   ]
   },
   {
    "name": "Archbishop Leucoryx",
@@ -3208,6 +4016,30 @@
     "0x4b44",
     "0x767c",
     "0xea67"
+   ]
+  },
+  {
+   "name": "Archdemon Malphas Deux",
+   "types": [
+    "0x719c"
+   ],
+   "realmeye": "archdemon-malphas-deux",
+   "tiers": {},
+   "drops": [
+    "0x0cee"
+   ]
+  },
+  {
+   "name": "Archmage of Flame",
+   "types": [
+    "0x711c"
+   ],
+   "realmeye": "archmage-of-flame",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f4"
    ]
   },
   {
@@ -3358,6 +4190,15 @@
     "0x870b"
    ],
    "realmeye": "artificial-sprite-satellite",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Assassin of Oryx",
+   "types": [
+    "0x1741"
+   ],
+   "realmeye": "assassin-of-oryx",
    "tiers": {},
    "drops": []
   },
@@ -3531,6 +4372,15 @@
    ]
   },
   {
+   "name": "Avatar of the Accursed King",
+   "types": [
+    "0x713f"
+   ],
+   "realmeye": "avatar-of-the-accursed-king",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Avatar of the Forgotten King",
    "types": [
     "0x55c7",
@@ -3565,6 +4415,16 @@
     "0x2726",
     "0xb909"
    ]
+  },
+  {
+   "name": "Azure Soul Shard",
+   "types": [
+    "0x7531",
+    "0xb182"
+   ],
+   "realmeye": "azure-soul-shard",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Baby Jelleye",
@@ -3694,6 +4554,29 @@
    "drops": []
   },
   {
+   "name": "Basilisk",
+   "types": [
+    "0x0dcf"
+   ],
+   "realmeye": "basilisk",
+   "tiers": {},
+   "drops": [
+    "0x0a79",
+    "0x0c1a"
+   ]
+  },
+  {
+   "name": "Basilisk Baby",
+   "types": [
+    "0x0dce"
+   ],
+   "realmeye": "basilisk-baby",
+   "tiers": {},
+   "drops": [
+    "0x0a79"
+   ]
+  },
+  {
    "name": "Beach Spectre",
    "types": [
     "0x0e3d",
@@ -3743,6 +4626,19 @@
     "0x5e39"
    ],
    "realmeye": "beefy-fairy",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Beer Barrel",
+   "types": [
+    "0x4525",
+    "0x4526",
+    "0x4527",
+    "0x4528",
+    "0x4529"
+   ],
+   "realmeye": "beer-barrel",
    "tiers": {},
    "drops": []
   },
@@ -4021,6 +4917,28 @@
    "drops": []
   },
   {
+   "name": "Bilgewater's Booty (Bronze)",
+   "types": [
+    "0x026c",
+    "0x026d",
+    "0x026e"
+   ],
+   "realmeye": "bilgewater-s-booty",
+   "tiers": {},
+   "drops": [
+    "0x0a21",
+    "0x0a4c",
+    "0x0cdb",
+    "0x21db",
+    "0x21dc",
+    "0x236a",
+    "0x236d",
+    "0x38f6",
+    "0x4dec",
+    "0xbc0c"
+   ]
+  },
+  {
    "name": "Bilgewater's Galleon",
    "types": [
     "0x4ffb"
@@ -4058,6 +4976,18 @@
    ]
   },
   {
+   "name": "Bird Tribesman",
+   "types": [
+    "0x36b0"
+   ],
+   "realmeye": "bird-tribesman",
+   "tiers": {},
+   "drops": [
+    "0x1e50",
+    "0x36fa"
+   ]
+  },
+  {
    "name": "Black Bat",
    "types": [
     "0x0204",
@@ -4072,6 +5002,106 @@
    "drops": [
     "0x0a22",
     "0x0a23"
+   ]
+  },
+  {
+   "name": "Black Blade Ozuchi",
+   "types": [
+    "0x74b0",
+    "0xc24f",
+    "0xc276",
+    "0xca65"
+   ],
+   "realmeye": "black-blade-ozuchi",
+   "tiers": {
+    "weapon": [
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0c6c",
+    "0x0cc2",
+    "0x0cc4",
+    "0x0cca",
+    "0x13e6",
+    "0x385a",
+    "0x385b",
+    "0x385c",
+    "0x3878",
+    "0x3879",
+    "0x387a",
+    "0x66a5",
+    "0x7c8b",
+    "0xca5f",
+    "0xca74"
+   ]
+  },
+  {
+   "name": "Black Den Spider",
+   "types": [
+    "0x021d"
+   ],
+   "realmeye": "black-den-spider",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3
+    ],
+    "ring": [
+     2
+    ],
+    "weapon": [
+     4
+    ]
+   },
+   "drops": [
+    "0x0707"
+   ]
+  },
+  {
+   "name": "Black Moon",
+   "types": [
+    "0x1745"
+   ],
+   "realmeye": "black-moon",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Black Planet",
+   "types": [
+    "0x1746"
+   ],
+   "realmeye": "black-planet",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Black Spotted Den Spider",
+   "types": [
+    "0x021f"
+   ],
+   "realmeye": "black-spotted-den-spider",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3
+    ],
+    "ring": [
+     2
+    ],
+    "weapon": [
+     4
+    ]
+   },
+   "drops": [
+    "0x0707"
    ]
   },
   {
@@ -4188,6 +5218,15 @@
    ]
   },
   {
+   "name": "Blizzard",
+   "types": [
+    "0x729e"
+   ],
+   "realmeye": "blizzard",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Bloated Mummy",
    "types": [
     "0x0d1a"
@@ -4195,6 +5234,21 @@
    "realmeye": "bloated-mummy",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Blob Colony",
+   "types": [
+    "0x0790",
+    "0xb3b4"
+   ],
+   "realmeye": "blob-colony",
+   "tiers": {},
+   "drops": [
+    "0x0a1f",
+    "0x0a22",
+    "0x0a23",
+    "0x0bdb"
+   ]
   },
   {
    "name": "Blobomb",
@@ -4273,6 +5327,18 @@
     "0x0aeb",
     "0x0aec",
     "0x5192"
+   ]
+  },
+  {
+   "name": "Blood Slurp",
+   "types": [
+    "0x07c6"
+   ],
+   "realmeye": "blood-slurp",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
    ]
   },
   {
@@ -4411,6 +5477,19 @@
    ]
   },
   {
+   "name": "Blue Cnidarian",
+   "types": [
+    "0x09f3"
+   ],
+   "realmeye": "blue-cnidarian",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a35"
+   ]
+  },
+  {
    "name": "Blue Coral Turret",
    "types": [
     "0xadab"
@@ -4421,6 +5500,17 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Blue Crystal",
+   "types": [
+    "0x732b",
+    "0xb67c",
+    "0xb681"
+   ],
+   "realmeye": "blue-crystal",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Blue Drake",
@@ -4637,6 +5727,68 @@
    "drops": []
   },
   {
+   "name": "Boulder",
+   "types": [
+    "0x5e3d"
+   ],
+   "realmeye": "boulder",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Bow Wielding Host",
+   "types": [
+    "0x07aa",
+    "0x095c"
+   ],
+   "realmeye": "bow-wielding-host",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Bradley the Barkeep",
+   "types": [
+    "0x4551",
+    "0x4552",
+    "0x4553"
+   ],
+   "realmeye": "bradley-the-barkeep",
+   "tiers": {
+    "ability": [
+     5,
+     6
+    ],
+    "armor": [
+     11,
+     12
+    ],
+    "ring": [
+     5,
+     6
+    ],
+    "weapon": [
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0a34",
+    "0x0aea",
+    "0x236b",
+    "0x44af",
+    "0x450d",
+    "0x450e",
+    "0x450f",
+    "0x4518",
+    "0x4519",
+    "0x45b8",
+    "0x45b9",
+    "0x45ba",
+    "0x45c0",
+    "0x45c1"
+   ]
+  },
+  {
    "name": "Breathtaking White Flower",
    "types": [
     "0x0569",
@@ -4680,6 +5832,30 @@
     "0x0a23",
     "0x0a34",
     "0x5199"
+   ]
+  },
+  {
+   "name": "Brown Den Spider",
+   "types": [
+    "0x0220"
+   ],
+   "realmeye": "brown-den-spider",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3
+    ],
+    "ring": [
+     2
+    ],
+    "weapon": [
+     4
+    ]
+   },
+   "drops": [
+    "0x0707"
    ]
   },
   {
@@ -4767,6 +5943,34 @@
     "0x4b45",
     "0x4b46"
    ]
+  },
+  {
+   "name": "Bubblar",
+   "types": [
+    "0xb2e7",
+    "0xdc28"
+   ],
+   "realmeye": "bubblar",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Bubblarion",
+   "types": [
+    "0xb2e6"
+   ],
+   "realmeye": "bubblarion",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Bubblaris",
+   "types": [
+    "0xb2e8"
+   ],
+   "realmeye": "bubblaris",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Build Block",
@@ -4904,6 +6108,18 @@
    "tiers": {},
    "drops": [
     "0x0c60"
+   ]
+  },
+  {
+   "name": "Canopic Jar 1",
+   "types": [
+    "0x0d2d"
+   ],
+   "realmeye": "canopic-jar",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
    ]
   },
   {
@@ -5058,6 +6274,75 @@
    ]
   },
   {
+   "name": "Cavecrawler Bloodsucker",
+   "types": [
+    "0xb308"
+   ],
+   "realmeye": "cavecrawler-bloodsucker",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Cavecrawler Glowworm",
+   "types": [
+    "0xb298",
+    "0xb299",
+    "0xb29a",
+    "0xb514",
+    "0xb515",
+    "0xb516"
+   ],
+   "realmeye": "cavecrawler-glowworm",
+   "tiers": {},
+   "drops": [
+    "0x4b3c",
+    "0x4b3e"
+   ]
+  },
+  {
+   "name": "Cavecrawler Leech",
+   "types": [
+    "0xb2b1",
+    "0xb2b2",
+    "0xb2b3",
+    "0xb517",
+    "0xb518",
+    "0xb519"
+   ],
+   "realmeye": "cavecrawler-leech",
+   "tiers": {},
+   "drops": [
+    "0x4b3c",
+    "0x4b3e"
+   ]
+  },
+  {
+   "name": "Cavecrawler Maggot",
+   "types": [
+    "0xb2b4",
+    "0xb2b5",
+    "0xb2b6",
+    "0xb51a",
+    "0xb51b",
+    "0xb51c"
+   ],
+   "realmeye": "cavecrawler-maggot",
+   "tiers": {},
+   "drops": [
+    "0x4b3c",
+    "0x4b3e"
+   ]
+  },
+  {
+   "name": "Cavecrawler Webslinger",
+   "types": [
+    "0xb306"
+   ],
+   "realmeye": "cavecrawler-webslinger",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Celestial Sprite",
    "types": [
     "0xac77"
@@ -5188,6 +6473,24 @@
     "0xb914",
     "0xb915"
    ]
+  },
+  {
+   "name": "Chase Element",
+   "types": [
+    "0x1744"
+   ],
+   "realmeye": "chase-element",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Chicken",
+   "types": [
+    "0x79e4"
+   ],
+   "realmeye": "chicken",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Chicken",
@@ -5340,6 +6643,29 @@
    "drops": []
   },
   {
+   "name": "Clax",
+   "types": [
+    "0xb35a"
+   ],
+   "realmeye": "clax",
+   "tiers": {},
+   "drops": [
+    "0x645e",
+    "0x6462"
+   ]
+  },
+  {
+   "name": "Clingstar",
+   "types": [
+    "0xb35b"
+   ],
+   "realmeye": "clingstar",
+   "tiers": {},
+   "drops": [
+    "0x645e"
+   ]
+  },
+  {
    "name": "Clockwork Golem",
    "types": [
     "0x062e",
@@ -5367,6 +6693,47 @@
     "0x0a22",
     "0x0a23",
     "0x63e7"
+   ]
+  },
+  {
+   "name": "Coffin",
+   "types": [
+    "0x1737"
+   ],
+   "realmeye": "coffin",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     5,
+     6
+    ],
+    "ring": [
+     4
+    ],
+    "weapon": [
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a1f",
+    "0x0c09",
+    "0x0c1d",
+    "0x0c1f",
+    "0x0c20",
+    "0x0c21",
+    "0x0c22",
+    "0x45cc",
+    "0x45d9",
+    "0xa30e",
+    "0xb631",
+    "0xea62"
    ]
   },
   {
@@ -5538,6 +6905,18 @@
     "0xb3ea",
     "0xb3eb",
     "0xb3fb"
+   ]
+  },
+  {
+   "name": "Copper Sentreenel",
+   "types": [
+    "0xb35e"
+   ],
+   "realmeye": "copper-sentreenel",
+   "tiers": {},
+   "drops": [
+    "0x645b",
+    "0x6463"
    ]
   },
   {
@@ -6014,6 +7393,16 @@
    ]
   },
   {
+   "name": "Creepy Small Heads",
+   "types": [
+    "0x6e09",
+    "0x7428"
+   ],
+   "realmeye": "creepy-small-heads",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Creepy Weird Dark Spirit Mirror Image Monster",
    "types": [
     "0x0762",
@@ -6038,6 +7427,16 @@
     "0x5dd4"
    ],
    "realmeye": "criminal-monkey",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Crimson Soul Shard",
+   "types": [
+    "0x7534",
+    "0xb17e"
+   ],
+   "realmeye": "crimson-soul-shard",
    "tiers": {},
    "drops": []
   },
@@ -6150,6 +7549,22 @@
    ]
   },
   {
+   "name": "Cryo Warlock",
+   "types": [
+    "0x729c",
+    "0x826c"
+   ],
+   "realmeye": "cryo-warlock",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f3",
+    "0x21f5",
+    "0x3886"
+   ]
+  },
+  {
    "name": "Crystal Entity",
    "types": [
     "0x2729",
@@ -6245,6 +7660,43 @@
     "0x0aea",
     "0x2726",
     "0xb613"
+   ]
+  },
+  {
+   "name": "Crystal Worm Mother",
+   "types": [
+    "0xb290",
+    "0xb291",
+    "0xb292",
+    "0xb293",
+    "0xb297"
+   ],
+   "realmeye": "crystal-worm-mother",
+   "tiers": {
+    "ability": [
+     6
+    ],
+    "armor": [
+     12,
+     13
+    ],
+    "ring": [
+     6
+    ],
+    "weapon": [
+     11,
+     12,
+     13
+    ]
+   },
+   "drops": [
+    "0x047f",
+    "0x0499",
+    "0x04b2",
+    "0x04b3",
+    "0x0ae9",
+    "0x2726",
+    "0xd857"
    ]
   },
   {
@@ -6635,6 +8087,15 @@
    ]
   },
   {
+   "name": "Cursed Blast",
+   "types": [
+    "0x74a1"
+   ],
+   "realmeye": "cursed-blast",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Cyan Sea Slurp",
    "types": [
     "0xbdf7"
@@ -6645,6 +8106,16 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Dagger Wielding Host",
+   "types": [
+    "0x07a9",
+    "0x095d"
+   ],
+   "realmeye": "dagger-wielding-host",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Daichi the Fallen",
@@ -7331,6 +8802,34 @@
    ]
   },
   {
+   "name": "Demon Brute Brawler",
+   "types": [
+    "0x455d",
+    "0x455e"
+   ],
+   "realmeye": "demon-brute-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
+   ]
+  },
+  {
+   "name": "Demon Mage Brawler",
+   "types": [
+    "0x455b",
+    "0x455c"
+   ],
+   "realmeye": "demon-mage-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
+   ]
+  },
+  {
    "name": "Demon Mage of the Abyss",
    "types": [
     "0x0670"
@@ -7382,6 +8881,18 @@
     "0x0a23",
     "0x4b45",
     "0x4b46"
+   ]
+  },
+  {
+   "name": "Demon Tribesman",
+   "types": [
+    "0x36ae"
+   ],
+   "realmeye": "demon-tribesman",
+   "tiers": {},
+   "drops": [
+    "0x1e50",
+    "0x36fa"
    ]
   },
   {
@@ -7485,6 +8996,17 @@
     "0x0a20",
     "0x0a34",
     "0x5199"
+   ]
+  },
+  {
+   "name": "Derelict Monument",
+   "types": [
+    "0x717e"
+   ],
+   "realmeye": "derelict-monument",
+   "tiers": {},
+   "drops": [
+    "0x25c5"
    ]
   },
   {
@@ -8213,6 +9735,15 @@
    ]
   },
   {
+   "name": "Easter Rusher",
+   "types": [
+    "0x0595"
+   ],
+   "realmeye": "easter-rusher",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Eati",
    "types": [
     "0x087b"
@@ -8297,6 +9828,48 @@
    "drops": [
     "0x083c"
    ]
+  },
+  {
+   "name": "El Dorado",
+   "types": [
+    "0x36ad"
+   ],
+   "realmeye": "el-dorado",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     10,
+     11
+    ],
+    "ring": [
+     4,
+     5
+    ],
+    "weapon": [
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0aea",
+    "0x1e58",
+    "0x2727",
+    "0x36a3",
+    "0x38e3"
+   ]
+  },
+  {
+   "name": "El Dorado Spirit",
+   "types": [
+    "0x36b1"
+   ],
+   "realmeye": "el-dorado-spirit",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Elder Ent Ancient",
@@ -8515,6 +10088,15 @@
    ]
   },
   {
+   "name": "Encore Trap",
+   "types": [
+    "0x7465"
+   ],
+   "realmeye": "encore-trap",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Enforcer Bot 3000",
    "types": [
     "0x0982"
@@ -8578,6 +10160,15 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Enraged Bunny Spawn",
+   "types": [
+    "0x059b"
+   ],
+   "realmeye": "enraged-bunny-spawn",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Enraged Green Killer Bee",
@@ -8917,6 +10508,22 @@
    ]
   },
   {
+   "name": "Eye of the King",
+   "types": [
+    "0x717f",
+    "0x823e",
+    "0x823f",
+    "0x8240",
+    "0x8241",
+    "0xb68a"
+   ],
+   "realmeye": "eye-of-the-king",
+   "tiers": {},
+   "drops": [
+    "0x3888"
+   ]
+  },
+  {
    "name": "Eye of the Storm",
    "types": [
     "0xc757"
@@ -8950,6 +10557,48 @@
    "drops": [
     "0x0c07",
     "0x2727"
+   ]
+  },
+  {
+   "name": "F.E.R.A.L.",
+   "types": [
+    "0x099a"
+   ],
+   "realmeye": "f-e-r-a-l",
+   "tiers": {
+    "ability": [
+     5,
+     6
+    ],
+    "armor": [
+     11,
+     12
+    ],
+    "ring": [
+     5,
+     6
+    ],
+    "weapon": [
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0ae9",
+    "0x0aea",
+    "0x0b0f",
+    "0x0b13",
+    "0x0c41",
+    "0x1445",
+    "0x236c",
+    "0x2727",
+    "0x3792",
+    "0x3793",
+    "0x3d8d",
+    "0x3d8e",
+    "0x3d8f",
+    "0x3d91",
+    "0x7685"
    ]
   },
   {
@@ -9024,6 +10673,47 @@
    "drops": []
   },
   {
+   "name": "False Puppet Master",
+   "types": [
+    "0x7438"
+   ],
+   "realmeye": "false-puppet-master",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Fat Angry Bee",
+   "types": [
+    "0x0128",
+    "0x0d45"
+   ],
+   "realmeye": "fat-angry-bee",
+   "tiers": {
+    "weapon": [
+     3,
+     4,
+     5
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Fat Bee",
+   "types": [
+    "0x0127",
+    "0x0d44"
+   ],
+   "realmeye": "fat-bee",
+   "tiers": {
+    "armor": [
+     2,
+     3,
+     4
+    ]
+   },
+   "drops": []
+  },
+  {
    "name": "Fate",
    "types": [
     "0x5f33"
@@ -9031,6 +10721,50 @@
    "realmeye": "fate",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Feargus the Obsidian Dragon",
+   "types": [
+    "0x7504",
+    "0xb174",
+    "0xb24b",
+    "0xb24c",
+    "0xb24d",
+    "0xb24e"
+   ],
+   "realmeye": "feargus-the-obsidian-dragon",
+   "tiers": {
+    "ability": [
+     4,
+     5,
+     6
+    ],
+    "armor": [
+     10,
+     11,
+     12
+    ],
+    "ring": [
+     4,
+     5,
+     6
+    ],
+    "weapon": [
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0cc1",
+    "0x2368",
+    "0x3811",
+    "0x3812",
+    "0x3813",
+    "0x3814",
+    "0x7565"
+   ]
   },
   {
    "name": "Fiendish Bailiff",
@@ -9067,6 +10801,21 @@
    "realmeye": "fighter-bee",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Fire Adept",
+   "types": [
+    "0x711b"
+   ],
+   "realmeye": "fire-adept",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f4",
+    "0x21f6",
+    "0x3886"
+   ]
   },
   {
    "name": "Fire Bomb",
@@ -9138,6 +10887,30 @@
    "drops": [
     "0x0a23"
    ]
+  },
+  {
+   "name": "Fire Mage",
+   "types": [
+    "0x710b"
+   ],
+   "realmeye": "fire-mage",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f4",
+    "0x21f6"
+   ]
+  },
+  {
+   "name": "Fire Portal",
+   "types": [
+    "0x728c",
+    "0x730f"
+   ],
+   "realmeye": "fire-portal",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Fire Python",
@@ -9435,6 +11208,15 @@
     "0x2728",
     "0xb909"
    ]
+  },
+  {
+   "name": "Flying Behemoth Tornado",
+   "types": [
+    "0x4225"
+   ],
+   "realmeye": "flying-behemoth-tornado",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Flying Brain",
@@ -9827,6 +11609,21 @@
    "drops": []
   },
   {
+   "name": "Frimar",
+   "types": [
+    "0x7fb6"
+   ],
+   "realmeye": "frimar",
+   "tiers": {},
+   "drops": [
+    "0x0ae9",
+    "0x13e6",
+    "0x1413",
+    "0x16d9",
+    "0x7fd4"
+   ]
+  },
+  {
    "name": "Frost Dragon",
    "types": [
     "0x7303"
@@ -9899,6 +11696,18 @@
     "0xb3f6",
     "0xb3fb"
    ]
+  },
+  {
+   "name": "Furious Lasher",
+   "types": [
+    "0x0795",
+    "0x07c8",
+    "0xb3b0",
+    "0xb3b9"
+   ],
+   "realmeye": "furious-lasher",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Fuzzy Bunny God",
@@ -10447,6 +12256,7 @@
    "drops": [
     "0x0a22",
     "0x0a23",
+    "0x0c45",
     "0x51a9"
    ]
   },
@@ -10460,6 +12270,44 @@
    "drops": [
     "0x0aeb",
     "0x0aec"
+   ]
+  },
+  {
+   "name": "Giant Oryx Chicken",
+   "types": [
+    "0x0e17"
+   ],
+   "realmeye": "giant-oryx-chicken",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     8,
+     9,
+     10,
+     11
+    ],
+    "ring": [
+     4,
+     5
+    ],
+    "weapon": [
+     9,
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x06a9",
+    "0x0a1f",
+    "0x0a20",
+    "0x0b21",
+    "0x0c24",
+    "0x1e32",
+    "0x200c",
+    "0x200d"
    ]
   },
   {
@@ -10489,6 +12337,33 @@
     "0x4f50",
     "0x4f51"
    ]
+  },
+  {
+   "name": "Giga Iron Titan",
+   "types": [
+    "0xb318"
+   ],
+   "realmeye": "giga-iron-titan",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Giga Silver Walker",
+   "types": [
+    "0xb317"
+   ],
+   "realmeye": "giga-silver-walker",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Giga Steel Reaper",
+   "types": [
+    "0xb30d"
+   ],
+   "realmeye": "giga-steel-reaper",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Gigacorn",
@@ -10541,6 +12416,19 @@
    ]
   },
   {
+   "name": "Glacier Archmage",
+   "types": [
+    "0x711e"
+   ],
+   "realmeye": "glacier-archmage",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f5"
+   ]
+  },
+  {
    "name": "Glacierpede",
    "types": [
     "0x9cd5",
@@ -10550,6 +12438,21 @@
    "realmeye": "glacierpede",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Glacius",
+   "types": [
+    "0x7fb5"
+   ],
+   "realmeye": "glacius",
+   "tiers": {},
+   "drops": [
+    "0x0ae9",
+    "0x13e6",
+    "0x1413",
+    "0x16d9",
+    "0x7fd3"
+   ]
   },
   {
    "name": "Glory",
@@ -10668,6 +12571,7 @@
    "drops": [
     "0x0a22",
     "0x0a23",
+    "0x0c45",
     "0x51a9"
    ]
   },
@@ -10811,7 +12715,8 @@
    "realmeye": "goblin-warrior",
    "tiers": {},
    "drops": [
-    "0x0a22"
+    "0x0a22",
+    "0x0c45"
    ]
   },
   {
@@ -10826,6 +12731,130 @@
     "0x0a4c",
     "0xaf1f",
     "0xea6b"
+   ]
+  },
+  {
+   "name": "Gold Planet",
+   "types": [
+    "0x5e4a"
+   ],
+   "realmeye": "gold-planet",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Golden Oryx Effigy",
+   "types": [
+    "0x5e2c"
+   ],
+   "realmeye": "golden-oryx-effigy",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     7,
+     8,
+     9
+    ],
+    "ring": [
+     4,
+     5
+    ],
+    "weapon": [
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0c4d",
+    "0x17fa",
+    "0x3439"
+   ]
+  },
+  {
+   "name": "Golden Oryx Effigy Deux",
+   "types": [
+    "0x719e"
+   ],
+   "realmeye": "golden-oryx-effigy-deux",
+   "tiers": {},
+   "drops": [
+    "0x0cec"
+   ]
+  },
+  {
+   "name": "Golden Rat",
+   "types": [
+    "0x3a44",
+    "0x715f"
+   ],
+   "realmeye": "golden-rat",
+   "tiers": {},
+   "drops": [
+    "0x0a20",
+    "0x4b3a",
+    "0x4b3b",
+    "0x7170"
+   ]
+  },
+  {
+   "name": "Golden Sphinx",
+   "types": [
+    "0xb319"
+   ],
+   "realmeye": "golden-sphinx",
+   "tiers": {},
+   "drops": [
+    "0x645b",
+    "0x645f",
+    "0x6463",
+    "0x6465",
+    "0xdb4a",
+    "0xdb4b",
+    "0xdb4c",
+    "0xdb4d",
+    "0xdb4e",
+    "0xdb4f",
+    "0xdb50",
+    "0xdb51",
+    "0xdb52",
+    "0xdb53"
+   ]
+  },
+  {
+   "name": "Golden Sphinx Mk II",
+   "types": [
+    "0xdc5a"
+   ],
+   "realmeye": "golden-sphinx-mk-ii",
+   "tiers": {
+    "armor": [
+     13
+    ],
+    "weapon": [
+     12
+    ]
+   },
+   "drops": [
+    "0x645b",
+    "0x645f",
+    "0x6463",
+    "0x6465",
+    "0xdb4a",
+    "0xdb4b",
+    "0xdb4c",
+    "0xdb4d",
+    "0xdb4e",
+    "0xdb4f",
+    "0xdb50",
+    "0xdb51",
+    "0xdb52",
+    "0xdb53",
+    "0xdb82"
    ]
   },
   {
@@ -11208,6 +13237,15 @@
    ]
   },
   {
+   "name": "Greater Void Shade",
+   "types": [
+    "0xb026"
+   ],
+   "realmeye": "greater-void-shade",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Greedy Crab",
    "types": [
     "0xac7c"
@@ -11215,6 +13253,19 @@
    "realmeye": "greedy-crab",
    "tiers": {},
    "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Green Cnidarian",
+   "types": [
+    "0x09f5"
+   ],
+   "realmeye": "green-cnidarian",
+   "tiers": {},
+   "drops": [
+    "0x0a21",
     "0x0a22",
     "0x0a23"
    ]
@@ -11230,6 +13281,28 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Green Crystal",
+   "types": [
+    "0x731e",
+    "0x8315",
+    "0x8324",
+    "0x8378",
+    "0xb688"
+   ],
+   "realmeye": "green-crystal",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Green Den Spider Hatchling",
+   "types": [
+    "0x021c"
+   ],
+   "realmeye": "green-den-spider-hatchling",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Green Drake",
@@ -11591,6 +13664,20 @@
    ]
   },
   {
+   "name": "Gumball Machine",
+   "types": [
+    "0x5e42"
+   ],
+   "realmeye": "gumball-machine",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0c5f",
+    "0x0c60"
+   ]
+  },
+  {
    "name": "Hadopelagic Jellyfish",
    "types": [
     "0x7219"
@@ -11685,6 +13772,15 @@
    "drops": [
     "0x057f"
    ]
+  },
+  {
+   "name": "Hard Candy",
+   "types": [
+    "0x5e3e"
+   ],
+   "realmeye": "hard-candy",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Harrowed Fiend",
@@ -12039,6 +14135,15 @@
    ]
   },
   {
+   "name": "Helpless Souls",
+   "types": [
+    "0x733f"
+   ],
+   "realmeye": "helpless-souls",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Henchman of Oryx",
    "types": [
     "0x0944"
@@ -12267,6 +14372,7 @@
    "drops": [
     "0x0a22",
     "0x0a23",
+    "0x0c45",
     "0x51a9"
    ]
   },
@@ -12280,6 +14386,175 @@
    "tiers": {},
    "drops": [
     "0x0a22"
+   ]
+  },
+  {
+   "name": "Hollow Brigand",
+   "types": [
+    "0x819f"
+   ],
+   "realmeye": "hollow-brigand",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Gypsy",
+   "types": [
+    "0x8195",
+    "0x8197",
+    "0x8198",
+    "0x8199",
+    "0x819a"
+   ],
+   "realmeye": "hollow-gypsy",
+   "tiers": {},
+   "drops": [
+    "0x3886",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Huntsman",
+   "types": [
+    "0x80fb"
+   ],
+   "realmeye": "hollow-huntsman",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Importer",
+   "types": [
+    "0x810b"
+   ],
+   "realmeye": "hollow-importer",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Madman",
+   "types": [
+    "0x81df"
+   ],
+   "realmeye": "hollow-madman",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Hollow Mason",
+   "types": [
+    "0x8193"
+   ],
+   "realmeye": "hollow-mason",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Oracle",
+   "types": [
+    "0x8196",
+    "0x819b",
+    "0x819c",
+    "0x819d"
+   ],
+   "realmeye": "hollow-oracle",
+   "tiers": {},
+   "drops": [
+    "0x3886",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Outlaw",
+   "types": [
+    "0x819e"
+   ],
+   "realmeye": "hollow-outlaw",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Peasant",
+   "types": [
+    "0x80fd"
+   ],
+   "realmeye": "hollow-peasant",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Prisoner",
+   "types": [
+    "0x81de"
+   ],
+   "realmeye": "hollow-prisoner",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Hollow Serf",
+   "types": [
+    "0x8103"
+   ],
+   "realmeye": "hollow-serf",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Smith",
+   "types": [
+    "0x8194"
+   ],
+   "realmeye": "hollow-smith",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Tracker",
+   "types": [
+    "0x80fc"
+   ],
+   "realmeye": "hollow-tracker",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Hollow Trader",
+   "types": [
+    "0x8104"
+   ],
+   "realmeye": "hollow-trader",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x89b5"
    ]
   },
   {
@@ -12386,6 +14661,18 @@
    ]
   },
   {
+   "name": "Horror Maw",
+   "types": [
+    "0x0794",
+    "0x07c7",
+    "0xb3af",
+    "0xb3b8"
+   ],
+   "realmeye": "horror-maw",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Hunger",
    "types": [
     "0xb2fb"
@@ -12429,6 +14716,17 @@
    ]
   },
   {
+   "name": "Huntress Puppet",
+   "types": [
+    "0x7419"
+   ],
+   "realmeye": "huntress-puppet-encore",
+   "tiers": {},
+   "drops": [
+    "0x4ba1"
+   ]
+  },
+  {
    "name": "Iatho",
    "types": [
     "0x0853"
@@ -12450,6 +14748,32 @@
    "drops": [
     "0x083c"
    ]
+  },
+  {
+   "name": "Ice Adept",
+   "types": [
+    "0x711a"
+   ],
+   "realmeye": "ice-adept",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f5",
+    "0x21f6",
+    "0x3886"
+   ]
+  },
+  {
+   "name": "Ice Artifact",
+   "types": [
+    "0x7fab",
+    "0x7fac",
+    "0x7fad"
+   ],
+   "realmeye": "ice-artifact",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Ice Cube Blaster",
@@ -12526,6 +14850,49 @@
    ]
   },
   {
+   "name": "Ice Golem",
+   "types": [
+    "0x7fd0"
+   ],
+   "realmeye": "ice-golem",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Ice Mage",
+   "types": [
+    "0x710d"
+   ],
+   "realmeye": "ice-mage",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f5",
+    "0x21f6"
+   ]
+  },
+  {
+   "name": "Ice Portal",
+   "types": [
+    "0x728b",
+    "0x730e"
+   ],
+   "realmeye": "ice-portal",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Ice Sphere",
+   "types": [
+    "0x728a",
+    "0x730d"
+   ],
+   "realmeye": "ice-sphere",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Ice Sprite",
    "types": [
     "0x0625",
@@ -12540,6 +14907,15 @@
    "drops": [
     "0x0a23"
    ]
+  },
+  {
+   "name": "Ice Stalagmite",
+   "types": [
+    "0x81fd"
+   ],
+   "realmeye": "ice-stalagmite",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Iceion",
@@ -12709,6 +15085,54 @@
    ]
   },
   {
+   "name": "Inferno",
+   "types": [
+    "0x729d"
+   ],
+   "realmeye": "inferno",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Infested Chest",
+   "types": [
+    "0x081e"
+   ],
+   "realmeye": "infested-chest",
+   "tiers": {
+    "ability": [
+     5
+    ],
+    "armor": [
+     10,
+     11
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x07a1",
+    "0x07b8",
+    "0x07b9",
+    "0x07f6",
+    "0x0aea",
+    "0x0bd9",
+    "0x0bda",
+    "0x1440",
+    "0x1442",
+    "0x14ca",
+    "0x4537",
+    "0xb62e",
+    "0xb642"
+   ]
+  },
+  {
    "name": "Infested Pestilent",
    "types": [
     "0x5c69"
@@ -12761,6 +15185,18 @@
    "realmeye": "insect-minion",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Insect Tribesman",
+   "types": [
+    "0x36af"
+   ],
+   "realmeye": "insect-tribesman",
+   "tiers": {},
+   "drops": [
+    "0x1e50",
+    "0x36fa"
+   ]
   },
   {
    "name": "Insurgent Rebel Commander",
@@ -12830,6 +15266,15 @@
    ]
   },
   {
+   "name": "Iron Titan",
+   "types": [
+    "0xb30a"
+   ],
+   "realmeye": "iron-titan",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Issz",
    "types": [
     "0x086b"
@@ -12869,6 +15314,95 @@
     "0x083c",
     "0x1846",
     "0x1847"
+   ]
+  },
+  {
+   "name": "Ivory Wyvern",
+   "types": [
+    "0x754a",
+    "0xb189"
+   ],
+   "realmeye": "ivory-wyvern",
+   "tiers": {
+    "ability": [
+     4,
+     5,
+     6
+    ],
+    "armor": [
+     10,
+     11,
+     12
+    ],
+    "ring": [
+     5,
+     6
+    ],
+    "weapon": [
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0916",
+    "0x0cc1",
+    "0x144a",
+    "0x144c",
+    "0x1e34",
+    "0x2369",
+    "0x236d",
+    "0x236f",
+    "0x35ea",
+    "0x35eb",
+    "0x35ec",
+    "0x35ed",
+    "0x35ee",
+    "0x35ef",
+    "0x35f0",
+    "0x35f1",
+    "0x35f2",
+    "0x35f3",
+    "0x7b7b",
+    "0xa33e",
+    "0xb640"
+   ]
+  },
+  {
+   "name": "Izel the Grand Shaman",
+   "types": [
+    "0x74ad",
+    "0xc235",
+    "0xc236",
+    "0xca63"
+   ],
+   "realmeye": "izel-the-grand-shaman",
+   "tiers": {
+    "weapon": [
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0c6c",
+    "0x0cc2",
+    "0x0cc4",
+    "0x0cca",
+    "0x13e6",
+    "0x37b9",
+    "0x385a",
+    "0x385b",
+    "0x385c",
+    "0x3878",
+    "0x3879",
+    "0x387a",
+    "0x66a3",
+    "0x7c8b",
+    "0xca60",
+    "0xca77"
    ]
   },
   {
@@ -13088,6 +15622,39 @@
    ]
   },
   {
+   "name": "Jungle Fire",
+   "types": [
+    "0x0dd3"
+   ],
+   "realmeye": "jungle-fire",
+   "tiers": {
+    "weapon": [
+     5
+    ]
+   },
+   "drops": []
+  },
+  {
+   "name": "Jungle Flame",
+   "types": [
+    "0x36b2"
+   ],
+   "realmeye": "jungle-flame",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Jungle Totem",
+   "types": [
+    "0x0dcd"
+   ],
+   "realmeye": "jungle-totem",
+   "tiers": {},
+   "drops": [
+    "0x0c1a"
+   ]
+  },
+  {
    "name": "Juvenile White Dragon",
    "types": [
     "0x0208",
@@ -13134,6 +15701,20 @@
     "0x0a22",
     "0x0a23",
     "0x519d"
+   ]
+  },
+  {
+   "name": "Katana Wielding Host",
+   "types": [
+    "0x07a7",
+    "0x095f"
+   ],
+   "realmeye": "katana-wielding-host",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0c4d"
    ]
   },
   {
@@ -13300,6 +15881,63 @@
     "0xdb32",
     "0xdb7f"
    ]
+  },
+  {
+   "name": "King's Cavalry",
+   "types": [
+    "0x816e"
+   ],
+   "realmeye": "king-s-cavalry",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "King's Cavalry Rider",
+   "types": [
+    "0x816f"
+   ],
+   "realmeye": "king-s-cavalry-rider",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "King's Crossbowman",
+   "types": [
+    "0x816b"
+   ],
+   "realmeye": "king-s-crossbowman",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "King's Gladiator",
+   "types": [
+    "0x816c"
+   ],
+   "realmeye": "king-s-gladiator",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "King's Knight",
+   "types": [
+    "0x816a"
+   ],
+   "realmeye": "king-s-knight",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "King's Thaumaturge",
+   "types": [
+    "0x725c",
+    "0x725f",
+    "0x732c",
+    "0x816d"
+   ],
+   "realmeye": "king-s-thaumaturge",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Kingdom Stowaway",
@@ -14676,6 +17314,25 @@
    "drops": []
   },
   {
+   "name": "Lightning Spike",
+   "types": [
+    "0x456e",
+    "0x456f"
+   ],
+   "realmeye": "lightning-spike",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Lightning Totem",
+   "types": [
+    "0x36cb"
+   ],
+   "realmeye": "lightning-totem",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Lil Feratu",
    "types": [
     "0x1738"
@@ -14961,6 +17618,62 @@
    ]
   },
   {
+   "name": "Lord Ruthven",
+   "types": [
+    "0x1720"
+   ],
+   "realmeye": "lord-ruthven",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     5,
+     6
+    ],
+    "ring": [
+     4
+    ],
+    "weapon": [
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a1f",
+    "0x0c09",
+    "0x0c1d",
+    "0x0c1f",
+    "0x0c20",
+    "0x0c21",
+    "0x0c22",
+    "0x151d",
+    "0x1e2c",
+    "0x3439",
+    "0x45cc",
+    "0x45d9",
+    "0x7fff",
+    "0xa30e",
+    "0xb631",
+    "0xea62"
+   ]
+  },
+  {
+   "name": "Lord Ruthven Deux",
+   "types": [
+    "0x719a"
+   ],
+   "realmeye": "lord-ruthven-deux",
+   "tiers": {},
+   "drops": [
+    "0x0ced"
+   ]
+  },
+  {
    "name": "Lorz",
    "types": [
     "0x087a"
@@ -15037,6 +17750,36 @@
     "0x0e48"
    ],
    "realmeye": "lost-soul",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "M.E.R.V.",
+   "types": [
+    "0x2f50"
+   ],
+   "realmeye": "m-e-r-v",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Maggot",
+   "types": [
+    "0x0e46"
+   ],
+   "realmeye": "maggot",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Magi-Generator",
+   "types": [
+    "0x811e",
+    "0x811f",
+    "0x8120",
+    "0x8121"
+   ],
+   "realmeye": "magi-generator",
    "tiers": {},
    "drops": []
   },
@@ -15385,6 +18128,50 @@
    ]
   },
   {
+   "name": "Mask Hunter",
+   "types": [
+    "0x0dd2"
+   ],
+   "realmeye": "mask-hunter",
+   "tiers": {},
+   "drops": [
+    "0x0c1a"
+   ]
+  },
+  {
+   "name": "Mask Shaman",
+   "types": [
+    "0x0dd0"
+   ],
+   "realmeye": "mask-shaman",
+   "tiers": {},
+   "drops": [
+    "0x0c1a"
+   ]
+  },
+  {
+   "name": "Mask Warrior",
+   "types": [
+    "0x0dd1"
+   ],
+   "realmeye": "mask-warrior",
+   "tiers": {},
+   "drops": [
+    "0x0c1a"
+   ]
+  },
+  {
+   "name": "Masked Party God",
+   "types": [
+    "0x0e56"
+   ],
+   "realmeye": "masked-party-god",
+   "tiers": {},
+   "drops": [
+    "0x17dd"
+   ]
+  },
+  {
    "name": "Masquarerader",
    "types": [
     "0x525e"
@@ -15705,6 +18492,35 @@
    ]
   },
   {
+   "name": "Minion of Oryx",
+   "types": [
+    "0x1749"
+   ],
+   "realmeye": "minion-of-oryx",
+   "tiers": {
+    "ability": [
+     3,
+     4
+    ],
+    "armor": [
+     4,
+     5,
+     6
+    ],
+    "ring": [
+     3
+    ],
+    "weapon": [
+     6,
+     7
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
    "name": "Minion Puppet",
    "types": [
     "0x7445"
@@ -15744,6 +18560,46 @@
    "drops": [
     "0x0aa9",
     "0x51a9"
+   ]
+  },
+  {
+   "name": "Mirror Wyvern",
+   "types": [
+    "0x742e",
+    "0x742f",
+    "0x7432",
+    "0x7434",
+    "0xb1a5"
+   ],
+   "realmeye": "mirror-wyvern",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mixcoatl the Masked God",
+   "types": [
+    "0x0dc3"
+   ],
+   "realmeye": "mixcoatl-the-masked-god",
+   "tiers": {
+    "armor": [
+     4,
+     5
+    ],
+    "weapon": [
+     5,
+     6
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0c14",
+    "0x0c15",
+    "0x0c16",
+    "0x0c17",
+    "0x0c1a",
+    "0x17ff",
+    "0x7679"
    ]
   },
   {
@@ -15934,12 +18790,220 @@
    ]
   },
   {
+   "name": "Murderous Megamoth Deux",
+   "types": [
+    "0x718f"
+   ],
+   "realmeye": "murderous-megamoth-deux",
+   "tiers": {},
+   "drops": [
+    "0x0cea"
+   ]
+  },
+  {
+   "name": "Mushroom Alchemist",
+   "types": [
+    "0xb2aa",
+    "0xb503"
+   ],
+   "realmeye": "mushroom-alchemist",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Berserker",
+   "types": [
+    "0xb2ae",
+    "0xb510"
+   ],
+   "realmeye": "mushroom-berserker",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Brawler",
+   "types": [
+    "0xb2a9",
+    "0xb502"
+   ],
+   "realmeye": "mushroom-brawler",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Brute",
+   "types": [
+    "0xb29f",
+    "0xb50e"
+   ],
+   "realmeye": "mushroom-brute",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Caster",
+   "types": [
+    "0xb2b0",
+    "0xb512"
+   ],
+   "realmeye": "mushroom-caster",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Champion",
+   "types": [
+    "0xb2af",
+    "0xb511"
+   ],
+   "realmeye": "mushroom-champion",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Chieftain",
+   "types": [
+    "0xb29c",
+    "0xb504"
+   ],
+   "realmeye": "mushroom-chieftain",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Guardian",
+   "types": [
+    "0xb274",
+    "0xb50a"
+   ],
+   "realmeye": "mushroom-guardian",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Keeper",
+   "types": [
+    "0xb275",
+    "0xb507"
+   ],
+   "realmeye": "mushroom-keeper",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Mage",
+   "types": [
+    "0xb29e",
+    "0xb50c"
+   ],
+   "realmeye": "mushroom-mage",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Oracle",
+   "types": [
+    "0xb272",
+    "0xb506"
+   ],
+   "realmeye": "mushroom-oracle",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Rogue",
+   "types": [
+    "0xb2ac",
+    "0xb50b"
+   ],
+   "realmeye": "mushroom-rogue",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Sentinel",
+   "types": [
+    "0xb270",
+    "0xb508"
+   ],
+   "realmeye": "mushroom-sentinel",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Shaman",
+   "types": [
+    "0xb2a0",
+    "0xb513"
+   ],
+   "realmeye": "mushroom-shaman",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Soldier",
+   "types": [
+    "0xb304",
+    "0xb505"
+   ],
+   "realmeye": "mushroom-soldier",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mushroom Sorcerer",
+   "types": [
+    "0xb29d",
+    "0xb50d"
+   ],
+   "realmeye": "mushroom-sorcerer",
+   "tiers": {},
+   "drops": [
+    "0x04b5",
+    "0x0a51"
+   ]
+  },
+  {
+   "name": "Mushroom Stalker",
+   "types": [
+    "0xb2ab",
+    "0xb51d"
+   ],
+   "realmeye": "mushroom-stalker",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Mysterious Crystal",
    "types": [
     "0x0935",
     "0x09a7"
    ],
    "realmeye": "mysterious-crystal",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Mysterious Ice Shard",
+   "types": [
+    "0x7fa7"
+   ],
+   "realmeye": "mysterious-ice-shard",
    "tiers": {},
    "drops": []
   },
@@ -15985,6 +19049,33 @@
     "0x0a23",
     "0x51a8"
    ]
+  },
+  {
+   "name": "Nano Platinum Stinger",
+   "types": [
+    "0xb315"
+   ],
+   "realmeye": "nano-platinum-stinger",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Nano Silver Walker",
+   "types": [
+    "0xb307"
+   ],
+   "realmeye": "nano-silver-walker",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Nano Steel Reaper",
+   "types": [
+    "0xb30b"
+   ],
+   "realmeye": "nano-steel-reaper",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Native Cube Deity",
@@ -16232,6 +19323,41 @@
    ]
   },
   {
+   "name": "Nefret the Pharaoh",
+   "types": [
+    "0x74af",
+    "0xc241",
+    "0xc242",
+    "0xca64"
+   ],
+   "realmeye": "nefret-the-pharaoh",
+   "tiers": {
+    "weapon": [
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0c6c",
+    "0x0cc2",
+    "0x0cc4",
+    "0x0cca",
+    "0x13e6",
+    "0x385a",
+    "0x385b",
+    "0x385c",
+    "0x3878",
+    "0x3879",
+    "0x387a",
+    "0x66a4",
+    "0x7c8b",
+    "0xca61",
+    "0xca7a"
+   ]
+  },
+  {
    "name": "Neil",
    "types": [
     "0x55c1"
@@ -16290,6 +19416,147 @@
    "drops": []
   },
   {
+   "name": "Neo Bubblarion",
+   "types": [
+    "0xdc27"
+   ],
+   "realmeye": "neo-bubblarion",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Bubblaris",
+   "types": [
+    "0xdc29"
+   ],
+   "realmeye": "neo-bubblaris",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Clax",
+   "types": [
+    "0xdc33"
+   ],
+   "realmeye": "neo-clax",
+   "tiers": {
+    "ring": [
+     6
+    ],
+    "weapon": [
+     12
+    ]
+   },
+   "drops": [
+    "0x645e",
+    "0x6462"
+   ]
+  },
+  {
+   "name": "Neo Clingstar",
+   "types": [
+    "0xdc35"
+   ],
+   "realmeye": "neo-clingstar",
+   "tiers": {},
+   "drops": [
+    "0x645e"
+   ]
+  },
+  {
+   "name": "Neo Giga Golden Reaper",
+   "types": [
+    "0xdc52"
+   ],
+   "realmeye": "neo-giga-golden-reaper",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Giga Golden Titan",
+   "types": [
+    "0xdc55"
+   ],
+   "realmeye": "neo-giga-golden-titan",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Giga Golden Walker",
+   "types": [
+    "0xdc56"
+   ],
+   "realmeye": "neo-giga-golden-walker",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Golden Cannon",
+   "types": [
+    "0xdc57"
+   ],
+   "realmeye": "neo-golden-cannon",
+   "tiers": {},
+   "drops": [
+    "0x6463"
+   ]
+  },
+  {
+   "name": "Neo Golden Reaper",
+   "types": [
+    "0xdc51"
+   ],
+   "realmeye": "neo-golden-reaper",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Golden Sentreenel",
+   "types": [
+    "0xdc59"
+   ],
+   "realmeye": "neo-golden-sentreenel",
+   "tiers": {
+    "ring": [
+     6
+    ],
+    "weapon": [
+     12
+    ]
+   },
+   "drops": [
+    "0x645b",
+    "0x6463"
+   ]
+  },
+  {
+   "name": "Neo Golden Stinger",
+   "types": [
+    "0xdc54"
+   ],
+   "realmeye": "neo-golden-stinger",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Golden Titan",
+   "types": [
+    "0xdc4f"
+   ],
+   "realmeye": "neo-golden-titan",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Golden Walker",
+   "types": [
+    "0xdc4e"
+   ],
+   "realmeye": "neo-golden-walker",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Neo Heartbat",
    "types": [
     "0xdc45"
@@ -16328,6 +19595,33 @@
    "drops": []
   },
   {
+   "name": "Neo Nano Golden Reaper",
+   "types": [
+    "0xdc50"
+   ],
+   "realmeye": "neo-nano-golden-reaper",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Nano Golden Stinger",
+   "types": [
+    "0xdc53"
+   ],
+   "realmeye": "neo-nano-golden-stinger",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Nano Golden Walker",
+   "types": [
+    "0xdc4d"
+   ],
+   "realmeye": "neo-nano-golden-walker",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Neo Phorgian",
    "types": [
     "0xdc1c"
@@ -16342,6 +19636,24 @@
     "0xdc1d"
    ],
    "realmeye": "neo-phorgling",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Plex",
+   "types": [
+    "0xdc2f"
+   ],
+   "realmeye": "neo-plex",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Plexling",
+   "types": [
+    "0xdc2e"
+   ],
+   "realmeye": "neo-plexling",
    "tiers": {},
    "drops": []
   },
@@ -16375,6 +19687,33 @@
    ]
   },
   {
+   "name": "Neo Shred",
+   "types": [
+    "0xdc2d"
+   ],
+   "realmeye": "neo-shred",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Shredder",
+   "types": [
+    "0xdc30"
+   ],
+   "realmeye": "neo-shredder",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Shredling",
+   "types": [
+    "0xdc2c"
+   ],
+   "realmeye": "neo-shredling",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Neo Starvation",
    "types": [
     "0xdc43"
@@ -16401,6 +19740,26 @@
     "0x645d",
     "0x6460"
    ]
+  },
+  {
+   "name": "Neo Waltan",
+   "types": [
+    "0xdc2a",
+    "0xdc2b"
+   ],
+   "realmeye": "neo-waltan",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Neo Waltank",
+   "types": [
+    "0xdc31",
+    "0xdc32"
+   ],
+   "realmeye": "neo-waltank",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Neo Waste",
@@ -16535,6 +19894,51 @@
    "tiers": {},
    "drops": [
     "0x0a22"
+   ]
+  },
+  {
+   "name": "Nightmare Colony",
+   "types": [
+    "0x07b6",
+    "0x0800",
+    "0x0f1c",
+    "0x0f1d",
+    "0xb3b2",
+    "0xb3b3"
+   ],
+   "realmeye": "nightmare-colony",
+   "tiers": {
+    "ability": [
+     5
+    ],
+    "armor": [
+     10,
+     11
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x07a1",
+    "0x07b8",
+    "0x07b9",
+    "0x07f6",
+    "0x0aea",
+    "0x0bd8",
+    "0x0bda",
+    "0x1440",
+    "0x1442",
+    "0x14ca",
+    "0x1e3d",
+    "0x4537",
+    "0xb62e",
+    "0xb642"
    ]
   },
   {
@@ -16813,6 +20217,16 @@
    "drops": [
     "0x0a22"
    ]
+  },
+  {
+   "name": "Obsidian Soul Shard",
+   "types": [
+    "0x7533",
+    "0xb17b"
+   ],
+   "realmeye": "obsidian-soul-shard",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Ocean Spirit",
@@ -17417,6 +20831,154 @@
    "drops": []
   },
   {
+   "name": "Oryx the Mad God",
+   "types": [
+    "0x054f",
+    "0x06dc",
+    "0x0932",
+    "0x0d46",
+    "0x1740",
+    "0x713d",
+    "0x718e",
+    "0xb01a",
+    "0xb096",
+    "0xb133",
+    "0xb1dc",
+    "0xb1dd",
+    "0xb1de",
+    "0xb1e9",
+    "0xb395",
+    "0xb3aa",
+    "0xb3ab"
+   ],
+   "realmeye": "oryx-the-mad-god",
+   "tiers": {
+    "ability": [
+     4,
+     5
+    ],
+    "armor": [
+     8,
+     9,
+     10,
+     11
+    ],
+    "ring": [
+     4,
+     5
+    ],
+    "weapon": [
+     9,
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0260",
+    "0x0722",
+    "0x0a1f",
+    "0x0a20",
+    "0x1e32",
+    "0x200c",
+    "0x200d",
+    "0x5b1f"
+   ]
+  },
+  {
+   "name": "Oryx the Mad God 2",
+   "types": [
+    "0x0932"
+   ],
+   "realmeye": "oryx-the-mad-god-2",
+   "tiers": {
+    "ability": [
+     5,
+     6
+    ],
+    "armor": [
+     10,
+     11,
+     12
+    ],
+    "ring": [
+     5,
+     6
+    ],
+    "weapon": [
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0260",
+    "0x03ff",
+    "0x0a1f",
+    "0x0a20",
+    "0x0a34",
+    "0x0a35",
+    "0x1794",
+    "0x39df",
+    "0x5bde",
+    "0x5bdf",
+    "0x5be0",
+    "0x5be1",
+    "0x64ba",
+    "0x73ce",
+    "0x73cf"
+   ]
+  },
+  {
+   "name": "Oryx the Mad God 3",
+   "types": [
+    "0xb133"
+   ],
+   "realmeye": "oryx-the-mad-god-3",
+   "tiers": {
+    "ability": [
+     7
+    ],
+    "armor": [
+     14
+    ],
+    "ring": [
+     7
+    ],
+    "weapon": [
+     14
+    ]
+   },
+   "drops": [
+    "0x236e",
+    "0x236f",
+    "0x70b3",
+    "0x70b5",
+    "0x70b7",
+    "0x70b8",
+    "0xac1e",
+    "0xb8d0",
+    "0xb8d1",
+    "0xb8d2",
+    "0xb8d3"
+   ]
+  },
+  {
+   "name": "Oryx the Mad God Deux",
+   "types": [
+    "0x718e"
+   ],
+   "realmeye": "oryx-the-mad-god-deux",
+   "tiers": {},
+   "drops": [
+    "0x0cdf",
+    "0x0cea",
+    "0x0ceb",
+    "0x0cec",
+    "0x0ced",
+    "0x0cee"
+   ]
+  },
+  {
    "name": "Oryxmas Archer",
    "types": [
     "0x7e99"
@@ -17757,6 +21319,30 @@
    ]
   },
   {
+   "name": "Painling",
+   "types": [
+    "0x0788",
+    "0xb3b1",
+    "0xb3ba"
+   ],
+   "realmeye": "painling",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Paladin Obelisk",
+   "types": [
+    "0x715a",
+    "0x725d",
+    "0x725e",
+    "0x726c",
+    "0x726d"
+   ],
+   "realmeye": "paladin-obelisk",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Paper Golem",
    "types": [
     "0x0631",
@@ -17782,6 +21368,16 @@
    "drops": []
   },
   {
+   "name": "Parasitic Blob",
+   "types": [
+    "0x0789",
+    "0x7306"
+   ],
+   "realmeye": "parasitic-blob",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Parasitic Blob Guardian",
    "types": [
     "0x07c1"
@@ -17796,6 +21392,18 @@
     "0x07c0"
    ],
    "realmeye": "parasitic-blob-scout",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Parasitic Stalker",
+   "types": [
+    "0x0791",
+    "0x07c9",
+    "0xb3a4",
+    "0xb3bb"
+   ],
+   "realmeye": "parasitic-stalker",
    "tiers": {},
    "drops": []
   },
@@ -17996,6 +21604,19 @@
    ]
   },
   {
+   "name": "Pink Cnidarian",
+   "types": [
+    "0x09f4"
+   ],
+   "realmeye": "pink-cnidarian",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a34"
+   ]
+  },
+  {
    "name": "Pink Coral Turret",
    "types": [
     "0xad93"
@@ -18056,6 +21677,21 @@
    },
    "drops": [
     "0x0a50"
+   ]
+  },
+  {
+   "name": "Pirate Brawler",
+   "types": [
+    "0x455f",
+    "0x4560"
+   ],
+   "realmeye": "pirate-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0a50",
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
    ]
   },
   {
@@ -18128,6 +21764,53 @@
    ]
   },
   {
+   "name": "Pirate Queen Ramm",
+   "types": [
+    "0x74ae",
+    "0xc22b",
+    "0xc22c",
+    "0xca62"
+   ],
+   "realmeye": "pirate-queen-ramm",
+   "tiers": {
+    "weapon": [
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0c6c",
+    "0x0cc2",
+    "0x0cc4",
+    "0x0cca",
+    "0x13e6",
+    "0x37cb",
+    "0x385a",
+    "0x385b",
+    "0x385c",
+    "0x3878",
+    "0x3879",
+    "0x387a",
+    "0x66a2",
+    "0x7c8b",
+    "0xca5e",
+    "0xca71"
+   ]
+  },
+  {
+   "name": "Pirate Sharpshooter",
+   "types": [
+    "0x4562"
+   ],
+   "realmeye": "pirate-sharpshooter",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Piratess",
    "types": [
     "0x0601",
@@ -18158,6 +21841,15 @@
     "0x0224"
    ],
    "realmeye": "pit-viper",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Platinum Stinger",
+   "types": [
+    "0xb316"
+   ],
+   "realmeye": "platinum-stinger",
    "tiers": {},
    "drops": []
   },
@@ -18193,6 +21885,39 @@
     "0x0a23",
     "0x0a35",
     "0x2840"
+   ]
+  },
+  {
+   "name": "Plex",
+   "types": [
+    "0xb2ef"
+   ],
+   "realmeye": "plex",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Plexling",
+   "types": [
+    "0xb2ed"
+   ],
+   "realmeye": "plexling",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Polaris",
+   "types": [
+    "0x7fb4"
+   ],
+   "realmeye": "polaris",
+   "tiers": {},
+   "drops": [
+    "0x0ae9",
+    "0x13e6",
+    "0x1413",
+    "0x16d9",
+    "0x7fd2"
    ]
   },
   {
@@ -18390,6 +22115,20 @@
    ]
   },
   {
+   "name": "Primal Snake (Boss)",
+   "types": [
+    "0xea17",
+    "0xea18",
+    "0xea19",
+    "0xea3a",
+    "0xea3b",
+    "0xea3c"
+   ],
+   "realmeye": "primal-snake-boss",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Probation Wraith",
    "types": [
     "0xad02"
@@ -18426,6 +22165,30 @@
    "drops": []
   },
   {
+   "name": "Pterasite",
+   "types": [
+    "0x0787"
+   ],
+   "realmeye": "pterasite",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Pterasite Colony",
+   "types": [
+    "0x07a4",
+    "0xb3b5"
+   ],
+   "realmeye": "pterasite-colony",
+   "tiers": {},
+   "drops": [
+    "0x0a1f",
+    "0x0a22",
+    "0x0a23",
+    "0x0bdb"
+   ]
+  },
+  {
    "name": "Ptorgian",
    "types": [
     "0xb2c1"
@@ -18440,6 +22203,15 @@
     "0xb2c2"
    ],
    "realmeye": "ptortorgian",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Pulsating Obstacle",
+   "types": [
+    "0x080f"
+   ],
+   "realmeye": "pulsating-obstacle",
    "tiers": {},
    "drops": []
   },
@@ -18525,6 +22297,43 @@
    "realmeye": "puppet-bomb",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Puppet Clone",
+   "types": [
+    "0x748a"
+   ],
+   "realmeye": "puppet-clone",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Puppet of Chaos",
+   "types": [
+    "0x054a",
+    "0x054b",
+    "0x7474",
+    "0x74a5"
+   ],
+   "realmeye": "puppet-of-chaos",
+   "tiers": {},
+   "drops": [
+    "0x4ba1"
+   ]
+  },
+  {
+   "name": "Puppet of Pain",
+   "types": [
+    "0x054c",
+    "0x054d",
+    "0x7489",
+    "0x74a6"
+   ],
+   "realmeye": "puppet-of-pain",
+   "tiers": {},
+   "drops": [
+    "0x4ba1"
+   ]
   },
   {
    "name": "Purple Drake",
@@ -18658,6 +22467,22 @@
    "drops": []
   },
   {
+   "name": "Pyro Warlock",
+   "types": [
+    "0x729b",
+    "0x826a"
+   ],
+   "realmeye": "pyro-warlock",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x21f3",
+    "0x21f4",
+    "0x3886"
+   ]
+  },
+  {
    "name": "Pythagorean",
    "types": [
     "0xbac1"
@@ -18669,6 +22494,82 @@
     "0xaf1f",
     "0xbbdf",
     "0xea6b"
+   ]
+  },
+  {
+   "name": "Queen Alien Bunny",
+   "types": [
+    "0x0597"
+   ],
+   "realmeye": "queen-alien-bunny",
+   "tiers": {},
+   "drops": [
+    "0x013c",
+    "0x05b2",
+    "0x05b3",
+    "0x05b4",
+    "0x05b5",
+    "0x05b6",
+    "0x05b7",
+    "0x0cc2",
+    "0x0cc5",
+    "0x0cca",
+    "0x13d0",
+    "0x13d1",
+    "0x13d2",
+    "0x13e6",
+    "0x5be8",
+    "0x5c02",
+    "0x5c37",
+    "0x7e78",
+    "0x8395",
+    "0x83a4",
+    "0x933b",
+    "0x933c",
+    "0x933d",
+    "0xa0de",
+    "0xc886",
+    "0xc887",
+    "0xc888"
+   ]
+  },
+  {
+   "name": "Queen Alien Egglayer",
+   "types": [
+    "0x0598"
+   ],
+   "realmeye": "queen-alien-egglayer",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Queen Bee",
+   "types": [
+    "0x0129"
+   ],
+   "realmeye": "queen-bee",
+   "tiers": {
+    "armor": [
+     4,
+     5,
+     6
+    ],
+    "ring": [
+     2
+    ],
+    "weapon": [
+     5
+    ]
+   },
+   "drops": [
+    "0x011c",
+    "0x0132",
+    "0x0136",
+    "0x0722",
+    "0x0a4c",
+    "0x14af",
+    "0x17fe",
+    "0x19ae"
    ]
   },
   {
@@ -19019,6 +22920,23 @@
    "drops": []
   },
   {
+   "name": "Red Crystal",
+   "types": [
+    "0x732a",
+    "0x733d",
+    "0x8326",
+    "0x8327",
+    "0xb677",
+    "0xb67a",
+    "0xb67b",
+    "0xb682",
+    "0xb699"
+   ],
+   "realmeye": "red-crystal",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Red Demon",
    "types": [
     "0x0668",
@@ -19158,6 +23076,30 @@
     "0x7b77",
     "0xa312",
     "0xea65"
+   ]
+  },
+  {
+   "name": "Red Spotted Den Spider",
+   "types": [
+    "0x021e"
+   ],
+   "realmeye": "red-spotted-den-spider",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3
+    ],
+    "ring": [
+     2
+    ],
+    "weapon": [
+     4
+    ]
+   },
+   "drops": [
+    "0x0707"
    ]
   },
   {
@@ -19355,6 +23297,15 @@
    ]
   },
   {
+   "name": "Ring Element",
+   "types": [
+    "0x1748"
+   ],
+   "realmeye": "ring-element",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Risen Archer",
    "types": [
     "0x1ba1",
@@ -19449,6 +23400,20 @@
    "tiers": {},
    "drops": [
     "0x083c"
+   ]
+  },
+  {
+   "name": "Robot Brawler",
+   "types": [
+    "0x4568",
+    "0x456d"
+   ],
+   "realmeye": "robot-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
    ]
   },
   {
@@ -20035,6 +24000,54 @@
    "drops": []
   },
   {
+   "name": "Royal Chamberlain",
+   "types": [
+    "0x81be"
+   ],
+   "realmeye": "royal-chamberlain",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x3888"
+   ]
+  },
+  {
+   "name": "Royal Cnidarian",
+   "types": [
+    "0x09f7",
+    "0x09f8"
+   ],
+   "realmeye": "royal-cnidarian",
+   "tiers": {
+    "armor": [
+     10,
+     11
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x09fc",
+    "0x09fd",
+    "0x0aea",
+    "0x0d69",
+    "0x0d6d",
+    "0x2368",
+    "0x2369",
+    "0x2469",
+    "0x2727",
+    "0x38de",
+    "0x38f7"
+   ]
+  },
+  {
    "name": "Royal Crab",
    "types": [
     "0xc781"
@@ -20042,6 +24055,58 @@
    "realmeye": "royal-crab",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Royal Herald",
+   "types": [
+    "0x81bd"
+   ],
+   "realmeye": "royal-herald",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x3886"
+   ]
+  },
+  {
+   "name": "Royal Jester",
+   "types": [
+    "0x81c4"
+   ],
+   "realmeye": "royal-jester",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x3887"
+   ]
+  },
+  {
+   "name": "Royal Magistrate",
+   "types": [
+    "0x81c3"
+   ],
+   "realmeye": "royal-magistrate",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x3886"
+   ]
+  },
+  {
+   "name": "Royal Steward",
+   "types": [
+    "0x81bc"
+   ],
+   "realmeye": "royal-steward",
+   "tiers": {},
+   "drops": [
+    "0x0aeb",
+    "0x0aec",
+    "0x3886"
+   ]
   },
   {
    "name": "Ruby Bat",
@@ -20096,6 +24161,23 @@
    ]
   },
   {
+   "name": "S.W.I.T.C.H.",
+   "types": [
+    "0x2f43",
+    "0x2f44",
+    "0x2f45",
+    "0x2f46",
+    "0x2f47",
+    "0x2f48",
+    "0x2f49",
+    "0x2f4a",
+    "0x3d68"
+   ],
+   "realmeye": "s-w-i-t-c-h",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Sage Genji",
    "types": [
     "0x4fe2"
@@ -20134,7 +24216,8 @@
    "tiers": {},
    "drops": [
     "0x0a22",
-    "0x0a23"
+    "0x0a23",
+    "0x0c45"
    ]
   },
   {
@@ -20175,7 +24258,9 @@
    ],
    "realmeye": "sand-phantom",
    "tiers": {},
-   "drops": []
+   "drops": [
+    "0x0c45"
+   ]
   },
   {
    "name": "Sand Phantom Wisp",
@@ -20185,7 +24270,9 @@
    ],
    "realmeye": "sand-phantom-wisp",
    "tiers": {},
-   "drops": []
+   "drops": [
+    "0x0c45"
+   ]
   },
   {
    "name": "Sandsman Archer",
@@ -20222,6 +24309,7 @@
    },
    "drops": [
     "0x0a22",
+    "0x0c45",
     "0x51a9"
    ]
   },
@@ -20306,6 +24394,45 @@
     "0x235c",
     "0x235e",
     "0x235f"
+   ]
+  },
+  {
+   "name": "Satellite Core",
+   "types": [
+    "0x1ad5",
+    "0x1ad6",
+    "0x1ad7",
+    "0x1ad8",
+    "0xb352",
+    "0xb353",
+    "0xb354",
+    "0xb355",
+    "0xdc69",
+    "0xdc6a",
+    "0xdc6b",
+    "0xdc6c",
+    "0xdc6d",
+    "0xdc6e",
+    "0xdc6f",
+    "0xdc70"
+   ],
+   "realmeye": "untaris-satellite-core",
+   "tiers": {},
+   "drops": [
+    "0x645e",
+    "0x6462",
+    "0x6464",
+    "0x6467",
+    "0xdb34",
+    "0xdb35",
+    "0xdb36",
+    "0xdb37",
+    "0xdb38",
+    "0xdb39",
+    "0xdb3a",
+    "0xdb3b",
+    "0xdb3c",
+    "0xdb3d"
    ]
   },
   {
@@ -20975,6 +25102,33 @@
    ]
   },
   {
+   "name": "Shade of Feargus",
+   "types": [
+    "0x7551",
+    "0xb17a",
+    "0xb21e",
+    "0xb241",
+    "0xb242",
+    "0xb243",
+    "0xb244"
+   ],
+   "realmeye": "shade-of-feargus",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Shade of the King",
+   "types": [
+    "0xb683",
+    "0xb6c0",
+    "0xb6c1",
+    "0xb6c2"
+   ],
+   "realmeye": "shade-of-the-king",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Shades of the Avatar",
    "types": [
     "0x55cb",
@@ -21144,6 +25298,51 @@
    "drops": []
   },
   {
+   "name": "Shaitan the Advisor",
+   "types": [
+    "0x6d97",
+    "0x6d9a",
+    "0x741b"
+   ],
+   "realmeye": "shaitan-the-advisor",
+   "tiers": {
+    "ability": [
+     5,
+     6
+    ],
+    "armor": [
+     10,
+     11,
+     12
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     10,
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0911",
+    "0x0a1f",
+    "0x0a34",
+    "0x0ae9",
+    "0x0d6a",
+    "0x0d6e",
+    "0x23c0",
+    "0x2727",
+    "0x382b",
+    "0x382c",
+    "0x382d",
+    "0x382e",
+    "0x38ea",
+    "0xd871",
+    "0xd872"
+   ]
+  },
+  {
    "name": "Shambling Sludge",
    "types": [
     "0x0950",
@@ -21171,6 +25370,17 @@
     "0x0a23",
     "0x51a9"
    ]
+  },
+  {
+   "name": "Shard Artifact",
+   "types": [
+    "0x7fb1",
+    "0x7fb2",
+    "0x7fb3"
+   ],
+   "realmeye": "shard-artifact",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Shield Generator",
@@ -21234,6 +25444,33 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Shred",
+   "types": [
+    "0xb2ec"
+   ],
+   "realmeye": "shred",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Shredder",
+   "types": [
+    "0xb2f0"
+   ],
+   "realmeye": "shredder",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Shredling",
+   "types": [
+    "0xb2eb"
+   ],
+   "realmeye": "shredling",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Shunned Shrubbery",
@@ -21339,6 +25576,15 @@
     "0xa312",
     "0xea65"
    ]
+  },
+  {
+   "name": "Silver Walker",
+   "types": [
+    "0xb309"
+   ],
+   "realmeye": "silver-walker",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Silvery Narwhal",
@@ -21571,6 +25817,23 @@
    "drops": [
     "0x0a01",
     "0x0a15"
+   ]
+  },
+  {
+   "name": "Skeleton Brawler",
+   "types": [
+    "0x4563",
+    "0x4564",
+    "0x4565",
+    "0x4566",
+    "0x4567"
+   ],
+   "realmeye": "skeleton-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
    ]
   },
   {
@@ -21811,6 +26074,15 @@
    "drops": []
   },
   {
+   "name": "Small Bee",
+   "types": [
+    "0x0126"
+   ],
+   "realmeye": "small-bee",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Small Creampuff",
    "types": [
     "0x5e34"
@@ -21903,6 +26175,21 @@
    "drops": [
     "0x0a22",
     "0x0a23"
+   ]
+  },
+  {
+   "name": "Snake Brawler",
+   "types": [
+    "0x4556",
+    "0x4557",
+    "0x4558"
+   ],
+   "realmeye": "snake-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
    ]
   },
   {
@@ -22259,6 +26546,18 @@
    ]
   },
   {
+   "name": "Soulwarden Murcian (NPC)",
+   "types": [
+    "0x5c81",
+    "0x5ccd",
+    "0x5cf5",
+    "0x5db0"
+   ],
+   "realmeye": "soulwarden-murcian-npc",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Specter Mine",
    "types": [
     "0x06da",
@@ -22283,6 +26582,21 @@
    "drops": []
   },
   {
+   "name": "Spectral Sentry (Event)",
+   "types": [
+    "0x41b4",
+    "0x43fa",
+    "0x43fb",
+    "0xb00f",
+    "0xb027",
+    "0xb132",
+    "0xb13a"
+   ],
+   "realmeye": "spectral-sentry-event",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Sphinx Artifact",
    "types": [
     "0x0d1c",
@@ -22290,6 +26604,51 @@
     "0x0d1e"
    ],
    "realmeye": "sphinx-artifact",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Spider Egg Sac",
+   "types": [
+    "0x021b"
+   ],
+   "realmeye": "spider-egg-sac",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Spider Webbed Chest",
+   "types": [
+    "0x374c"
+   ],
+   "realmeye": "spider-webbed-chest",
+   "tiers": {
+    "ability": [
+     2
+    ],
+    "armor": [
+     3,
+     4
+    ],
+    "ring": [
+     2,
+     3
+    ],
+    "weapon": [
+     4,
+     5
+    ]
+   },
+   "drops": [
+    "0x0707"
+   ]
+  },
+  {
+   "name": "Spilled Icecream",
+   "types": [
+    "0x5e36"
+   ],
+   "realmeye": "spilled-icecream",
    "tiers": {},
    "drops": []
   },
@@ -22366,6 +26725,16 @@
    ]
   },
   {
+   "name": "Sporatic Mushroom",
+   "types": [
+    "0xb2ad",
+    "0xb50f"
+   ],
+   "realmeye": "sporatic-mushroom",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Spore Spreader",
    "types": [
     "0x7312"
@@ -22431,6 +26800,20 @@
     "0x0a22",
     "0x0a23",
     "0x5195"
+   ]
+  },
+  {
+   "name": "Sprite Brawler",
+   "types": [
+    "0x4559",
+    "0x455a"
+   ],
+   "realmeye": "sprite-brawler",
+   "tiers": {},
+   "drops": [
+    "0x0c5b",
+    "0x0c5c",
+    "0x0c5d"
    ]
   },
   {
@@ -22523,6 +26906,21 @@
    ]
   },
   {
+   "name": "Square Elemental (Blue)",
+   "types": [
+    "0x420d",
+    "0xbac7"
+   ],
+   "realmeye": "square-elemental",
+   "tiers": {},
+   "drops": [
+    "0x4239",
+    "0xaf1f",
+    "0xbbdf",
+    "0xea6b"
+   ]
+  },
+  {
    "name": "Square Root",
    "types": [
     "0xbb16"
@@ -22561,11 +26959,61 @@
    ]
   },
   {
+   "name": "Staff Wielding Host",
+   "types": [
+    "0x07a5",
+    "0x095e"
+   ],
+   "realmeye": "staff-wielding-host",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Starvation",
    "types": [
     "0xb301"
    ],
    "realmeye": "starvation",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Statue of Feargus",
+   "types": [
+    "0xb18f",
+    "0xb190"
+   ],
+   "realmeye": "statue-of-feargus",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Statue of Limoz",
+   "types": [
+    "0xb191",
+    "0xb1a0"
+   ],
+   "realmeye": "statue-of-limoz",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Statue of Nikao",
+   "types": [
+    "0xb1a3",
+    "0xb1a4"
+   ],
+   "realmeye": "statue-of-nikao",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Statue of Pyyr",
+   "types": [
+    "0xb1a1",
+    "0xb1a2"
+   ],
+   "realmeye": "statue-of-pyyr",
    "tiers": {},
    "drops": []
   },
@@ -22620,6 +27068,15 @@
     "0x0a23",
     "0x51a8"
    ]
+  },
+  {
+   "name": "Steel Reaper",
+   "types": [
+    "0xb30c"
+   ],
+   "realmeye": "steel-reaper",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Stheno Pet",
@@ -22679,6 +27136,17 @@
    ]
   },
   {
+   "name": "Stheno the Snake Queen Deux",
+   "types": [
+    "0x719d"
+   ],
+   "realmeye": "stheno-the-snake-queen-deux",
+   "tiers": {},
+   "drops": [
+    "0x0cdf"
+   ]
+  },
+  {
    "name": "Sting Spider",
    "types": [
     "0x55c5",
@@ -22714,6 +27182,19 @@
    ]
   },
   {
+   "name": "Stone Gargoyle",
+   "types": [
+    "0x80ff"
+   ],
+   "realmeye": "stone-gargoyle",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x43eb",
+    "0x89b5"
+   ]
+  },
+  {
    "name": "Stone Guardian Sword",
    "types": [
     "0x0d7c",
@@ -22723,6 +27204,98 @@
    "realmeye": "stone-guardian-sword",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Stone Knight",
+   "types": [
+    "0x711d"
+   ],
+   "realmeye": "stone-knight",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x43ed",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Mage",
+   "types": [
+    "0x710e"
+   ],
+   "realmeye": "stone-mage",
+   "tiers": {},
+   "drops": [
+    "0x3886",
+    "0x43ee",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Monolith",
+   "types": [
+    "0x710a"
+   ],
+   "realmeye": "stone-monolith",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x43ec",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Paladin",
+   "types": [
+    "0x713c"
+   ],
+   "realmeye": "stone-paladin",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x43ed",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Ranger",
+   "types": [
+    "0x8192"
+   ],
+   "realmeye": "stone-ranger",
+   "tiers": {},
+   "drops": [
+    "0x3887",
+    "0x43ee",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Warrior",
+   "types": [
+    "0x80fe"
+   ],
+   "realmeye": "stone-warrior",
+   "tiers": {},
+   "drops": [
+    "0x3888",
+    "0x43ed",
+    "0x89b5"
+   ]
+  },
+  {
+   "name": "Stone Warrior",
+   "types": [
+    "0x80fe"
+   ],
+   "realmeye": "stone-idol",
+   "tiers": {},
+   "drops": [
+    "0x43eb",
+    "0x43ec",
+    "0x43ed",
+    "0x43ee"
+   ]
   },
   {
    "name": "Suesogian",
@@ -23041,6 +27614,21 @@
    ]
   },
   {
+   "name": "Swarm Colony",
+   "types": [
+    "0x07be",
+    "0xb3b6"
+   ],
+   "realmeye": "swarm-colony",
+   "tiers": {},
+   "drops": [
+    "0x0a1f",
+    "0x0a22",
+    "0x0a23",
+    "0x0bdb"
+   ]
+  },
+  {
    "name": "Swarm Tree",
    "types": [
     "0x41f9"
@@ -23139,6 +27727,16 @@
    ]
   },
   {
+   "name": "Sword Wielding Host",
+   "types": [
+    "0x07a6",
+    "0x095a"
+   ],
+   "realmeye": "sword-wielding-host",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Syogian",
    "types": [
     "0xb305"
@@ -23148,6 +27746,24 @@
    "drops": [
     "0x645d",
     "0x6460"
+   ]
+  },
+  {
+   "name": "Tablet of the Monarchy",
+   "types": [
+    "0x8160"
+   ],
+   "realmeye": "tablet-of-the-monarchy",
+   "tiers": {},
+   "drops": [
+    "0x25c5",
+    "0x3886",
+    "0x3887",
+    "0x3888",
+    "0x42e4",
+    "0x42ef",
+    "0x42f3",
+    "0x42f4"
    ]
   },
   {
@@ -23175,11 +27791,80 @@
    ]
   },
   {
+   "name": "Tarul",
+   "types": [
+    "0xb2f3"
+   ],
+   "realmeye": "tarul",
+   "tiers": {},
+   "drops": [
+    "0x645e",
+    "0x6462",
+    "0x6464",
+    "0x6467",
+    "0xdb34",
+    "0xdb35",
+    "0xdb36",
+    "0xdb37",
+    "0xdb38",
+    "0xdb39",
+    "0xdb3a",
+    "0xdb3b",
+    "0xdb3c",
+    "0xdb3d"
+   ]
+  },
+  {
+   "name": "Tarul, Eyes of the Cosmos",
+   "types": [
+    "0xdc37",
+    "0xdc39",
+    "0xdc3a",
+    "0xdc60",
+    "0xdc9f"
+   ],
+   "realmeye": "tarul-eyes-of-the-cosmos",
+   "tiers": {
+    "armor": [
+     13
+    ],
+    "weapon": [
+     12
+    ]
+   },
+   "drops": [
+    "0x645e",
+    "0x6462",
+    "0x6464",
+    "0x6467",
+    "0xdb34",
+    "0xdb35",
+    "0xdb36",
+    "0xdb37",
+    "0xdb38",
+    "0xdb39",
+    "0xdb3a",
+    "0xdb3b",
+    "0xdb3c",
+    "0xdb3d",
+    "0xdb80"
+   ]
+  },
+  {
    "name": "Tavern Bartender",
    "types": [
     "0x86c4"
    ],
    "realmeye": "tavern-bartender",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Tavern Cook",
+   "types": [
+    "0x4561"
+   ],
+   "realmeye": "tavern-cook",
    "tiers": {},
    "drops": []
   },
@@ -23369,6 +28054,34 @@
    ]
   },
   {
+   "name": "Tezcacoatl the Great Basilisk",
+   "types": [
+    "0x36a6"
+   ],
+   "realmeye": "tezcacoatl-the-great-basilisk",
+   "tiers": {
+    "armor": [
+     9,
+     10
+    ],
+    "ring": [
+     4
+    ],
+    "weapon": [
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0a1f",
+    "0x0a20",
+    "0x1e4d",
+    "0x2727",
+    "0x36a2"
+   ]
+  },
+  {
    "name": "The Beekeeper",
    "types": [
     "0x08b3",
@@ -23419,6 +28132,81 @@
     "0x87dd",
     "0xd855",
     "0xffe6"
+   ]
+  },
+  {
+   "name": "The Bridge Sentinel",
+   "types": [
+    "0x714b"
+   ],
+   "realmeye": "the-bridge-sentinel",
+   "tiers": {
+    "ability": [
+     6
+    ],
+    "armor": [
+     12
+    ],
+    "ring": [
+     6
+    ],
+    "weapon": [
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0bad",
+    "0x2368",
+    "0x2369",
+    "0x2726",
+    "0x3880",
+    "0x38d0",
+    "0x38d5",
+    "0x38d7",
+    "0x38da",
+    "0x3a84",
+    "0x4323",
+    "0x7743",
+    "0xb610"
+   ]
+  },
+  {
+   "name": "The Forgotten King",
+   "types": [
+    "0x716f"
+   ],
+   "realmeye": "the-forgotten-king",
+   "tiers": {
+    "ability": [
+     6
+    ],
+    "armor": [
+     14
+    ],
+    "ring": [
+     7
+    ],
+    "weapon": [
+     14
+    ]
+   },
+   "drops": [
+    "0x0bab",
+    "0x1e35",
+    "0x236b",
+    "0x236e",
+    "0x2726",
+    "0x3786",
+    "0x3882",
+    "0x38d2",
+    "0x38d3",
+    "0x38d9",
+    "0x38db",
+    "0x3a80",
+    "0x3a85",
+    "0x7749",
+    "0xb624"
    ]
   },
   {
@@ -23546,6 +28334,151 @@
    ]
   },
   {
+   "name": "The Puppet Master (Encore",
+   "types": [
+    "0x7433"
+   ],
+   "realmeye": "the-puppet-master-encore",
+   "tiers": {
+    "armor": [
+     10,
+     11,
+     12
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     10,
+     11
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x09d5",
+    "0x0a1f",
+    "0x0a20",
+    "0x0aea",
+    "0x0d41",
+    "0x0d42",
+    "0x0d6b",
+    "0x0d6f",
+    "0x2727",
+    "0x4ba1",
+    "0x4ba2",
+    "0x4ba3",
+    "0x4ba6",
+    "0x610b"
+   ]
+  },
+  {
+   "name": "The Source",
+   "types": [
+    "0x8242"
+   ],
+   "realmeye": "the-source",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "The Wanderer (Interregnum)",
+   "types": [
+    "0x388a",
+    "0x388d",
+    "0x43ef",
+    "0x4500",
+    "0x4501",
+    "0x4502",
+    "0x4503",
+    "0x4504",
+    "0x4505",
+    "0x4506",
+    "0x47aa",
+    "0xc25b"
+   ],
+   "realmeye": "the-wanderer-interregnum",
+   "tiers": {
+    "ability": [
+     5,
+     6
+    ],
+    "armor": [
+     11,
+     12,
+     13
+    ],
+    "ring": [
+     6
+    ],
+    "weapon": [
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0c6c",
+    "0x0cc2",
+    "0x0cc4",
+    "0x0cca",
+    "0x13e6",
+    "0x385a",
+    "0x3870",
+    "0x3871",
+    "0x3872",
+    "0x3873",
+    "0x3874",
+    "0x3875",
+    "0x3878",
+    "0x3879",
+    "0x387a",
+    "0x6371",
+    "0x7c8b",
+    "0x87e0"
+   ]
+  },
+  {
+   "name": "The White Snake",
+   "types": [
+    "0xea12",
+    "0xea13",
+    "0xea14"
+   ],
+   "realmeye": "the-white-snake",
+   "tiers": {
+    "ability": [
+     6
+    ],
+    "armor": [
+     12,
+     13
+    ],
+    "ring": [
+     6
+    ],
+    "weapon": [
+     12,
+     13
+    ]
+   },
+   "drops": [
+    "0x236e",
+    "0x236f",
+    "0x2726",
+    "0x2727",
+    "0x2728",
+    "0x2a00",
+    "0xa140",
+    "0xa142",
+    "0xa146",
+    "0xa149",
+    "0xe9ed",
+    "0xe9f5"
+   ]
+  },
+  {
    "name": "Thorned Drake",
    "types": [
     "0x663e"
@@ -23586,6 +28519,29 @@
    ]
   },
   {
+   "name": "Thorned Ravager<",
+   "types": [
+    "0x6614"
+   ],
+   "realmeye": "thorned-ravager",
+   "tiers": {
+    "armor": [
+     8,
+     9
+    ],
+    "weapon": [
+     8,
+     9
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x6400",
+    "0x6611"
+   ]
+  },
+  {
    "name": "Tiar",
    "types": [
     "0x0851"
@@ -23594,6 +28550,17 @@
    "tiers": {},
    "drops": [
     "0x083c"
+   ]
+  },
+  {
+   "name": "Tin Cannon",
+   "types": [
+    "0xb35f"
+   ],
+   "realmeye": "tin-cannon",
+   "tiers": {},
+   "drops": [
+    "0x6463"
    ]
   },
   {
@@ -23682,6 +28649,17 @@
    "drops": []
   },
   {
+   "name": "Totem Spirit",
+   "types": [
+    "0x0dcc"
+   ],
+   "realmeye": "totem-spirit",
+   "tiers": {},
+   "drops": [
+    "0x0a23"
+   ]
+  },
+  {
    "name": "Trap Element",
    "types": [
     "0x0958",
@@ -23696,6 +28674,67 @@
    "realmeye": "trap-element",
    "tiers": {},
    "drops": []
+  },
+  {
+   "name": "Treasure Oryx Defender",
+   "types": [
+    "0x5e3a"
+   ],
+   "realmeye": "treasure-oryx-defender",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Treasure Plunderer",
+   "types": [
+    "0x5e2a"
+   ],
+   "realmeye": "treasure-plunderer",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Treasure Pot",
+   "types": [
+    "0x5e3c"
+   ],
+   "realmeye": "treasure-pot",
+   "tiers": {
+    "ability": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "armor": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "ring": [
+     1,
+     2,
+     3,
+     5
+    ],
+    "weapon": [
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
   },
   {
    "name": "Treasure Pot",
@@ -23715,6 +28754,30 @@
     "0x0b11",
     "0x0b12",
     "0x0b13"
+   ]
+  },
+  {
+   "name": "Treasure Rat",
+   "types": [
+    "0x5e1d"
+   ],
+   "realmeye": "treasure-rat",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
+   "name": "Treasure Robber",
+   "types": [
+    "0x5e2b"
+   ],
+   "realmeye": "treasure-robber",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
    ]
   },
   {
@@ -23749,6 +28812,18 @@
    ]
   },
   {
+   "name": "Treasure Thief",
+   "types": [
+    "0x1e17"
+   ],
+   "realmeye": "treasure-thief",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23"
+   ]
+  },
+  {
    "name": "Treasurer Gemsbok",
    "types": [
     "0x21fc"
@@ -23779,6 +28854,17 @@
     "0xb90b",
     "0xb90c",
     "0xb90d"
+   ]
+  },
+  {
+   "name": "Trickster Puppet",
+   "types": [
+    "0x7458"
+   ],
+   "realmeye": "trickster-puppet-encore",
+   "tiers": {},
+   "drops": [
+    "0x4ba1"
    ]
   },
   {
@@ -23946,6 +29032,45 @@
    ]
   },
   {
+   "name": "Twilight Archmage",
+   "types": [
+    "0x715d",
+    "0x727a"
+   ],
+   "realmeye": "twilight-archmage",
+   "tiers": {
+    "ability": [
+     6
+    ],
+    "armor": [
+     13,
+     14
+    ],
+    "ring": [
+     6
+    ],
+    "weapon": [
+     12,
+     13
+    ]
+   },
+   "drops": [
+    "0x0bac",
+    "0x236c",
+    "0x236f",
+    "0x2726",
+    "0x3881",
+    "0x38d1",
+    "0x38d4",
+    "0x38d6",
+    "0x38d8",
+    "0x3a90",
+    "0x47ab",
+    "0x7746",
+    "0xb616"
+   ]
+  },
+  {
    "name": "Twisted Pistolwisp",
    "types": [
     "0x5c68"
@@ -24108,6 +29233,7 @@
    },
    "drops": [
     "0x0a23",
+    "0x0c45",
     "0x51a9"
    ]
   },
@@ -24163,6 +29289,71 @@
     "0x9d11"
    ],
    "realmeye": "unholy-dream-mucus-echo-vortex",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Unicorn",
+   "types": [
+    "0x5e40"
+   ],
+   "realmeye": "unicorn",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Uninfected Archer",
+   "types": [
+    "0xbedb"
+   ],
+   "realmeye": "uninfected-archer",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Uninfected Chest",
+   "types": [
+    "0xbf00"
+   ],
+   "realmeye": "uninfected-chest",
+   "tiers": {},
+   "drops": [
+    "0xbefd"
+   ]
+  },
+  {
+   "name": "Uninfected Priest",
+   "types": [
+    "0xbeda"
+   ],
+   "realmeye": "uninfected-priest",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Uninfected Rogue",
+   "types": [
+    "0xbed8"
+   ],
+   "realmeye": "uninfected-rogue",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Uninfected Warrior",
+   "types": [
+    "0xbed7"
+   ],
+   "realmeye": "uninfected-warrior",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Uninfected Wizard",
+   "types": [
+    "0xbed9"
+   ],
+   "realmeye": "uninfected-wizard",
    "tiers": {},
    "drops": []
   },
@@ -24401,6 +29592,15 @@
    ]
   },
   {
+   "name": "Viridian Soul Shard",
+   "types": [
+    "0xb261"
+   ],
+   "realmeye": "viridian-soul-shard",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "Viridian Wretched Rose",
    "types": [
     "0x6617"
@@ -24412,6 +29612,71 @@
     "0x0a23",
     "0x63e7"
    ]
+  },
+  {
+   "name": "Void Entity",
+   "types": [
+    "0xb014",
+    "0xb150",
+    "0xb151",
+    "0xb152",
+    "0xb153"
+   ],
+   "realmeye": "void-entity",
+   "tiers": {
+    "armor": [
+     12,
+     13
+    ],
+    "weapon": [
+     12,
+     13
+    ]
+   },
+   "drops": [
+    "0x024c",
+    "0x024d",
+    "0x024e",
+    "0x024f",
+    "0x0251",
+    "0x0ae9",
+    "0x0aea",
+    "0x17f8",
+    "0x2728",
+    "0xb611",
+    "0xb626",
+    "0xb627",
+    "0xb63a",
+    "0xb8d5",
+    "0xc9df"
+   ]
+  },
+  {
+   "name": "Void Fragment",
+   "types": [
+    "0xb019"
+   ],
+   "realmeye": "void-fragment",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Void Phantasm",
+   "types": [
+    "0x82a5"
+   ],
+   "realmeye": "void-phantasm",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Void Shade",
+   "types": [
+    "0xb023"
+   ],
+   "realmeye": "void-shade",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Vorck",
@@ -24478,6 +29743,52 @@
     ]
    },
    "drops": []
+  },
+  {
+   "name": "Walking Horror",
+   "types": [
+    "0x0793",
+    "0xb3a5",
+    "0xb3ae",
+    "0xb3b7"
+   ],
+   "realmeye": "walking-horror",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Waltan",
+   "types": [
+    "0xb2e9",
+    "0xb2ea"
+   ],
+   "realmeye": "waltan",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Waltank",
+   "types": [
+    "0xb2f1",
+    "0xb2f2"
+   ],
+   "realmeye": "waltank",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "Wand Wielding Host",
+   "types": [
+    "0x07a8",
+    "0x095b"
+   ],
+   "realmeye": "wand-wielding-host",
+   "tiers": {},
+   "drops": [
+    "0x0a22",
+    "0x0a23",
+    "0x0a85"
+   ]
   },
   {
    "name": "Wandering Spectatre",
@@ -25048,6 +30359,24 @@
    "drops": []
   },
   {
+   "name": "White Moon",
+   "types": [
+    "0x1742"
+   ],
+   "realmeye": "white-moon",
+   "tiers": {},
+   "drops": []
+  },
+  {
+   "name": "White Planet",
+   "types": [
+    "0x1743"
+   ],
+   "realmeye": "white-planet",
+   "tiers": {},
+   "drops": []
+  },
+  {
    "name": "White Sea Slurp",
    "types": [
     "0xbdf2"
@@ -25295,6 +30624,37 @@
    ]
   },
   {
+   "name": "Xolotl the Lightning God",
+   "types": [
+    "0x36ca"
+   ],
+   "realmeye": "xolotl-the-lightning-god",
+   "tiers": {
+    "armor": [
+     11,
+     12
+    ],
+    "ring": [
+     5
+    ],
+    "weapon": [
+     11,
+     12
+    ]
+   },
+   "drops": [
+    "0x0722",
+    "0x0ae9",
+    "0x0d68",
+    "0x0d6c",
+    "0x1e4f",
+    "0x2727",
+    "0x36a4",
+    "0x3d61",
+    "0x3d64"
+   ]
+  },
+  {
    "name": "Yangu",
    "types": [
     "0x086f"
@@ -25355,6 +30715,19 @@
     "0x0a22",
     "0x0a23"
    ]
+  },
+  {
+   "name": "Yellow Crystal",
+   "types": [
+    "0x731f",
+    "0x8316",
+    "0x8325",
+    "0xb67f",
+    "0xb6b3"
+   ],
+   "realmeye": "yellow-crystal",
+   "tiers": {},
+   "drops": []
   },
   {
    "name": "Yellow Drake",
@@ -25596,6 +30969,17 @@
  "unmatched": [
   {
    "kind": "drop",
+   "realmeye": "Agents of Oryx Shard",
+   "mobs": [
+    "Black Blade Ozuchi",
+    "Izel the Grand Shaman",
+    "Nefret the Pharaoh",
+    "Pirate Queen Ramm"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Alchemist Assassin Set Shard",
    "mobs": [
     "Groundskeeper Gretch",
@@ -25605,9 +30989,35 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Ancient Schematic",
+   "mobs": [
+    "Oryx the Mad God 3",
+    "The Forgotten King",
+    "Void Entity"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Archdemon Malphas",
    "mobs": [
     "Abyss Idol"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Astral Arcanist Set Shard",
+   "mobs": [
+    "Oryx the Mad God 3"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Beach Party Madness Drinks",
+   "mobs": [
+    "Masked Party God"
    ],
    "why": "no loot item with this name"
   },
@@ -25698,6 +31108,7 @@
     "Alpha Werewolf",
     "Animal Merchant",
     "Animate Sigillaria",
+    "Arachna the Spider Queen",
     "Artificial Sprite God",
     "Banshee",
     "Beholder",
@@ -25777,6 +31188,7 @@
     "Masquarerader",
     "Medusa",
     "Minotaur",
+    "Mixcoatl the Masked God",
     "Nameless Gladiator",
     "Native Sprite God",
     "Noxious Sprite",
@@ -25846,6 +31258,14 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Crown Cloths",
+   "mobs": [
+    "The Forgotten King"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Dammah Cloths",
    "mobs": [
     "Chancellor Dammah"
@@ -25887,6 +31307,22 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Exalted Oryx Cloths",
+   "mobs": [
+    "Oryx the Mad God 3"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Flame Cloths",
+   "mobs": [
+    "Shaitan the Advisor"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Foraxian Cloths",
    "mobs": [
     "Acidus"
@@ -25923,15 +31359,23 @@
    "mobs": [
     "Acidus, Natural Disaster",
     "Crystal Entity",
+    "Crystal Worm Mother",
     "Factory Control Core",
+    "Golden Sphinx Mk II",
     "Heart of the Wetlands",
     "King Suesogian I",
     "Kitsune Umi",
     "Kogbold Flying Machine",
+    "Neo Clax",
+    "Neo Clingstar",
+    "Neo Golden Cannon",
+    "Neo Golden Sentreenel",
     "Neo Heartbat",
     "Neo Roonogian",
     "Neo Syogian",
-    "Neo Waste"
+    "Neo Waste",
+    "Tarul, Eyes of the Cosmos",
+    "The Wanderer (Interregnum)"
    ],
    "why": "no loot item with this name"
   },
@@ -25959,9 +31403,18 @@
     "Cupcake",
     "Desire Troll",
     "Gigacorn",
+    "Gumball Machine",
     "MegaRototo",
     "Spoiled Creampuff",
     "Swoll Fairy"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Heavy Chainmail Cloths",
+   "mobs": [
+    "Shaitan the Advisor"
    ],
    "why": "no loot item with this name"
   },
@@ -26000,6 +31453,14 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Ivory Dragon Scale Cloths",
+   "mobs": [
+    "Ivory Wyvern"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Jester Argyle Cloths",
    "mobs": [
     "Oryx Puppet",
@@ -26009,17 +31470,9 @@
   },
   {
    "kind": "drop",
-   "realmeye": "Kendo Stick (Shiny)",
+   "realmeye": "Katalonian Cloths",
    "mobs": [
-    "Giant Crab",
-    "Goblin Mage",
-    "Goblin Warrior",
-    "Hobbit Mage",
-    "Sand Devil",
-    "Sand Phantom",
-    "Sand Phantom Wisp",
-    "Sandsman King",
-    "Undead Hobbit Mage"
+    "Golden Sphinx"
    ],
    "why": "no loot item with this name"
   },
@@ -26073,6 +31526,15 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Locked Wine Cellar",
+   "mobs": [
+    "Giant Oryx Chicken",
+    "Oryx the Mad God"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Mad Minotaur Set Shard",
    "mobs": [
     "Chancellor Dammah",
@@ -26090,6 +31552,14 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Midnight Dragon Scale Cloths",
+   "mobs": [
+    "Feargus the Obsidian Dragon"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Mixed Lights Cloths",
    "mobs": [
     "Snowy the Frost God"
@@ -26100,7 +31570,11 @@
    "kind": "drop",
    "realmeye": "Mystery Cloths",
    "mobs": [
-    "Belladonna"
+    "Belladonna",
+    "Black Blade Ozuchi",
+    "Izel the Grand Shaman",
+    "Nefret the Pharaoh",
+    "Pirate Queen Ramm"
    ],
    "why": "no loot item with this name"
   },
@@ -26108,7 +31582,11 @@
    "kind": "drop",
    "realmeye": "Mystery Dyes",
    "mobs": [
-    "Belladonna"
+    "Belladonna",
+    "Black Blade Ozuchi",
+    "Izel the Grand Shaman",
+    "Nefret the Pharaoh",
+    "Pirate Queen Ramm"
    ],
    "why": "no loot item with this name"
   },
@@ -26116,7 +31594,8 @@
    "kind": "drop",
    "realmeye": "Oktoberfest Beer",
    "mobs": [
-    "Beer God"
+    "Beer God",
+    "Bradley the Barkeep"
    ],
    "why": "no loot item with this name"
   },
@@ -26135,6 +31614,14 @@
    "realmeye": "Ornament",
    "mobs": [
     "Permafrost Lord"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Oryx Symbol Cloths",
+   "mobs": [
+    "Oryx the Mad God 3"
    ],
    "why": "no loot item with this name"
   },
@@ -26179,6 +31666,8 @@
     "Bilgewater's Galleon",
     "Bloodroot Heart",
     "Blue Beehemoth",
+    "Bradley the Barkeep",
+    "Coffin",
     "Corrupted Bramblethorn",
     "Corruption Phantom",
     "Crab Sovereign",
@@ -26189,8 +31678,10 @@
     "Davy Jones",
     "Desire Troll",
     "Dr Terrible",
+    "El Dorado",
     "Ethereal Shrine",
     "Eye of the Storm",
+    "Feargus the Obsidian Dragon",
     "Flying Behemoth",
     "Geb",
     "Ghost Ship",
@@ -26203,16 +31694,21 @@
     "Heroic Archdemon Malphas",
     "Heroic Septavius the Ghost God",
     "Horrific Creation",
+    "Infested Chest",
+    "Ivory Wyvern",
     "Jade Statue",
     "Jon Bilgewater the Pirate King",
     "Legion General",
     "Limon the Sprite Goddess",
     "Lord of the Lost Lands",
+    "Lord Ruthven",
     "Lost Sentry",
     "Maze Minotaur",
     "MegaRototo",
     "Murderous Megamoth",
+    "Nightmare Colony",
     "Nut",
+    "Oryx the Mad God",
     "Pentaract",
     "Possessed Pumpkin",
     "Ravenous Rot",
@@ -26220,6 +31716,7 @@
     "Rock Dragon",
     "Sentient Monolith",
     "Shadow Cube Blaster",
+    "Shaitan the Advisor",
     "Sigma Werewolf",
     "Skeletal Centipede",
     "Skull Knight",
@@ -26229,10 +31726,12 @@
     "Stheno the Snake Queen",
     "Sunken Treasure",
     "Swoll Fairy",
+    "Tezcacoatl the Great Basilisk",
     "The Lich King",
     "The Plague Doctor",
     "Warped Ent Ancient",
     "Well of Souls",
+    "Xolotl the Lightning God",
     "Yellow Beehemoth"
    ],
    "why": "no loot item with this name"
@@ -26296,6 +31795,7 @@
     "Legion Hell Guardian",
     "Legion Missionary",
     "Legion Principal",
+    "Mixcoatl the Masked God",
     "Septavius the Ghost God"
    ],
    "why": "no loot item with this name"
@@ -26366,6 +31866,7 @@
    "realmeye": "Schematic",
    "mobs": [
     "Crystal Entity",
+    "Crystal Worm Mother",
     "Doctor Lobotomik",
     "Factory Control Core",
     "Griefkeeper Zole",
@@ -26375,7 +31876,17 @@
     "Marble Colossus",
     "Overseer Oculon",
     "Soulwarden Murcian",
-    "The Beekeeper"
+    "The Beekeeper",
+    "The Bridge Sentinel",
+    "Twilight Archmage"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Sentinel Cloths",
+   "mobs": [
+    "The Bridge Sentinel"
    ],
    "why": "no loot item with this name"
   },
@@ -26464,7 +31975,10 @@
     "Blue Beehemoth",
     "Brute of Oryx",
     "Carp Emperor",
+    "Clax",
+    "Clingstar",
     "Commander of Oryx",
+    "Copper Sentreenel",
     "Corrupted Bramblethorn",
     "Crab Sovereign",
     "Crystal Worm Father",
@@ -26478,6 +31992,8 @@
     "Flying Behemoth",
     "Ghost Ship",
     "Goblin Patriarch",
+    "Golden Oryx Effigy",
+    "Golden Sphinx",
     "Grand Sphinx",
     "Heart of the Wetlands",
     "Heartbat",
@@ -26512,6 +32028,7 @@
     "Rock Dragon",
     "Roonogian",
     "Sandstone Titan",
+    "Satellite Core",
     "Sentient Monolith",
     "Shackled Soul",
     "Sigma Werewolf",
@@ -26521,9 +32038,14 @@
     "Snowy the Frost God",
     "Suesogian",
     "Syogian",
+    "Tarul",
     "The Lich King",
     "The Plague Doctor",
+    "Tin Cannon",
+    "Treasure Plunderer",
     "Treasure Pot",
+    "Treasure Robber",
+    "Treasure Thief",
     "Warped Ent Ancient",
     "Waste",
     "Well of Souls",
@@ -26612,6 +32134,14 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Tier 6 Rings",
+   "mobs": [
+    "Shaitan the Advisor"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Tier 8 Weapons",
    "mobs": [
     "Haunted Spirit"
@@ -26628,6 +32158,14 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Twilight Cloths",
+   "mobs": [
+    "Twilight Archmage"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Uncommon Pet Eggs",
    "mobs": [
     "Abyssal Hydra",
@@ -26638,6 +32176,7 @@
     "Alpha Werewolf",
     "Animal Merchant",
     "Animate Sigillaria",
+    "Arachna the Spider Queen",
     "Artificial Sprite God",
     "Banshee",
     "Beholder",
@@ -26715,6 +32254,7 @@
     "Masquarerader",
     "Medusa",
     "Minotaur",
+    "Mixcoatl the Masked God",
     "Nameless Gladiator",
     "Native Sprite God",
     "Noxious Sprite",
@@ -26783,12 +32323,23 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Untarian Cloths",
+   "mobs": [
+    "Tarul"
+   ],
+   "why": "no loot item with this name"
+  },
+  {
+   "kind": "drop",
    "realmeye": "Wines",
    "mobs": [
     "Aberrant of Oryx",
     "Abomination of Oryx",
+    "Bradley the Barkeep",
     "Brute of Oryx",
     "Commander of Oryx",
+    "Demon Brute Brawler",
+    "Demon Mage Brawler",
     "Henchman of Oryx",
     "Monstrosity of Oryx",
     "Oryx Ambassador",
@@ -26803,6 +32354,11 @@
     "Oryx Officer",
     "Oryx Patrician",
     "Oryx Sergeant",
+    "Pirate Brawler",
+    "Robot Brawler",
+    "Skeleton Brawler",
+    "Snake Brawler",
+    "Sprite Brawler",
     "Suit of Armor",
     "Vintner of Oryx"
    ],
@@ -26891,16 +32447,6 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Ancient Stone Sword (Purple)",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
-   "realmeye": "Ancient Stone Sword (Red)",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
    "realmeye": "Assimilation Chest",
    "why": "no Character object with this name"
   },
@@ -26911,12 +32457,17 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Bilgewater's Booty (Bronze)",
+   "realmeye": "Bomb Trap",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Bomb Trap",
+   "realmeye": "Bone Spike",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Boss Totem",
    "why": "no Character object with this name"
   },
   {
@@ -26926,12 +32477,22 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Canopic Jar 1",
+   "realmeye": "Bunnypede",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Captain Nycolas",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
    "realmeye": "Cavern Crystal",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Coral Barrier",
    "why": "no Character object with this name"
   },
   {
@@ -26951,6 +32512,26 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Dolor the Deranged",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Dragon Orbs",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Duke Poenitet",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Enraged Bunny Egg",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
    "realmeye": "Epic Arachna Element",
    "why": "no Character object with this name"
   },
@@ -26961,12 +32542,17 @@
   },
   {
    "kind": "mob",
-   "realmeye": "False Puppet Master",
+   "realmeye": "F.E.R.A.L Tentacle",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Flying Behemoth Tornado",
+   "realmeye": "Feargus Statue",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Flame Trap",
    "why": "no Character object with this name"
   },
   {
@@ -26982,6 +32568,16 @@
   {
    "kind": "mob",
    "realmeye": "Ghost Lantern Off",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Ghost Slurp",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Gold Cndarian",
    "why": "no Character object with this name"
   },
   {
@@ -27002,6 +32598,11 @@
   {
    "kind": "mob",
    "realmeye": "Jolly Sphinx",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Katalund Satellite Core",
    "why": "no Character object with this name"
   },
   {
@@ -27056,6 +32657,21 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Limoz Statue",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Limoz the Veridian Dragon Deux",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Log Trap",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
    "realmeye": "Lost Blue Cnidarian",
    "why": "no Character object with this name"
   },
@@ -27086,7 +32702,22 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Mini Hive",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Neo Bubblar",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
    "realmeye": "Neo Forax Satellite Core",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Neo Katalund Satellite Core",
    "why": "no Character object with this name"
   },
   {
@@ -27101,17 +32732,27 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Oryx the Mad God 2",
+   "realmeye": "Neo Satellite Core",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Oryx the Mad God 3",
+   "realmeye": "Nikao Statue",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
    "realmeye": "Oryx’s Living Floor",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Pterasite Bomb",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Pyyr Statue",
    "why": "no Character object with this name"
   },
   {
@@ -27126,7 +32767,17 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Shunned Prophet Gnarus",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
    "realmeye": "Slime Dispenser",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Snake Orbiter",
    "why": "no Character object with this name"
   },
   {
@@ -27136,22 +32787,12 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Soulwarden Murcian (NPC)",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
-   "realmeye": "Spectral Sentry (Event)",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
-   "realmeye": "Square Elemental (Blue)",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
    "realmeye": "Steam Turret",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Tempest",
    "why": "no Character object with this name"
   },
   {
@@ -27161,12 +32802,17 @@
   },
   {
    "kind": "mob",
+   "realmeye": "The Realm Eye",
+   "why": "no Character object with this name"
+  },
+  {
+   "kind": "mob",
    "realmeye": "The Servers",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Thorned Ravager<",
+   "realmeye": "The Shattered Queen",
    "why": "no Character object with this name"
   },
   {
@@ -27186,27 +32832,22 @@
   },
   {
    "kind": "mob",
-   "realmeye": "Uninfected Archer",
+   "realmeye": "Transcendent Spana",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Uninfected Priest",
+   "realmeye": "Treasure Mimic",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Uninfected Rogue",
+   "realmeye": "Twilight Crystal",
    "why": "no Character object with this name"
   },
   {
    "kind": "mob",
-   "realmeye": "Uninfected Warrior",
-   "why": "no Character object with this name"
-  },
-  {
-   "kind": "mob",
-   "realmeye": "Uninfected Wizard",
+   "realmeye": "Untempered Magic",
    "why": "no Character object with this name"
   },
   {
@@ -27377,6 +33018,46 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Honey Scepter",
+   "types": [
+    "0x0136",
+    "0x14af"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Ivory Heart",
+   "types": [
+    "0x35ea",
+    "0x35eb",
+    "0x35ec",
+    "0x35ed",
+    "0x35ee",
+    "0x35ef",
+    "0x35f0",
+    "0x35f1",
+    "0x35f2",
+    "0x35f3"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Katalund Technology",
+   "types": [
+    "0xdb4a",
+    "0xdb4b",
+    "0xdb4c",
+    "0xdb4d",
+    "0xdb4e",
+    "0xdb4f",
+    "0xdb50",
+    "0xdb51",
+    "0xdb52",
+    "0xdb53"
+   ]
+  },
+  {
+   "kind": "drop",
    "realmeye": "Malogia Technology",
    "types": [
     "0xdb29",
@@ -27448,10 +33129,34 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Quiver of Shadows",
+   "types": [
+    "0x024d",
+    "0xc9df"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Recurring Terror Spell",
+   "types": [
+    "0x07a1",
+    "0x07f6"
+   ]
+  },
+  {
+   "kind": "drop",
    "realmeye": "Red Beehemoth Blueprint",
    "types": [
     "0x38ed",
     "0xb62b"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Scepter of Devastation",
+   "types": [
+    "0x07b9",
+    "0x4537"
    ]
   },
   {
@@ -27531,6 +33236,30 @@
   },
   {
    "kind": "drop",
+   "realmeye": "Tome of Pain",
+   "types": [
+    "0x07b8",
+    "0x14ca"
+   ]
+  },
+  {
+   "kind": "drop",
+   "realmeye": "Untaris Technology",
+   "types": [
+    "0xdb34",
+    "0xdb35",
+    "0xdb36",
+    "0xdb37",
+    "0xdb38",
+    "0xdb39",
+    "0xdb3a",
+    "0xdb3b",
+    "0xdb3c",
+    "0xdb3d"
+   ]
+  },
+  {
+   "kind": "drop",
    "realmeye": "Vial of Soul Extract",
    "types": [
     "0x14da",
@@ -27543,6 +33272,25 @@
    "types": [
     "0x38e0",
     "0xb615"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "A.E.G.I.S.",
+   "types": [
+    "0x3d7b",
+    "0x3d7c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Abundant Shield",
+   "types": [
+    "0x02eb",
+    "0x7545",
+    "0x7546",
+    "0xb25d",
+    "0xb262"
    ]
   },
   {
@@ -27563,10 +33311,69 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Aqua Artifact",
+   "types": [
+    "0x7fae",
+    "0x7faf",
+    "0x7fb0"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Arachna Element",
+   "types": [
+    "0x0937",
+    "0x0938",
+    "0x0939",
+    "0x093a",
+    "0x093b",
+    "0x093c",
+    "0x093d",
+    "0x093e",
+    "0x093f",
+    "0x3e02",
+    "0x3e03",
+    "0x3e04",
+    "0x3e05",
+    "0x3e06",
+    "0x3e07",
+    "0x3e08",
+    "0x3e09",
+    "0x3e0a",
+    "0x702b",
+    "0x702c",
+    "0x702d",
+    "0x702e",
+    "0x702f",
+    "0x703a",
+    "0x703b",
+    "0x703c",
+    "0x703d",
+    "0xcdca",
+    "0xcdcb",
+    "0xcdcc",
+    "0xcdcd",
+    "0xcdce",
+    "0xcdcf",
+    "0xcdd0",
+    "0xcdd1",
+    "0xcdd2"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Astral Archer",
    "types": [
     "0xaf2b",
     "0xafc6"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Azure Soul Shard",
+   "types": [
+    "0x7531",
+    "0xb182"
    ]
   },
   {
@@ -27581,6 +33388,17 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Beer Barrel",
+   "types": [
+    "0x4525",
+    "0x4526",
+    "0x4527",
+    "0x4528",
+    "0x4529"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Bella Bud",
    "types": [
     "0x25c9",
@@ -27588,6 +33406,42 @@
     "0x65fb",
     "0x739a",
     "0x7410"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Bilgewater's Booty (Bronze)",
+   "types": [
+    "0x026c",
+    "0x026d",
+    "0x026e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Black Blade Ozuchi",
+   "types": [
+    "0x74b0",
+    "0xc24f",
+    "0xc276",
+    "0xca65"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Blob Colony",
+   "types": [
+    "0x0790",
+    "0xb3b4"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Blue Crystal",
+   "types": [
+    "0x732b",
+    "0xb67c",
+    "0xb681"
    ]
   },
   {
@@ -27609,10 +33463,35 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Bow Wielding Host",
+   "types": [
+    "0x07aa",
+    "0x095c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Bradley the Barkeep",
+   "types": [
+    "0x4551",
+    "0x4552",
+    "0x4553"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Breathtaking White Flower",
    "types": [
     "0x0569",
     "0x740e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Bubblar",
+   "types": [
+    "0xb2e7",
+    "0xdc28"
    ]
   },
   {
@@ -27633,6 +33512,42 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Cavecrawler Glowworm",
+   "types": [
+    "0xb298",
+    "0xb299",
+    "0xb29a",
+    "0xb514",
+    "0xb515",
+    "0xb516"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Cavecrawler Leech",
+   "types": [
+    "0xb2b1",
+    "0xb2b2",
+    "0xb2b3",
+    "0xb517",
+    "0xb518",
+    "0xb519"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Cavecrawler Maggot",
+   "types": [
+    "0xb2b4",
+    "0xb2b5",
+    "0xb2b6",
+    "0xb51a",
+    "0xb51b",
+    "0xb51c"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Chief Beisa",
    "types": [
     "0x263e",
@@ -27645,6 +33560,14 @@
    "types": [
     "0xc05b",
     "0xc061"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Creepy Small Heads",
+   "types": [
+    "0x6e09",
+    "0x7428"
    ]
   },
   {
@@ -27662,6 +33585,22 @@
     "0x9d09",
     "0x9d0a",
     "0x9d13"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Crimson Soul Shard",
+   "types": [
+    "0x7534",
+    "0xb17e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Cryo Warlock",
+   "types": [
+    "0x729c",
+    "0x826c"
    ]
   },
   {
@@ -27684,6 +33623,17 @@
     "0xb2a1",
     "0xb2a2",
     "0xb2a3"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Crystal Worm Mother",
+   "types": [
+    "0xb290",
+    "0xb291",
+    "0xb292",
+    "0xb293",
+    "0xb297"
    ]
   },
   {
@@ -27757,10 +33707,34 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Dagger Wielding Host",
+   "types": [
+    "0x07a9",
+    "0x095d"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Deholder",
    "types": [
     "0x7310",
     "0xab7f"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Demon Brute Brawler",
+   "types": [
+    "0x455d",
+    "0x455e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Demon Mage Brawler",
+   "types": [
+    "0x455b",
+    "0x455c"
    ]
   },
   {
@@ -27812,6 +33786,18 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Eye of the King",
+   "types": [
+    "0x717f",
+    "0x823e",
+    "0x823f",
+    "0x8240",
+    "0x8241",
+    "0xb68a"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Factory Control Core",
    "types": [
     "0x7099",
@@ -27823,11 +33809,47 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Fat Angry Bee",
+   "types": [
+    "0x0128",
+    "0x0d45"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Fat Bee",
+   "types": [
+    "0x0127",
+    "0x0d44"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Feargus the Obsidian Dragon",
+   "types": [
+    "0x7504",
+    "0xb174",
+    "0xb24b",
+    "0xb24c",
+    "0xb24d",
+    "0xb24e"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Fire Cube Overseer",
    "types": [
     "0x420a",
     "0xaf25",
     "0xafbf"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Fire Portal",
+   "types": [
+    "0x728c",
+    "0x730f"
    ]
   },
   {
@@ -27856,6 +33878,16 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Furious Lasher",
+   "types": [
+    "0x0795",
+    "0x07c8",
+    "0xb3b0",
+    "0xb3b9"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Ghost Bride",
    "types": [
     "0x1bb1",
@@ -27869,6 +33901,14 @@
     "0x9cd5",
     "0x9cd6",
     "0x9cd7"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Golden Rat",
+   "types": [
+    "0x3a44",
+    "0x715f"
    ]
   },
   {
@@ -27893,6 +33933,17 @@
    "types": [
     "0x1b9f",
     "0x5f2c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Green Crystal",
+   "types": [
+    "0x731e",
+    "0x8315",
+    "0x8324",
+    "0x8378",
+    "0xb688"
    ]
   },
   {
@@ -27973,12 +34024,68 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Hollow Gypsy",
+   "types": [
+    "0x8195",
+    "0x8197",
+    "0x8198",
+    "0x8199",
+    "0x819a"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Hollow Oracle",
+   "types": [
+    "0x8196",
+    "0x819b",
+    "0x819c",
+    "0x819d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Horror Maw",
+   "types": [
+    "0x0794",
+    "0x07c7",
+    "0xb3af",
+    "0xb3b8"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Ice Artifact",
+   "types": [
+    "0x7fab",
+    "0x7fac",
+    "0x7fad"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Ice Cube Blaster",
    "types": [
     "0x420e",
     "0x420f",
     "0xaf26",
     "0xafc0"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Ice Portal",
+   "types": [
+    "0x728b",
+    "0x730e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Ice Sphere",
+   "types": [
+    "0x728a",
+    "0x730d"
    ]
   },
   {
@@ -27991,10 +34098,36 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Ivory Wyvern",
+   "types": [
+    "0x754a",
+    "0xb189"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Izel the Grand Shaman",
+   "types": [
+    "0x74ad",
+    "0xc235",
+    "0xc236",
+    "0xca63"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Janus the Doorwarden",
    "types": [
     "0x2008",
     "0xb531"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Katana Wielding Host",
+   "types": [
+    "0x07a7",
+    "0x095f"
    ]
   },
   {
@@ -28027,6 +34160,16 @@
     "0x10f6",
     "0x445f",
     "0x4485"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "King's Thaumaturge",
+   "types": [
+    "0x725c",
+    "0x725f",
+    "0x732c",
+    "0x816d"
    ]
   },
   {
@@ -28101,6 +34244,24 @@
     "0x420c",
     "0xaf27",
     "0xafc1"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Lightning Spike",
+   "types": [
+    "0x456e",
+    "0x456f"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Magi-Generator",
+   "types": [
+    "0x811e",
+    "0x811f",
+    "0x8120",
+    "0x8121"
    ]
   },
   {
@@ -28183,6 +34344,17 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Mirror Wyvern",
+   "types": [
+    "0x742e",
+    "0x742f",
+    "0x7432",
+    "0x7434",
+    "0xb1a5"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Molek",
    "types": [
     "0xb0a9",
@@ -28199,6 +34371,168 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Mushroom Alchemist",
+   "types": [
+    "0xb2aa",
+    "0xb503"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Berserker",
+   "types": [
+    "0xb2ae",
+    "0xb510"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Brawler",
+   "types": [
+    "0xb2a9",
+    "0xb502"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Brute",
+   "types": [
+    "0xb29f",
+    "0xb50e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Caster",
+   "types": [
+    "0xb2b0",
+    "0xb512"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Champion",
+   "types": [
+    "0xb2af",
+    "0xb511"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Chieftain",
+   "types": [
+    "0xb29c",
+    "0xb504"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Guardian",
+   "types": [
+    "0xb274",
+    "0xb50a"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Keeper",
+   "types": [
+    "0xb275",
+    "0xb507"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Mage",
+   "types": [
+    "0xb29e",
+    "0xb50c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Oracle",
+   "types": [
+    "0xb272",
+    "0xb506"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Rogue",
+   "types": [
+    "0xb2ac",
+    "0xb50b"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Sentinel",
+   "types": [
+    "0xb270",
+    "0xb508"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Shaman",
+   "types": [
+    "0xb2a0",
+    "0xb513"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Soldier",
+   "types": [
+    "0xb304",
+    "0xb505"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Sorcerer",
+   "types": [
+    "0xb29d",
+    "0xb50d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Mushroom Stalker",
+   "types": [
+    "0xb2ab",
+    "0xb51d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Nefret the Pharaoh",
+   "types": [
+    "0x74af",
+    "0xc241",
+    "0xc242",
+    "0xca64"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Neo Waltan",
+   "types": [
+    "0xdc2a",
+    "0xdc2b"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Neo Waltank",
+   "types": [
+    "0xdc31",
+    "0xdc32"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Neo Waste",
    "types": [
     "0xdc46",
@@ -28208,11 +34542,110 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Nightmare Colony",
+   "types": [
+    "0x07b6",
+    "0x0800",
+    "0x0f1c",
+    "0x0f1d",
+    "0xb3b2",
+    "0xb3b3"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Nile Artifact",
    "types": [
     "0x0d1f",
     "0x0d20",
     "0x0d21"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Obsidian Soul Shard",
+   "types": [
+    "0x7533",
+    "0xb17b"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Oryx the Mad God",
+   "types": [
+    "0x054f",
+    "0x06dc",
+    "0x0932",
+    "0x0d46",
+    "0x1740",
+    "0x713d",
+    "0x718e",
+    "0xb01a",
+    "0xb096",
+    "0xb133",
+    "0xb1dc",
+    "0xb1dd",
+    "0xb1de",
+    "0xb1e9",
+    "0xb395",
+    "0xb3aa",
+    "0xb3ab"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Painling",
+   "types": [
+    "0x0788",
+    "0xb3b1",
+    "0xb3ba"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Paladin Obelisk",
+   "types": [
+    "0x715a",
+    "0x725d",
+    "0x725e",
+    "0x726c",
+    "0x726d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Parasitic Blob",
+   "types": [
+    "0x0789",
+    "0x7306"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Parasitic Stalker",
+   "types": [
+    "0x0791",
+    "0x07c9",
+    "0xb3a4",
+    "0xb3bb"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Pirate Brawler",
+   "types": [
+    "0x455f",
+    "0x4560"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Pirate Queen Ramm",
+   "types": [
+    "0x74ae",
+    "0xc22b",
+    "0xc22c",
+    "0xca62"
    ]
   },
   {
@@ -28245,10 +34678,50 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Primal Snake (Boss)",
+   "types": [
+    "0xea17",
+    "0xea18",
+    "0xea19",
+    "0xea3a",
+    "0xea3b",
+    "0xea3c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Pterasite Colony",
+   "types": [
+    "0x07a4",
+    "0xb3b5"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Pumpkin King",
    "types": [
     "0x1bb9",
     "0x5f2d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Puppet of Chaos",
+   "types": [
+    "0x054a",
+    "0x054b",
+    "0x7474",
+    "0x74a5"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Puppet of Pain",
+   "types": [
+    "0x054c",
+    "0x054d",
+    "0x7489",
+    "0x74a6"
    ]
   },
   {
@@ -28270,6 +34743,14 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Pyro Warlock",
+   "types": [
+    "0x729b",
+    "0x826a"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Reanimated Remains",
    "types": [
     "0x1b99",
@@ -28282,6 +34763,21 @@
    "types": [
     "0x5c89",
     "0x5d08"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Red Crystal",
+   "types": [
+    "0x732a",
+    "0x733d",
+    "0x8326",
+    "0x8327",
+    "0xb677",
+    "0xb67a",
+    "0xb67b",
+    "0xb682",
+    "0xb699"
    ]
   },
   {
@@ -28335,10 +34831,86 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Robot Brawler",
+   "types": [
+    "0x4568",
+    "0x456d"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Royal Cnidarian",
+   "types": [
+    "0x09f7",
+    "0x09f8"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "S.W.I.T.C.H.",
+   "types": [
+    "0x2f43",
+    "0x2f44",
+    "0x2f45",
+    "0x2f46",
+    "0x2f47",
+    "0x2f48",
+    "0x2f49",
+    "0x2f4a",
+    "0x3d68"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Sandstone Titan",
    "types": [
     "0x70c7",
     "0x70c9"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Satellite Core",
+   "types": [
+    "0x1ad5",
+    "0x1ad6",
+    "0x1ad7",
+    "0x1ad8",
+    "0xb352",
+    "0xb353",
+    "0xb354",
+    "0xb355",
+    "0xdc69",
+    "0xdc6a",
+    "0xdc6b",
+    "0xdc6c",
+    "0xdc6d",
+    "0xdc6e",
+    "0xdc6f",
+    "0xdc70"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Shade of Feargus",
+   "types": [
+    "0x7551",
+    "0xb17a",
+    "0xb21e",
+    "0xb241",
+    "0xb242",
+    "0xb243",
+    "0xb244"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Shade of the King",
+   "types": [
+    "0xb683",
+    "0xb6c0",
+    "0xb6c1",
+    "0xb6c2"
    ]
   },
   {
@@ -28361,6 +34933,35 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Shaitan the Advisor",
+   "types": [
+    "0x6d97",
+    "0x6d9a",
+    "0x741b"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Shard Artifact",
+   "types": [
+    "0x7fb1",
+    "0x7fb2",
+    "0x7fb3"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Skeleton Brawler",
+   "types": [
+    "0x4563",
+    "0x4564",
+    "0x4565",
+    "0x4566",
+    "0x4567"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Skull Pylon",
    "types": [
     "0x5d36",
@@ -28377,6 +34978,15 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Snake Brawler",
+   "types": [
+    "0x4556",
+    "0x4557",
+    "0x4558"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Snomipede",
    "types": [
     "0x9cd8",
@@ -28387,6 +34997,16 @@
   {
    "kind": "mob",
    "realmeye": "Soulwarden Murcian",
+   "types": [
+    "0x5c81",
+    "0x5ccd",
+    "0x5cf5",
+    "0x5db0"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Soulwarden Murcian (NPC)",
    "types": [
     "0x5c81",
     "0x5ccd",
@@ -28417,6 +35037,22 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Sporatic Mushroom",
+   "types": [
+    "0xb2ad",
+    "0xb50f"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Sprite Brawler",
+   "types": [
+    "0x4559",
+    "0x455a"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Sprite Cube",
    "types": [
     "0xaf24",
@@ -28433,10 +35069,58 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Square Elemental (Blue)",
+   "types": [
+    "0x420d",
+    "0xbac7"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Squared Sprite",
    "types": [
     "0xaf23",
     "0xafbd"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Staff Wielding Host",
+   "types": [
+    "0x07a5",
+    "0x095e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Statue of Feargus",
+   "types": [
+    "0xb18f",
+    "0xb190"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Statue of Limoz",
+   "types": [
+    "0xb191",
+    "0xb1a0"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Statue of Nikao",
+   "types": [
+    "0xb1a3",
+    "0xb1a4"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Statue of Pyyr",
+   "types": [
+    "0xb1a1",
+    "0xb1a2"
    ]
   },
   {
@@ -28460,6 +35144,33 @@
     "0x0d7c",
     "0x1fdc",
     "0xb53a"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Swarm Colony",
+   "types": [
+    "0x07be",
+    "0xb3b6"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Sword Wielding Host",
+   "types": [
+    "0x07a6",
+    "0x095a"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Tarul, Eyes of the Cosmos",
+   "types": [
+    "0xdc37",
+    "0xdc39",
+    "0xdc3a",
+    "0xdc60",
+    "0xdc9f"
    ]
   },
   {
@@ -28525,6 +35236,33 @@
   },
   {
    "kind": "mob",
+   "realmeye": "The Wanderer (Interregnum)",
+   "types": [
+    "0x388a",
+    "0x388d",
+    "0x43ef",
+    "0x4500",
+    "0x4501",
+    "0x4502",
+    "0x4503",
+    "0x4504",
+    "0x4505",
+    "0x4506",
+    "0x47aa",
+    "0xc25b"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "The White Snake",
+   "types": [
+    "0xea12",
+    "0xea13",
+    "0xea14"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Troll Matriarch",
    "types": [
     "0x1bae",
@@ -28541,10 +35279,63 @@
   },
   {
    "kind": "mob",
+   "realmeye": "Twilight Archmage",
+   "types": [
+    "0x715d",
+    "0x727a"
+   ]
+  },
+  {
+   "kind": "mob",
    "realmeye": "Vengeful Vampire",
    "types": [
     "0x1b9e",
     "0x5f2e"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Void Entity",
+   "types": [
+    "0xb014",
+    "0xb150",
+    "0xb151",
+    "0xb152",
+    "0xb153"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Walking Horror",
+   "types": [
+    "0x0793",
+    "0xb3a5",
+    "0xb3ae",
+    "0xb3b7"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Waltan",
+   "types": [
+    "0xb2e9",
+    "0xb2ea"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Waltank",
+   "types": [
+    "0xb2f1",
+    "0xb2f2"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Wand Wielding Host",
+   "types": [
+    "0x07a8",
+    "0x095b"
    ]
   },
   {
@@ -28579,6 +35370,17 @@
    "types": [
     "0x1b9c",
     "0x600c"
+   ]
+  },
+  {
+   "kind": "mob",
+   "realmeye": "Yellow Crystal",
+   "types": [
+    "0x731f",
+    "0x8316",
+    "0x8325",
+    "0xb67f",
+    "0xb6b3"
    ]
   },
   {

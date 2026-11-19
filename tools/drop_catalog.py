@@ -197,7 +197,10 @@ class Game:
         for path in sorted(glob.glob(os.path.join(folder, '*.xml'))):
             with open(path, encoding='utf-8', errors='replace') as f: self.read(f.read(), os.path.basename(path))
         self.by_name = {}
-        for t, o in self.objects.items(): self.by_name.setdefault(key(o['name']), []).append(t)
+        self.by_id = {}   # RealmEye sometimes uses the XML id (Oryx the Mad God 2): tried when no display name matches
+        for t, o in self.objects.items():
+            self.by_name.setdefault(key(o['name']), []).append(t)
+            self.by_id.setdefault(key(o['id']), []).append(t)
 
     def read(self, text, file):
         for attrs, body in re.findall(r'<Object\s([^>]*?[^/])>(.*?)</Object>', text, re.S):
@@ -214,8 +217,11 @@ class Game:
     def match(self, name, want, hint='', every=False):
         """Type ids for a RealmEye name: Character objects for want='mob', loot items for 'item'. When several
         share the name: the ones whose XML id is the name, then the ones in a file named like the dungeon (hint).
-        every=True keeps them all: the Realm has a copy per biome (Djinn, City Djinn)."""
-        found = [t for t in self.by_name.get(key(name), []) if
+        every=True keeps them all: the Realm has a copy per biome (Djinn, City Djinn). A name nothing has is tried
+        again without RealmEye's trailing qualifier: Primal Snake (Boss), The Puppet Master (Encore, Thorned Ravager<."""
+        bare = re.sub(r'\s*\([^)]*\)?$|<$', '', name)
+        if bare != name and not self.by_name.get(key(name)) and not self.by_id.get(key(name)): return self.match(bare, want, hint, every)
+        found = [t for t in self.by_name.get(key(name)) or self.by_id.get(key(name), []) if
                  (self.objects[t]['cls'] == 'Character' if want == 'mob' else self.objects[t]['item'] and self.objects[t]['loot'])]
         for narrow in () if every else (lambda t: key(self.objects[t]['id']) == key(name),
                        lambda t: hint and re.sub(r'[^a-z]', '', hint.casefold()) in self.objects[t]['file'].casefold()):
@@ -438,6 +444,8 @@ def self_test():
     with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as cache, tempfile.TemporaryDirectory() as art:
         with open(os.path.join(folder, 'testDenObjects.xml'), 'w') as f: f.write(xml)
         game = Game(folder)
+        assert game.match('Heroic Den King', 'mob') == [0x12] and game.match('Den King (Boss)', 'mob') == [0x11] \
+            and game.match('Den Rat<', 'mob') == [0x13] and game.match('Den King', 'mob', every=True) == [0x11, 0x12]
         assert game.match('Den King', 'mob') == [0x11]       # the XML id wins over a display name
         assert game.match('Den Sword', 'item') == [0x20]     # a skin (no <BagType>) isn't loot
         assert game.match('den rat', 'mob') == [0x13] and game.match('Den Lava', 'mob') == []
