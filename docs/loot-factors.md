@@ -62,8 +62,8 @@ Unknown: gear enchantments (only the item types), accelerators and loot events.
   `excludeLabels`. Item-only ones (`itemId`, such as ×100 stat potions) are left out of the rate.
 - **Base rate per kill:** drops ÷ the sum of the kills' multipliers, each from the factors on its map at the kill.
   Kills before format 4 count their gear as no bonus (at most +12% off). Per-run and bag-colour rates stay as seen.
-- **Guaranteed drops (#62):** a drop seen on every kill of a mob, over 20 kills or more, can't be boosted, so it is
-  drops ÷ kills (100%). Every rate, and yours, caps at 100%.
+- **Copies (#62):** item and tier rates count every copy, so a double drop counts 2 and a rate can top 100% (130%: one
+  sure, a 30% chance of a second). Boosts past 100% add copies, so the multiplier math holds for sure drops too.
 - **Yours:** base × your multiplier now; the dungeon's modifiers count only for mobs of the dungeon you're in.
 - **Live:** the loot bar on top of the Drop rates tab (Details opens the rest in the right pane) reads the newest running session from `drop_rates_v2.db`, imported every second.
 - **Your state now** comes from the guard's capture, filled from RealmHound's `account_data.json` (read only) where the

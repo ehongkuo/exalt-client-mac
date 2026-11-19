@@ -115,19 +115,18 @@ enum LootProfileTests {
               now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"] && now?.state.crucible == true, "your boosts now")
         check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5 * 1.1) } == true, "your multiplier now")
 
-        // Guaranteed drops (issue #62): seen on every one of 20+ kills, each kill counts once, whatever the boost.
-        var boosted = DropReport()
-        boosted.kills[mob] = 20; boosted.weight[mob] = 40
-        let sure = boosted.perKill(mob, 20), rare = boosted.perKill(mob, 2)
-        check(boosted.guaranteed(mob, 20) && sure.rate == 1 && !boosted.guaranteed(mob, 19), "a drop on every ×2 kill reads 100%")
-        check(near(rare.rate, 2.0 / 40) && rare.exposure == 40, "a rare drop's base rate is unchanged")
-        boosted.kills[mob] = 19; boosted.weight[mob] = 38
-        check(!boosted.guaranteed(mob, 19) && near(boosted.perKill(mob, 19).rate, 0.5), "under 20 kills, still boosted")
-        check(DropRate(count: 3, of: 2).rate == 1 && DropRate(count: 2, of: 4, exposure: 1).rate == 1, "no rate tops 100%")
+        // Double drops (issue #62): every copy counts, so a sure drop at ×2 (2 copies a kill) reads 100%, and over 100% shows as is.
+        var doubles = DropReport()
+        doubles.kills[mob] = 20; doubles.weight[mob] = 40
+        doubles.copies[mob] = [1: 40, 2: 2, 3: 52]; doubles.killsWith[mob] = [1: Set(1...20), 2: [5, 9], 3: Set(1...20)]
+        check(doubles.copies(mob, [.item(1)]) == 40 && doubles.killsWith(mob, [.item(1)]) == 20 && doubles.perKill(mob, 40).rate == 1,
+              "a sure drop at ×2: 2 copies a kill, 100%")
+        check(near(doubles.perKill(mob, doubles.copies(mob, [.item(2)])).rate, 2.0 / 40), "a single drop's base rate is unchanged")
+        check(near(doubles.perKill(mob, doubles.copies(mob, [.item(3)])).rate, 1.3), "no cap: 130% is one sure and a 30% chance of a second")
         let tab = DropRatesModel()
         tab.update(now: now)
-        check(tab.yours(sure, mob, at: 130) == nil && tab.yours(rare, mob, at: 130).map { $0 > rare.rate } == true,
-              "yours: none on a guaranteed drop, boosted on a rare one")
+        let sure = doubles.perKill(mob, 40)
+        check(tab.yours(sure, mob, at: 130).map { $0 > 1 } == true, "yours isn't capped either")
         let json = """
             {"characters": {"characters": [
               {"char_id": 1, "class_id": 782, "level": 20, "seasonal": true, "crucible_active": true, "loot_boost_secs": 0,
