@@ -127,12 +127,13 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 6. `./build.sh --stage` and a live check that a dungeon never run shows its mobs and drops.
 7. The game's own icons in place of drawn ones. Rarity marks and the shiny overlay are interface textures in the game's
    `sharedassets1.assets`, not in the sprite sheets RealmHound unpacks; RealmHound's repo ships them as PNGs
-   (`Enchants-Uncommon/Rare/Legendary/Divine.png`, `Shiny.png` in `crates/realmhound/assets/`). Dungeon icons come from
-   `CollectionIcon.png`, which RealmHound unpacks on this Mac. The drawn gems stay as the fallback. Done: the five PNGs
+   (`Enchants-Uncommon/Rare/Legendary/Divine.png`, `Shiny.png` in `crates/realmhound/assets/`). Each dungeon's item
+   collection icon comes from `CollectionIcon.png`, which RealmHound unpacks on this Mac; these are the art of the
+   dungeon's item collection, not the dungeon's sprite, so the dungeon list keeps the portal sprite. The drawn gems stay as the fallback. Done: the five PNGs
    are committed in `data/icons` (decision 7). The game gives items a `collectionIcon` cell, not portals, so the script
    gives each dungeon the cell most of its drops name, leaving out badges (0-9), the Realm's globe (100) elsewhere,
    ties, and the White Snake Invasions, which drop another dungeon's loot. 53 of 82 dungeons get one, checked by eye
-   against the sheet; the rest keep their portal sprite.
+   against the sheet; it shows beside the dungeon's name in its page header.
 
 ## Decisions
 

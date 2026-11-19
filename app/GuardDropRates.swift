@@ -975,7 +975,7 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var report = DropReport()
     @Published private(set) var health = CaptureHealth()
     @Published private(set) var sprites: [Int: CGImage] = [:]
-    @Published private(set) var dungeonIcons: [String: CGImage] = [:]   // by dungeon name, from the game's icon sheet
+    @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
 
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }
@@ -985,7 +985,7 @@ final class DropRatesModel: ObservableObject {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
                 let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: GameNames.bundledCatalog)
-                DispatchQueue.main.async { self.dungeonIcons = icons }
+                DispatchQueue.main.async { self.collectionIcons = icons }
             }
         }
         // Sprites are cut once per type, off the main thread, as new mobs and items show up.

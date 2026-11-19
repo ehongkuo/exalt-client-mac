@@ -455,8 +455,8 @@ enum GameSprites {
     }
 }
 
-/// The game's own marks (issue #51): rarity gems and the shiny sparkle ship with the app (data/icons); dungeon icons
-/// are cut from CollectionIcon.png, which RealmHound extracts. nil or empty when the files are missing, so callers draw
+/// The game's own marks (issue #51): rarity gems and the shiny sparkle ship with the app (data/icons); each dungeon's
+/// item collection icon (not the dungeon's own sprite) is cut from CollectionIcon.png, which RealmHound extracts. nil or empty when the files are missing, so callers draw
 /// their own.
 enum GameIcons {
     private static func bundled(_ name: String) -> CGImage? {
@@ -471,7 +471,7 @@ enum GameIcons {
     /// A cell of CollectionIcon.png: 16 px squares, 20 a row, numbered from the top left (the items' collectionIcon).
     static func cell(_ index: Int) -> CGRect { CGRect(x: index % 20 * 16, y: index / 20 * 16, width: 16, height: 16) }
 
-    /// Each catalog dungeon's icon ("icon" in data/drop_catalog.json), by dungeon name.
+    /// Each catalog dungeon's collection icon ("icon" in data/drop_catalog.json), by dungeon name.
     static func dungeons(assets: URL, catalog: URL?) -> [String: CGImage] {
         guard let catalog, let data = try? Data(contentsOf: catalog),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

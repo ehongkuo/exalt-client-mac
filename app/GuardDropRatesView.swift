@@ -144,7 +144,7 @@ struct DropRatesView: View {
                     ForEach(rows, id: \.row.name) { d, grew in
                         let n = kills(in: d.name)
                         listRow(dungeon?.name == d.name, { model.select(dungeon: d.name) }) {
-                            SpriteIcon(image: model.dungeonIcons[d.name] ?? d.portal.flatMap { model.sprites[$0] }, size: 24)
+                            SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 24)
                             Text(d.name).lineLimit(1).help(d.name)
                             Spacer()
                             if grew { newMark }
@@ -192,11 +192,19 @@ struct DropRatesView: View {
         }
     }
 
+    /// The game's collection icon for the dungeon's items (from its sheet), beside the dungeon's name.
+    @ViewBuilder private func collectionIcon(_ d: DropReport.Dungeon) -> some View {
+        if let icon = model.collectionIcons[d.name] {
+            SpriteIcon(image: icon, size: 20).help("The game's collection icon for \(d.name) items")
+        }
+    }
+
     /// Dungeon › mob › group › item; each part steps back to it.
     private func breadcrumb(_ d: DropReport.Dungeon) -> some View {
         HStack(spacing: 6) {
             Button { model.mob = nil; model.group = nil; model.item = nil } label: { Text(d.name).font(.title3.weight(.semibold)) }
                 .buttonStyle(.plain)
+            collectionIcon(d)
             if let mob = model.mob {
                 chevron
                 Button { model.group = nil; model.item = nil } label: { Text(report.name(mob.type)) }.buttonStyle(.plain)
@@ -434,7 +442,7 @@ struct DropRatesView: View {
     /// With nothing picked: the bosses' best bag per run.
     private func summaryPane(_ d: DropReport.Dungeon) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(d.name).font(.title3.weight(.semibold))
+            HStack(spacing: 6) { Text(d.name).font(.title3.weight(.semibold)); collectionIcon(d) }
             if let bosses = report.bossBags[d.name], let runs = report.runs[d.name] {
                 section("BEST BAG FROM THE BOSSES, PER RUN") {
                     ForEach(sortedBags(bosses[nil] ?? [:]), id: \.self) { bag in
