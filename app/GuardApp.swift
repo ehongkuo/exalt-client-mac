@@ -1113,6 +1113,14 @@ struct GuardPanel {
                         ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
                     }
                     .fixedSize()
+                    Picker("Class", selection: rule.playerClass) {
+                        Text("Any").tag(String?.none)
+                        ForEach(ItemRule.classes.keys.sorted(), id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 6) {
                     Picker("Tier", selection: rule.minTier) {
                         Text("Any").tag(Int?.none)
                         ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
@@ -1124,13 +1132,15 @@ struct GuardPanel {
                     .fixedSize()
                     Spacer(minLength: 0)
                 }
-                HStack(spacing: 6) {
-                    Text("Name").foregroundStyle(.secondary)
-                    TextField("contains…", text: rule.name)
-                        .modifier(Suggestions(options: RuleCatalog.suggest(rule.wrappedValue.name, from: drops.catalog.names)))
-                    Text("Enchant").foregroundStyle(.secondary)
-                    TextField("contains…", text: rule.enchant)
-                        .modifier(Suggestions(options: RuleCatalog.suggest(rule.wrappedValue.enchant, from: drops.enchantNames)))
+                TermList(label: "Name", hint: "any of these", terms: rule.names, options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: rule.enchants,
+                         options: drops.enchantNames)
+                if rule.wrappedValue.enchants.count > 1 {
+                    Picker("Needs", selection: rule.allEnchants) {
+                        Text("All enchantments").tag(true)
+                        Text("Any one").tag(false)
+                    }
+                    .pickerStyle(.segmented).fixedSize()
                 }
                 HStack {
                     Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
@@ -1606,5 +1616,66 @@ private struct Suggestions: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// A rule's names or enchantments (issue #47): chips you can remove, and a field that adds what you type on Return.
+private struct TermList: View {
+    let label: String
+    let hint: String
+    @Binding var terms: [String]
+    let options: [String]
+    @State private var text = ""
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label).foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
+            Flow(spacing: 4) {
+                ForEach(terms, id: \.self) { term in
+                    HStack(spacing: 3) {
+                        Text(term)
+                        Button { terms.removeAll { $0 == term } } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Remove \(term)")
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                }
+                TextField(terms.isEmpty ? "contains…" : "add another…", text: $text)
+                    .frame(width: 170)
+                    .onSubmit(add)
+                    .modifier(Suggestions(options: RuleCatalog.suggest(text, from: options)))
+            }
+            if !hint.isEmpty, !terms.isEmpty { Text(hint).foregroundStyle(.tertiary) }
+        }
+        .onDisappear(perform: add)   // Confirm keeps a term typed but not yet added
+    }
+
+    private func add() {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty, !terms.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) { terms.append(t) }
+        text = ""
+    }
+}
+
+/// Lays views out left to right, wrapping to a new row when the width runs out.
+private struct Flow: Layout {
+    var spacing: CGFloat = 4
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, p) in zip(subviews, arrange(bounds.width, subviews).points) {
+            view.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
+        }
+    }
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (points: [CGPoint], size: CGSize) {
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing; rowHeight = max(rowHeight, size.height); widest = max(widest, x - spacing)
+        }
+        return (points, CGSize(width: widest, height: y + rowHeight))
     }
 }

@@ -90,15 +90,19 @@ struct ItemRule: Codable, Hashable, Identifiable {
     var title = ""
     /// A draft is still being edited and never alerts.
     var confirmed = false
-    /// Part of the item's name, any case.
-    var name = ""
+    /// Parts of the item's name, any case: any one of them matches.
+    var names: [String] = []
     /// The item's <SlotType>.
     var slot: Int? = nil
+    /// A class that can equip the item: its weapon, ability, armor or ring.
+    var playerClass: String? = nil
     /// Untiered items (UTs, STs) never reach a minimum tier.
     var minTier: Int? = nil
     var minRarity = DropRarity.common
-    /// Part of an enchantment's name, any case: "Attack Bonus" matches I, II and III.
-    var enchant = ""
+    /// Parts of enchantment names, any case: "Attack Bonus" matches I, II and III.
+    var enchants: [String] = []
+    /// The item needs every enchantment in `enchants` (true) or any one of them.
+    var allEnchants = true
 
     /// The item types to choose from: <SlotType> values in the game XML (Nov 2026). 10 is consumables, left out.
     static let types: [(slot: Int, name: String)] = [
@@ -109,35 +113,51 @@ struct ItemRule: Codable, Hashable, Identifiable {
         (31, "Sigil"),
     ].sorted { $0.name < $1.name }
 
+    /// What each class equips: the first four <SlotTypes> of its player object in players.xml (Nov 2026).
+    static let classes: [String: [Int]] = [
+        "Rogue": [2, 13, 6, 9], "Archer": [3, 15, 6, 9], "Wizard": [17, 11, 14, 9], "Priest": [8, 4, 14, 9],
+        "Warrior": [1, 16, 7, 9], "Knight": [1, 5, 7, 9], "Paladin": [1, 12, 7, 9], "Assassin": [2, 18, 6, 9],
+        "Necromancer": [17, 19, 14, 9], "Huntress": [3, 20, 6, 9], "Mystic": [17, 21, 14, 9], "Trickster": [2, 22, 6, 9],
+        "Sorcerer": [8, 23, 14, 9], "Ninja": [24, 25, 6, 9], "Samurai": [24, 27, 7, 9], "Bard": [3, 28, 14, 9],
+        "Summoner": [8, 29, 14, 9], "Kensei": [24, 30, 7, 9], "Druid": [8, 31, 6, 9],
+    ]
+
     /// Nothing set: the rule would match nothing.
     var isBlank: Bool {
-        name.trimmingCharacters(in: .whitespaces).isEmpty && slot == nil && minTier == nil && minRarity == .common
-            && enchant.trimmingCharacters(in: .whitespaces).isEmpty
+        Self.terms(names).isEmpty && slot == nil && playerClass == nil && minTier == nil && minRarity == .common && Self.terms(enchants).isEmpty
     }
 
     /// The set parts in one line, for a confirmed rule: "Tome · Tier 4+ · Lucky Streak".
     var summary: String {
         var parts: [String] = []
-        let name = name.trimmingCharacters(in: .whitespaces), enchant = enchant.trimmingCharacters(in: .whitespaces)
-        if !name.isEmpty { parts.append("“\(name)”") }
+        let names = Self.terms(names), enchants = Self.terms(enchants)
+        if !names.isEmpty { parts.append(names.map { "“\($0)”" }.joined(separator: " or ")) }
         if let slot { parts.append(Self.types.first { $0.slot == slot }?.name ?? "Type \(slot)") }
+        if let playerClass { parts.append("\(playerClass) gear") }
         if let minTier { parts.append("Tier \(minTier)+") }
         if minRarity != .common { parts.append(minRarity.name) }
-        if !enchant.isEmpty { parts.append(enchant) }
+        if !enchants.isEmpty { parts.append(enchants.joined(separator: allEnchants ? " and " : " or ")) }
         return parts.joined(separator: " · ")
     }
 
     func matches(_ item: LootItem, catalog: RuleCatalog) -> Bool {
         guard confirmed, !isBlank else { return false }
-        let name = name.trimmingCharacters(in: .whitespaces), enchant = enchant.trimmingCharacters(in: .whitespaces)
+        let names = Self.terms(names), enchants = Self.terms(enchants)
         let info = catalog.items[item.id]
-        if !name.isEmpty, !item.name.localizedCaseInsensitiveContains(name) { return false }
+        if !names.isEmpty, !names.contains(where: item.name.localizedCaseInsensitiveContains) { return false }
         if let slot, info?.slot != slot { return false }
+        if let playerClass, !(info?.slot.map { Self.classes[playerClass]?.contains($0) == true } ?? false) { return false }
         if let minTier, (info?.tier ?? -1) < minTier { return false }
         if DropRarity(enchants: item.enchants).rawValue < minRarity.rawValue { return false }
-        if !enchant.isEmpty, !item.enchantIds.contains(where: { catalog.enchants[$0]?.localizedCaseInsensitiveContains(enchant) == true }) {
-            return false
+        // A term that is a whole enchantment name ("Loot Bonus I") means that one, not II to IV as well.
+        func has(_ term: String) -> Bool {
+            let exact = catalog.enchants.values.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+            return item.enchantIds.contains {
+                guard let n = catalog.enchants[$0] else { return false }
+                return exact ? n.caseInsensitiveCompare(term) == .orderedSame : n.localizedCaseInsensitiveContains(term)
+            }
         }
+        if !enchants.isEmpty, allEnchants ? !enchants.allSatisfy(has) : !enchants.contains(where: has) { return false }
         return true
     }
 }
@@ -149,11 +169,23 @@ extension ItemRule {
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         confirmed = try c.decodeIfPresent(Bool.self, forKey: .confirmed) ?? true
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        names = try c.decodeIfPresent([String].self, forKey: .names) ?? []
         slot = try c.decodeIfPresent(Int.self, forKey: .slot)
+        playerClass = try c.decodeIfPresent(String.self, forKey: .playerClass)
         minTier = try c.decodeIfPresent(Int.self, forKey: .minTier)
         minRarity = try c.decodeIfPresent(DropRarity.self, forKey: .minRarity) ?? .common
-        enchant = try c.decodeIfPresent(String.self, forKey: .enchant) ?? ""
+        enchants = try c.decodeIfPresent([String].self, forKey: .enchants) ?? []
+        allEnchants = try c.decodeIfPresent(Bool.self, forKey: .allEnchants) ?? true
+        // Rules saved with one name and one enchantment.
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        if let v = try legacy.decodeIfPresent(String.self, forKey: .name), names.isEmpty { names = Self.terms([v]) }
+        if let v = try legacy.decodeIfPresent(String.self, forKey: .enchant), enchants.isEmpty { enchants = Self.terms([v]) }
+    }
+    private enum LegacyKeys: String, CodingKey { case name, enchant }
+
+    /// The non-blank terms, trimmed.
+    static func terms(_ list: [String]) -> [String] {
+        list.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 }
 

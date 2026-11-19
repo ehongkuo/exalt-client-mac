@@ -35,10 +35,10 @@ enum DropTests {
         // Item rules (issue #47): the three examples, each with near misses.
         let catalog = RuleCatalog(items: [1: .init(slot: 4, tier: 4), 2: .init(slot: 4, tier: 3), 3: .init(slot: 4, tier: nil),
                                           4: .init(slot: 9, tier: 4), 5: .init(slot: 1, tier: nil), 6: .init(slot: 1, tier: 12)],
-                                  enchants: [0x639: "Lucky Streak", 0x107: "Attack Bonus I"])
+                                  enchants: [0x639: "Lucky Streak", 0x107: "Attack Bonus I", 0x2a0: "Loot Bonus IV", 0x2a1: "Loot Bonus I"])
         func confirmed(_ rules: ItemRule...) -> [ItemRule] { rules.map { var x = $0; x.confirmed = true; return x } }
         var r = DropAlertSettings(); r.bags = []; r.shiny = false
-        r.rules = confirmed(ItemRule(slot: 4, minTier: 4), ItemRule(slot: 9, enchant: " lucky streak "), ItemRule(slot: 1, minRarity: .divine))
+        r.rules = confirmed(ItemRule(slot: 4, minTier: 4), ItemRule(slot: 9, enchants: [" lucky streak "]), ItemRule(slot: 1, minRarity: .divine))
         func fires(_ item: LootItem, bag: Int = 1280, _ settings: DropAlertSettings? = nil) -> String? {
             DropRules.alert(for: drop(bag, [item]), settings: settings ?? r, shiny: [], catalog: catalog, nowMs: now)?.item
         }
@@ -54,15 +54,33 @@ enum DropTests {
         check(fires(LootItem(id: 5, name: "Divine UT sword", enchants: 4), bag: 0) == "Divine UT sword", "a Divine sword, in an unknown bag")
         check(fires(LootItem(id: 6, name: "Legendary sword", enchants: 3)) == nil, "a Legendary sword")
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), { var x = r; x.enabled = false; return x }()) == nil, "rules are off with alerts")
-        var blank = r; blank.rules = confirmed(ItemRule(name: "  "))
+        var blank = r; blank.rules = confirmed(ItemRule(names: ["  "]))
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), blank) == nil, "a blank rule matches nothing")
-        var byName = r; byName.rules = confirmed(ItemRule(name: "tome"))
+        var byName = r; byName.rules = confirmed(ItemRule(names: ["tome"]))
         check(fires(LootItem(id: 3, name: "UT Tome", enchants: 0), byName) == "UT Tome", "part of a name, any case")
         var mixed = r; mixed.bags = [.red]
         check(DropRules.alert(for: drop(1708, [LootItem(id: 6, name: "Divine T12 sword", enchants: 4), LootItem(id: 2, name: "T3 tome", enchants: 4),
                                                LootItem(id: 1, name: "T4 tome", enchants: 0)]),
                               settings: { var x = mixed; x.rules = [r.rules[0]]; return x }(), shiny: [], catalog: catalog, nowMs: now)?.item
               == "T4 tome", "the popup names the rule's item over a higher rarity")
+        var both = r; both.rules = confirmed(ItemRule(slot: 9, enchants: ["Lucky Streak", "Loot Bonus IV"]))
+        check(fires(LootItem(id: 4, name: "Both", enchants: 2, enchantIds: [0x639, 0x2a0]), both) == "Both", "a ring with both enchantments")
+        check(fires(LootItem(id: 4, name: "One", enchants: 1, enchantIds: [0x639]), both) == nil, "all enchantments: one is not enough")
+        both.rules[0].allEnchants = false
+        check(fires(LootItem(id: 4, name: "One", enchants: 1, enchantIds: [0x2a0]), both) == "One", "any enchantment: one is enough")
+        var lootI = r; lootI.rules = confirmed(ItemRule(slot: 9, enchants: ["loot bonus i"]))
+        check(fires(LootItem(id: 4, name: "IV", enchants: 1, enchantIds: [0x2a0]), lootI) == nil
+              && fires(LootItem(id: 4, name: "I", enchants: 1, enchantIds: [0x2a1]), lootI) == "I", "a whole enchantment name means only that one")
+        var wizard = r; wizard.rules = confirmed(ItemRule(playerClass: "Wizard", enchants: ["Loot Bonus"]))
+        check(fires(LootItem(id: 4, name: "Ring", enchants: 1, enchantIds: [0x2a0]), wizard) == "Ring"
+              && fires(LootItem(id: 1, name: "Tome", enchants: 1, enchantIds: [0x2a0]), wizard) == nil
+              && fires(LootItem(id: 4, name: "Plain", enchants: 0), wizard) == nil
+              && fires(LootItem(id: 999, name: "Unknown", enchants: 1, enchantIds: [0x2a0]), wizard) == nil,
+              "Wizard gear with Loot Bonus: a ring, not a tome, nothing missing from the catalog")
+        check(ItemRule.classes.count == 19 && ItemRule.classes.values.allSatisfy { $0.count == 4 && $0.last == 9 }, "every class wears a ring")
+        var twoNames = r; twoNames.rules = confirmed(ItemRule(names: ["fortune", "tome"]))
+        check(fires(LootItem(id: 3, name: "UT Tome", enchants: 0), twoNames) == "UT Tome" && fires(LootItem(id: 4, name: "Ring", enchants: 0), twoNames) == nil,
+              "any one of several names")
         var draft = r; draft.rules = [ItemRule(slot: 4, minTier: 4)]
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), draft) == nil, "a draft rule never alerts")
         var titled = r; titled.rules = confirmed(ItemRule(title: " Tomes ", slot: 4, minTier: 4))
@@ -71,9 +89,10 @@ enum DropTests {
         check(DropRules.alert(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: r, shiny: [], catalog: catalog,
                               nowMs: now)?.rule == "", "an untitled rule names no rule")
         let old = try! JSONDecoder().decode([ItemRule].self, from: Data(#"[{"id":"00000000-0000-0000-0000-000000000001","name":"","slot":9,"minRarity":0,"enchant":"Lucky"}]"#.utf8))
-        check(old.count == 1 && old[0].confirmed && old[0].title == "" && old[0].slot == 9, "rules saved before drafts load confirmed")
-        check(ItemRule(name: "staff", slot: 4, minTier: 4, minRarity: .divine, enchant: "Lucky Streak").summary
-              == "“staff” · Tome · Tier 4+ · Divine · Lucky Streak" && ItemRule().isBlank && !ItemRule(minTier: 1).isBlank, "rule summary")
+        check(old.count == 1 && old[0].confirmed && old[0].title == "" && old[0].slot == 9 && old[0].names == [] && old[0].enchants == ["Lucky"]
+              && old[0].allEnchants && old[0].playerClass == nil, "rules saved before drafts and lists load confirmed, one name and enchantment as lists")
+        check(ItemRule(names: ["staff", "wand"], slot: 4, minTier: 4, minRarity: .divine, enchants: ["Lucky Streak", " "]).summary
+              == "“staff” or “wand” · Tome · Tier 4+ · Divine · Lucky Streak" && ItemRule().isBlank && !ItemRule(minTier: 1).isBlank, "rule summary")
         let options = ["Attack Bonus I", "Lucky Streak", "Plucky Charm", "Ring of Lucky Fortune", "Luck Charm"]
         check(RuleCatalog.suggest(" luck", from: options) == ["Luck Charm", "Lucky Streak", "Ring of Lucky Fortune", "Plucky Charm"],
               "suggestions: name starts, then a word starts, then contains")
