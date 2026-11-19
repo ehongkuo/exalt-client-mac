@@ -28,6 +28,8 @@ enum LootLine: Equatable {
     case map(time: Double, generation: Int, name: String)
     case kill(LootKill)
     case bag(LootBag)
+    /// A portal as it appeared, once per map (format 5, issue #64); linked to its kill by a drop line, as bags are.
+    case portal(time: Double, generation: Int, object: Int, type: Int, x: Double, y: Double)
     case bagStat(time: Double, generation: Int, object: Int, stat: Int, value: Int, text: String)
     /// The kill a bag came from (killer 0: none), decided by the guard one tick after the bag.
     case drop(time: Double, generation: Int, bag: Int, killer: Int)
@@ -61,6 +63,9 @@ enum LootLine: Equatable {
             guard f.count == 15, items.count == 8, let t = d(1), let g = n(2), let o = n(3), let ty = n(4), let x = d(5), let y = d(6)
             else { return nil }
             self = .bag(LootBag(time: t, generation: g, object: o, type: ty, x: x, y: y, items: items))
+        case "portal":
+            guard f.count == 7, let t = d(1), let g = n(2), let o = n(3), let ty = n(4), let x = d(5), let y = d(6) else { return nil }
+            self = .portal(time: t, generation: g, object: o, type: ty, x: x, y: y)
         case "bag_stat":
             guard let t = d(1), let g = n(2), let o = n(3), let s = n(4), let v = n(5) else { return nil }
             self = .bagStat(time: t, generation: g, object: o, stat: s, value: v, text: f.count > 6 ? f[6] : "")
@@ -101,6 +106,11 @@ final class DropRateStore {
             damage_ability INTEGER, max_hp INTEGER, landed_by TEXT);
         CREATE TABLE IF NOT EXISTS bags(id INTEGER PRIMARY KEY, map INTEGER NOT NULL, time REAL NOT NULL, object_id INTEGER,
             bag_type INTEGER, x REAL, y REAL, kill INTEGER);
+        -- Portals (issue #64): each portal object once per map, as it appeared; kill as for bags (NULL: none, for
+        -- example a realm closing). The link is the nearest kill with no distance limit, so a portal that only came into
+        -- view during a fight is linked too: compare x, y with the kill's before counting it as a drop.
+        CREATE TABLE IF NOT EXISTS portals(id INTEGER PRIMARY KEY, map INTEGER NOT NULL, time REAL NOT NULL, object_id INTEGER,
+            portal_type INTEGER, x REAL, y REAL, kill INTEGER);
         CREATE TABLE IF NOT EXISTS bag_items(bag INTEGER NOT NULL, slot INTEGER NOT NULL, item_type INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS bag_stats(bag INTEGER NOT NULL, stat_type INTEGER, value INTEGER, text TEXT);
         CREATE TABLE IF NOT EXISTS capture_gaps(session INTEGER NOT NULL, time REAL, lost INTEGER, reason TEXT);
@@ -143,6 +153,8 @@ final class DropRateStore {
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
         CREATE INDEX IF NOT EXISTS bags_map_object ON bags(map, object_id);
+        CREATE INDEX IF NOT EXISTS portals_kill ON portals(kill);
+        CREATE INDEX IF NOT EXISTS portals_map_object ON portals(map, object_id);
         CREATE INDEX IF NOT EXISTS bag_items_item ON bag_items(item_type);
         CREATE INDEX IF NOT EXISTS bag_stats_bag ON bag_stats(bag);   -- the report reads each bag's enchantments by bag
         """
@@ -221,6 +233,12 @@ final class DropRateStore {
         }
     }
     var lastID: Int64 { sqlite3_last_insert_rowid(db) }
+    /// Every portal object type in the game catalog (Portal, ArenaPortal, ...), for the guard to record (issue #64).
+    func portalTypes() -> [Int] {
+        var types: [Int] = []
+        run("SELECT type FROM objects WHERE class LIKE '%Portal' ORDER BY type") { types.append(Int(sqlite3_column_int64($0, 0))) }
+        return types
+    }
 }
 
 enum LootImport {
@@ -302,6 +320,10 @@ enum LootImport {
                         store.run("INSERT INTO bag_items(bag, slot, item_type) VALUES (?, ?, ?)", [bag, slot, item])
                     }
                     last = b.time
+                case let .portal(time, generation, object, type, x, y):
+                    store.run("INSERT INTO portals(map, time, object_id, portal_type, x, y) VALUES (?, ?, ?, ?, ?, ?)",
+                              [map(generation, time), time, object, type, x, y])
+                    last = time
                 case let .bagStat(time, generation, object, stat, value, text):
                     var bag = bags["\(generation)/\(object)"]
                     if bag == nil {
@@ -314,6 +336,11 @@ enum LootImport {
                     store.run("""
                         UPDATE bags SET kill = (SELECT id FROM kills WHERE map = ?1 AND object_id = ?2 ORDER BY id DESC LIMIT 1)
                         WHERE id = (SELECT id FROM bags WHERE map = ?1 AND object_id = ?3 ORDER BY id DESC LIMIT 1)
+                        """, [mapID, killer, bag])
+                    // Object ids are unique per map, so the drop is a bag's or a portal's, never both.
+                    store.run("""
+                        UPDATE portals SET kill = (SELECT id FROM kills WHERE map = ?1 AND object_id = ?2 ORDER BY id DESC LIMIT 1)
+                        WHERE id = (SELECT id FROM portals WHERE map = ?1 AND object_id = ?3 ORDER BY id DESC LIMIT 1)
                         """, [mapID, killer, bag])
                 case .drop: break
                 case let .mapInfo(time, generation, values, texts):

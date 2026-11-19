@@ -46,7 +46,7 @@ struct LaunchPlan: Equatable {
     /// Checks everything in order (cheap checks first). `actualHash` may be nil only if an
     /// earlier check fails; callers hash the 84 MB file after the cheap checks pass.
     static func make(install: GameInstall, dylib: URL, data: URL, settings: GuardSettings, expectedHash: String?,
-                     actualHash: String?, running: [String], observationOnly: Bool = false, exists: (URL) -> Bool) -> Result<LaunchPlan, LaunchProblem> {
+                     actualHash: String?, running: [String], observationOnly: Bool = false, portals: [Int] = [], exists: (URL) -> Bool) -> Result<LaunchPlan, LaunchProblem> {
         if !exists(install.launcher) { return .failure(.launcherMissing) }
         if !exists(install.gameAssembly) { return .failure(.gameMissing) }
         if !exists(dylib) { return .failure(.guardMissing) }
@@ -56,6 +56,8 @@ struct LaunchPlan: Equatable {
         if actualHash != expectedHash { return .failure(.gameUpdated) }
         var environment = ["EXALT_GUARD": settings.text, "DYLD_INSERT_LIBRARIES": dylib.path,
                            "EXALT_GUARD_DIR": data.path]
+        // The guard records these object types as portals (issue #64); none until the game catalog is built.
+        if !portals.isEmpty { environment["EXALT_PORTALS"] = portals.map(String.init).joined(separator: ",") }
         if observationOnly {
             environment["EXALT_GUARD"] = "armed=0,potion=0,ceiling=0,death=0"
             environment["EXALT_FATAL_INTERVENTION"] = "0"

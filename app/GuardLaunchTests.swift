@@ -46,6 +46,11 @@ enum LaunchTests {
         check(ok.environment["EXALT_GUARD"] == "armed=1,potion=50,ceiling=80", "settings passed")
         check(ok.environment["DYLD_INSERT_LIBRARIES"] == "/g/ExaltGuard.dylib", "guard injected for this launch only")
         check(ok.environment["EXALT_GUARD_DIR"] == "/d", "guard writes to the app's data folder")
+        check(ok.environment["EXALT_PORTALS"] == nil, "no catalog: no portal types")
+        guard case .success(let withPortals) = LaunchPlan.make(install: install, dylib: dylib, data: data, settings: settings,
+                expectedHash: "abc", actualHash: "abc", running: [], portals: [1795, 1800], exists: all)
+        else { fatalError("expected a plan") }
+        check(withPortals.environment["EXALT_PORTALS"] == "1795,1800", "portal types passed to the guard")
 
         guard case .success(let capture) = LaunchPlan.make(install: install, dylib: dylib, data: data,
                 settings: settings, expectedHash: "abc", actualHash: "abc", running: [], observationOnly: true, exists: all)
