@@ -24,7 +24,8 @@
     "0x090b",
     "0x0e1d",
     "0xb4e4"
-   ]
+   ],
+   "icon": 133
   },
   {
    "name": "Admin Arena",
@@ -89,7 +90,8 @@
     "0xd1cd",
     "0xd1ce",
     "0xd1cf"
-   ]
+   ],
+   "icon": 19
   },
   {
    "name": "Ancient Ruins",
@@ -111,7 +113,8 @@
     "0x70ea",
     "0x70eb",
     "0x70f3"
-   ]
+   ],
+   "icon": 121
   },
   {
    "name": "Battle for the Nexus",
@@ -175,7 +178,8 @@
     "0x5e46",
     "0x5e47",
     "0x5e48"
-   ]
+   ],
+   "icon": 135
   },
   {
    "name": "Cave of A Thousand Treasures",
@@ -209,7 +213,8 @@
     "0x09f5",
     "0x09f7",
     "0x09f8"
-   ]
+   ],
+   "icon": 149
   },
   {
    "name": "Court of Oryx",
@@ -256,7 +261,8 @@
     "0xb2a1",
     "0xb2a2",
     "0xb2a3"
-   ]
+   ],
+   "icon": 12
   },
   {
    "name": "Cultist Hideout",
@@ -285,7 +291,8 @@
     "0xb0af",
     "0xb154",
     "0xb156"
-   ]
+   ],
+   "icon": 16
   },
   {
    "name": "Cursed Library",
@@ -312,7 +319,8 @@
     "0xab9c",
     "0xab9d",
     "0xaba9"
-   ]
+   ],
+   "icon": 130
   },
   {
    "name": "Davy Jones' Locker",
@@ -330,7 +338,8 @@
     "0x0e48",
     "0x0e50",
     "0x6da1"
-   ]
+   ],
+   "icon": 138
   },
   {
    "name": "Deadwater Docks",
@@ -366,7 +375,8 @@
     "0xb5a0",
     "0xb604",
     "0xb91b"
-   ]
+   ],
+   "icon": 141
   },
   {
    "name": "Forax",
@@ -406,7 +416,8 @@
     "0x0dd1",
     "0x0dd2",
     "0x0dd3"
-   ]
+   ],
+   "icon": 125
   },
   {
    "name": "Forest Maze",
@@ -419,7 +430,8 @@
     "0x5e61",
     "0x5e62",
     "0x5e63"
-   ]
+   ],
+   "icon": 126
   },
   {
    "name": "Fungal Cavern",
@@ -494,7 +506,8 @@
     "0xb51b",
     "0xb51c",
     "0xb51d"
-   ]
+   ],
+   "icon": 11
   },
   {
    "name": "Haunted Cemetery",
@@ -548,7 +561,8 @@
     "0x6006",
     "0x6007",
     "0x600c"
-   ]
+   ],
+   "icon": 134
   },
   {
    "name": "Hidden Interregnum",
@@ -603,7 +617,8 @@
     "0x3d68",
     "0x3d7b",
     "0x3d7c"
-   ]
+   ],
+   "icon": 147
   },
   {
    "name": "Ice Citadel",
@@ -644,7 +659,8 @@
     "0x9d11",
     "0x9d12",
     "0x9d13"
-   ]
+   ],
+   "icon": 151
   },
   {
    "name": "Ice Tomb",
@@ -742,7 +758,8 @@
     "0xd1cd",
     "0xd1ce",
     "0xd1cf"
-   ]
+   ],
+   "icon": 19
   },
   {
    "name": "Lair of Draconis",
@@ -789,7 +806,8 @@
     "0xb25d",
     "0xb261",
     "0xb262"
-   ]
+   ],
+   "icon": 150
   },
   {
    "name": "Lair of Shaitan",
@@ -801,7 +819,8 @@
     "0x6e09",
     "0x741b",
     "0x7428"
-   ]
+   ],
+   "icon": 148
   },
   {
    "name": "Legacy Heroic Abyss of Demons",
@@ -813,7 +832,8 @@
     "0x20a1",
     "0x20a2",
     "0x20a4"
-   ]
+   ],
+   "icon": 133
   },
   {
    "name": "Legacy Heroic Undead Lair",
@@ -821,7 +841,8 @@
    "realmeye": "legacy-heroic-undead-lair",
    "mobs": [
     "0x485f"
-   ]
+   ],
+   "icon": 128
   },
   {
    "name": "Lost Halls",
@@ -877,7 +898,8 @@
     "0xb13a",
     "0xb13b",
     "0xb14b"
-   ]
+   ],
+   "icon": 15
   },
   {
    "name": "Mad Lab",
@@ -891,7 +913,8 @@
     "0x0982",
     "0x0983",
     "0x5e1c"
-   ]
+   ],
+   "icon": 131
   },
   {
    "name": "Magic Woods",
@@ -979,7 +1002,8 @@
     "0x172d",
     "0x1737",
     "0x1738"
-   ]
+   ],
+   "icon": 132
   },
   {
    "name": "Memory of the Infected",
@@ -1010,7 +1034,8 @@
     "0x4fe3",
     "0x4fe4",
     "0x500d"
-   ]
+   ],
+   "icon": 94
   },
   {
    "name": "Mountain Temple",
@@ -1030,7 +1055,8 @@
     "0xaae0",
     "0xaae1",
     "0xab18"
-   ]
+   ],
+   "icon": 145
   },
   {
    "name": "Neo Forax",
@@ -1221,7 +1247,8 @@
     "0xb538",
     "0xb539",
     "0xb53a"
-   ]
+   ],
+   "icon": 154
   },
   {
    "name": "Oryx's Chamber",
@@ -1266,7 +1293,8 @@
     "0xb3a3",
     "0xb3aa",
     "0xb3ab"
-   ]
+   ],
+   "icon": 154
   },
   {
    "name": "Oryx's Sanctuary",
@@ -1296,7 +1324,8 @@
     "0xb133",
     "0xb1e0",
     "0xb22d"
-   ]
+   ],
+   "icon": 18
   },
   {
    "name": "Parasite Chambers",
@@ -1355,7 +1384,8 @@
     "0xb3ba",
     "0xb3bb",
     "0xbf00"
-   ]
+   ],
+   "icon": 144
   },
   {
    "name": "Pirate Cave",
@@ -1376,7 +1406,8 @@
     "0x068e",
     "0x068f",
     "0x0927"
-   ]
+   ],
+   "icon": 119
   },
   {
    "name": "Plagued Nest",
@@ -1439,7 +1470,8 @@
     "0x448e",
     "0x448f",
     "0x449a"
-   ]
+   ],
+   "icon": 13
   },
   {
    "name": "Puppet Master's Encore",
@@ -1460,7 +1492,8 @@
     "0x74a1",
     "0x74a5",
     "0x74a6"
-   ]
+   ],
+   "icon": 142
   },
   {
    "name": "Puppet Master's Theatre",
@@ -1484,7 +1517,8 @@
     "0xb3a2",
     "0xb3a3",
     "0xe07a"
-   ]
+   ],
+   "icon": 129
   },
   {
    "name": "Queen Bunny Chamber",
@@ -2199,7 +2233,8 @@
     "0xcf19",
     "0xcf1a",
     "0xcf1d"
-   ]
+   ],
+   "icon": 100
   },
   {
    "name": "Secluded Thicket",
@@ -2216,7 +2251,8 @@
     "0x36b2",
     "0x36ca",
     "0x36cb"
-   ]
+   ],
+   "icon": 146
   },
   {
    "name": "Snake Pit",
@@ -2234,7 +2270,8 @@
     "0x0918",
     "0x0919",
     "0x0e26"
-   ]
+   ],
+   "icon": 118
   },
   {
    "name": "Spectral Penitentiary",
@@ -2317,7 +2354,8 @@
     "0xad6d",
     "0xad6e",
     "0xad6f"
-   ]
+   ],
+   "icon": 103
   },
   {
    "name": "Spider Den",
@@ -2368,7 +2406,8 @@
     "0xcdd0",
     "0xcdd1",
     "0xcdd2"
-   ]
+   ],
+   "icon": 122
   },
   {
    "name": "Sprite World",
@@ -2389,7 +2428,8 @@
     "0xc065",
     "0xc066",
     "0xc067"
-   ]
+   ],
+   "icon": 117
   },
   {
    "name": "Stoneborn Memory",
@@ -2434,7 +2474,8 @@
     "0x663e",
     "0x663f",
     "0x7fd8"
-   ]
+   ],
+   "icon": 143
   },
   {
    "name": "The Crawling Depths",
@@ -2458,7 +2499,8 @@
     "0x707e",
     "0x707f",
     "0x708a"
-   ]
+   ],
+   "icon": 139
   },
   {
    "name": "The Hive",
@@ -2472,7 +2514,8 @@
     "0x0d44",
     "0x0d45",
     "0x0e46"
-   ]
+   ],
+   "icon": 123
   },
   {
    "name": "The Inner Workings",
@@ -2544,7 +2587,8 @@
     "0x3647",
     "0x445f",
     "0x4485"
-   ]
+   ],
+   "icon": 13
   },
   {
    "name": "The Shatters",
@@ -2665,7 +2709,8 @@
     "0xb6c0",
     "0xb6c1",
     "0xb6c2"
-   ]
+   ],
+   "icon": 14
   },
   {
    "name": "The Tavern",
@@ -2702,7 +2747,8 @@
     "0x456d",
     "0x456e",
     "0x456f"
-   ]
+   ],
+   "icon": 155
   },
   {
    "name": "The Third Dimension",
@@ -2804,7 +2850,8 @@
     "0xbb18",
     "0xbb19",
     "0xbb1a"
-   ]
+   ],
+   "icon": 136
   },
   {
    "name": "The Void",
@@ -2819,7 +2866,8 @@
     "0xb151",
     "0xb152",
     "0xb153"
-   ]
+   ],
+   "icon": 17
   },
   {
    "name": "Time Chamber",
@@ -2867,7 +2915,8 @@
     "0x0d3a",
     "0x0d3b",
     "0x0d3c"
-   ]
+   ],
+   "icon": 153
   },
   {
    "name": "Toxic Sewers",
@@ -2895,7 +2944,8 @@
     "0xb551",
     "0xb552",
     "0xb553"
-   ]
+   ],
+   "icon": 124
   },
   {
    "name": "Undead Lair",
@@ -2941,7 +2991,8 @@
     "0x77a4",
     "0x77a5",
     "0x77a6"
-   ]
+   ],
+   "icon": 128
   },
   {
    "name": "Untaris",
@@ -3086,7 +3137,8 @@
     "0x0df0",
     "0x0df1",
     "0x0df2"
-   ]
+   ],
+   "icon": 154
   },
   {
    "name": "Woodland Labyrinth",
@@ -3113,7 +3165,8 @@
     "0xcdb2",
     "0xcdb3",
     "0xcdb4"
-   ]
+   ],
+   "icon": 140
   }
  ],
  "mobs": [

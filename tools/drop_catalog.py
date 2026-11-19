@@ -18,6 +18,7 @@ pass --refresh. --offline uses only the cache. Data from RealmEye (https://www.r
 in the catalog it builds.
 """
 import argparse
+import collections
 import datetime
 import glob
 import html as htmllib
@@ -206,13 +207,15 @@ class Game:
         for attrs, body in re.findall(r'<Object\s([^>]*?[^/])>(.*?)</Object>', text, re.S):
             t = re.search(r'\btype="0x([0-9a-fA-F]+)"', attrs)
             i = re.search(r'\bid="([^"]*)"', attrs)
+            icon = re.search(r'\bcollectionIcon="(\d+)"', attrs)
             if not t or not i: continue
             el = lambda tag: (m := re.search(f'<{tag}>([^<]*)</{tag}>', body)) and htmllib.unescape(m[1]).strip()
             oid, display = htmllib.unescape(i[1]), el('DisplayId')
             self.objects[int(t[1], 16)] = dict(
                 id=oid, name=display if display and not display.startswith('{') else oid, cls=el('Class'), file=file,
                 item='<Item/>' in body or '<Item />' in body, loot=el('BagType') is not None,
-                texture=bool(re.search(r'<(Animated)?Texture[ >]', body)), dungeon=el('DungeonName'))
+                texture=bool(re.search(r'<(Animated)?Texture[ >]', body)), dungeon=el('DungeonName'),
+                icon=icon and int(icon[1]))
 
     def match(self, name, want, hint='', every=False):
         """Type ids for a RealmEye name: Character objects for want='mob', loot items for 'item'. When several
@@ -236,6 +239,24 @@ class Game:
 
 
 def hexid(t): return f'0x{t:04x}'
+
+
+# Events that drop another dungeon's loot, so its icon would be wrong (checked by eye against the sheet).
+BORROWED_LOOT = {'White Snake Invasion I', 'White Snake Invasion II'}
+
+
+def dungeon_icons(out, game):
+    """Each dungeon's cell in CollectionIcon.png (16 px cells, 20 a row): the game gives items a collectionIcon, not
+    portals, so a dungeon takes the cell most of its mobs' drops name. Cells 0-9 are badges and 100 is the Realm's;
+    a tie or a borrowed-loot event gets no icon, since a wrong icon is worse than none."""
+    drops = {t: m['drops'] for m in out['mobs'] for t in m['types']}
+    for d in out['dungeons']:
+        if d['name'] in BORROWED_LOOT: continue
+        count = collections.Counter(i for mob in d['mobs'] for item in set(drops.get(mob, []))
+                                    if (i := game.objects[int(item, 16)]['icon']) is not None and i >= 10
+                                    and (i != 100 or d['name'] == REALM))
+        top = count.most_common(2)
+        if top and (len(top) == 1 or top[0][1] > top[1][1]): d['icon'] = top[0][0]
 
 
 # Catalog entries the game data draws nothing for and RealmEye has no image of, with why. Empty so far.
@@ -320,6 +341,7 @@ def build(fetch, game, sprites=SPRITES):
                                 tiers=entry['tiers'], drops=list(map(hexid, sorted(set(drops))))))
     out['unmatched'] += [dict(kind='drop', realmeye=item, mobs=m, why='no loot item with this name') for item, m in no_item.items()]
     out['dungeons'].sort(key=lambda d: d['name'])
+    dungeon_icons(out, game)
     for k in ('unmatched', 'ambiguous'):
         out[k] = sorted({json.dumps(e, sort_keys=True): e for e in out[k]}.values(), key=lambda e: (e['kind'], key(e['realmeye'])))
     # RealmEye's sprite for anything the game data draws nothing for.
@@ -438,7 +460,7 @@ def self_test():
            '<Object type="0x0011" id="Den King"><Class>Character</Class><Texture><File>a</File><Index>2</Index></Texture></Object>'
            '<Object type="0x0012" id="Heroic Den King"><Class>Character</Class><DisplayId>Den King</DisplayId></Object>'
            '<Object type="0x0013" id="Den Rat"><Class>Character</Class></Object>'
-           '<Object id="Den Sword" type="0x0020"><Class>Equipment</Class><Item/><BagType>2</BagType>'
+           '<Object id="Den Sword" type="0x0020" collectionIcon="42"><Class>Equipment</Class><Item/><BagType>2</BagType>'
            '<Texture><File>a</File><Index>3</Index></Texture></Object>'
            '<Object type="0x0021" id="Den Sword Skin"><DisplayId>Den Sword</DisplayId><Item/></Object></Objects>')
     with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as cache, tempfile.TemporaryDirectory() as art:
@@ -463,7 +485,8 @@ def self_test():
         assert [d['name'] for d in c['dungeons']] == [REALM, 'Test Den'], c['dungeons']
         den_entry = c['dungeons'][1]
         assert den_entry['portal'] == '0x0010' and den_entry['mobs'] == ['0x0011', '0x0013'], den_entry
-        assert c['dungeons'][0]['mobs'] == ['0x0013']
+        assert c['dungeons'][0]['mobs'] == ['0x0013'] and 'icon' not in c['dungeons'][0]
+        assert den_entry['icon'] == 42, den_entry
         assert c['mobs'][0] == dict(name='Den King', types=['0x0011'], realmeye='den-king', tiers={'ring': [3], 'weapon': [7, 8]},
                                     drops=['0x0020']), c['mobs'][0]
         assert {(e['kind'], e['realmeye']) for e in c['unmatched']} == {('dungeon', 'Oryx’s Nook'), ('drop', 'Pet Eggs')}, c['unmatched']
