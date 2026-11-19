@@ -650,7 +650,7 @@ struct MobPage: View {
     /// "45%" over "9/20 · ±65%" ("too few" under 4 drops, "under 18%" with none), faded when looser than ±50% as elsewhere in the tab.
     /// The % is the base rate; while you play, "→ 68%" in gold is yours now (issue #58).
     private func numbers(_ n: Int, stacked: Bool) -> some View {
-        let kills = report.kills[mob] ?? 0
+        let report = model.report, kills = report.kills[mob] ?? 0
         let rate = report.perKill(mob, n), counts = "\(n.formatted())/\(kills.formatted())"
         // None yet: the top of the 95% range, as "rarer than 1 in N" reads elsewhere in the tab.
         let detail = n == 0 ? "under \(DropRate.percent(rate.range.upperBound))" : rate.plusMinus ?? "too few"

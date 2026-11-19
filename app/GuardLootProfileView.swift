@@ -107,15 +107,18 @@ struct LootProfileView: View {
 
     /// The total. Minions and bosses apart only when a modifier treats them differently.
     private func multiplier(_ s: LootState) -> some View {
-        let split = s.modifiers.flatMap { catalog.modifiers[$0]?.drops ?? [] }.contains { $0.item == nil && !$0.req.isEmpty && $0.amount != 1 }
-        let minions = s.multiplier(catalog, labels: ["MINION"]), bosses = s.multiplier(catalog, labels: ["BOSS", "BOSSFIGHT", "QUEST"])
-        let gear = LootMath.gear(s.enchants ?? [], catalog), dungeon = LootMath.dungeon(s.modifiers, catalog, labels: [])
-        let parts = [s.potion > 0 ? "potion ×\(LootMath.times(LootMath.potion))" : "no potion",
-                     s.enchants == nil ? "gear not captured" : "gear +\(LootMath.times(gear))%",
-                     split ? "dungeon ×\(LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: ["MINION"]))) / ×\(LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: ["BOSS", "BOSSFIGHT", "QUEST"])))"
-                           : "dungeon ×\(LootMath.times(dungeon))"]
-            + (s.crucible ? ["crucible ×\(LootMath.times(LootMath.crucible))"] : [])
-            + (LootMath.ritual(s.ritual) > 1 ? ["ritual ×\(LootMath.times(LootMath.ritual(s.ritual)))"] : [])
+        let boss: Set<String> = ["BOSS", "BOSSFIGHT", "QUEST"], minion: Set<String> = ["MINION"]
+        let drops: [LootCatalog.DropMultiplier] = s.modifiers.flatMap { catalog.modifiers[$0]?.drops ?? [] }
+        let split = drops.contains { d in d.item == nil && !d.req.isEmpty && d.amount != 1 }
+        let minions = s.multiplier(catalog, labels: minion), bosses = s.multiplier(catalog, labels: boss)
+        let gear: Double = LootMath.gear(s.enchants ?? [], catalog)
+        let dungeonText: String = split
+            ? "dungeon ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: minion)) + " / ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: boss))
+            : "dungeon ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: []))
+        var parts: [String] = [s.potion > 0 ? "potion ×" + LootMath.times(LootMath.potion) : "no potion",
+                               s.enchants == nil ? "gear not captured" : "gear +" + LootMath.times(gear) + "%", dungeonText]
+        if s.crucible { parts.append("crucible ×" + LootMath.times(LootMath.crucible)) }
+        if LootMath.ritual(s.ritual) > 1 { parts.append("ritual ×" + LootMath.times(LootMath.ritual(s.ritual))) }
         return panel {
             VStack(alignment: .leading, spacing: 3) {
                 header("LOOT DROP NOW")
