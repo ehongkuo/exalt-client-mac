@@ -302,7 +302,9 @@ final class DropAlerts: ObservableObject {
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
     /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
-    var catalog = RuleCatalog()
+    var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
+    /// Enchantment names to suggest while typing a rule.
+    private(set) var enchantNames: [String] = []
     private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
@@ -392,6 +394,9 @@ struct DropPopupContent: View {
                     if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
                 }
                 Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                if !drop.rule.isEmpty {
+                    Text(drop.rule).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor).lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -1077,38 +1082,69 @@ struct GuardPanel {
         .font(.system(size: 11))
     }
 
-    /// One item rule (issue #47): blank or Any parts match everything.
-    private func itemRule(_ rule: Binding<ItemRule>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Picker("Type", selection: rule.slot) {
-                    Text("Any").tag(Int?.none)
-                    ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+    /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
+        let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
+            .buttonStyle(.borderless).help("Remove rule")
+        if rule.wrappedValue.confirmed {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 16)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    let title = rule.wrappedValue.title.trimmingCharacters(in: .whitespaces)
+                    Text(title.isEmpty ? "Untitled rule" : title).fontWeight(.semibold)
+                    Text(rule.wrappedValue.summary).foregroundStyle(.secondary).lineLimit(1)
                 }
-                .fixedSize()
-                Picker("Tier", selection: rule.minTier) {
-                    Text("Any").tag(Int?.none)
-                    ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
-                }
-                .fixedSize()
-                Picker("Rarity", selection: rule.minRarity) {
-                    ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
-                }
-                .fixedSize()
                 Spacer(minLength: 0)
-                Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
-                    .buttonStyle(.borderless).help("Remove rule")
+                Button("Edit") { rule.wrappedValue.confirmed = false }.controlSize(.small)
+                remove
             }
-            HStack(spacing: 6) {
-                Text("Name").foregroundStyle(.secondary)
-                TextField("contains…", text: rule.name)
-                Text("Enchant").foregroundStyle(.secondary)
-                TextField("contains…", text: rule.enchant)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.green.opacity(0.45)))
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    TextField("Rule name, shown in the alert", text: rule.title)
+                    remove
+                }
+                HStack(spacing: 6) {
+                    Picker("Type", selection: rule.slot) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+                    }
+                    .fixedSize()
+                    Picker("Tier", selection: rule.minTier) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
+                    }
+                    .fixedSize()
+                    Picker("Rarity", selection: rule.minRarity) {
+                        ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 6) {
+                    Text("Name").foregroundStyle(.secondary)
+                    TextField("contains…", text: rule.name)
+                        .modifier(Suggestions(options: RuleCatalog.suggest(rule.wrappedValue.name, from: drops.catalog.names)))
+                    Text("Enchant").foregroundStyle(.secondary)
+                    TextField("contains…", text: rule.enchant)
+                        .modifier(Suggestions(options: RuleCatalog.suggest(rule.wrappedValue.enchant, from: drops.enchantNames)))
+                }
+                HStack {
+                    Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Confirm") { rule.wrappedValue.confirmed = true }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(rule.wrappedValue.isBlank).help(rule.wrappedValue.isBlank ? "Set at least one part first" : "Start alerting on this rule")
+                }
             }
             .textFieldStyle(.roundedBorder)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
     }
 
     private func dropDetail() -> some View {
@@ -1558,5 +1594,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let delegate = AppDelegate()
         app.delegate = delegate; app.setActivationPolicy(.regular); app.run()
         withExtendedLifetime(delegate) {}
+    }
+}
+
+/// Suggestions under a rule's text field as you type (issue #47). SwiftUI has them from macOS 15; older systems go without.
+private struct Suggestions: ViewModifier {
+    let options: [String]
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.textInputSuggestions { ForEach(options, id: \.self) { Text($0).textInputCompletion($0) } }
+        } else {
+            content
+        }
     }
 }

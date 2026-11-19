@@ -165,6 +165,9 @@ enum DropRateTests {
         check(RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).items ==
               [0x024c: .init(slot: 3, tier: nil), 0x0c10: .init(slot: 14, tier: nil), 0x0a00: .init(slot: 14, tier: 13)],
               "item rules read type and tier, untiered items too (issue #47)")
+        check(RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).names.count == 3 &&
+              RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).names.contains("Robe of the Grand Sorcerer"),
+              "rule suggestions read item names (issue #47)")
         check(names("SELECT texture_file || ' ' || texture_index FROM items WHERE type = 588") == ["lostHallsObjects8x8 167"] &&
               names("SELECT texture_file || ' ' || texture_index FROM objects WHERE type = 2314") == ["abyssOfDemonsChars16x16 0"] &&
               names("SELECT count(*) FROM objects WHERE texture_file IS NULL") == ["3"] &&

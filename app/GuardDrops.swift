@@ -83,9 +83,13 @@ extension DropAlertSettings {
 }
 
 /// An item rule (issue #47): every part that is set must match. Blank text, nil and Common mean any part;
-/// a rule with nothing set matches nothing, so a new rule stays quiet until it is filled in.
+/// a rule with nothing set matches nothing, and a rule alerts only once it is confirmed.
 struct ItemRule: Codable, Hashable, Identifiable {
     var id = UUID()
+    /// What the alert calls the rule; blank shows no rule name.
+    var title = ""
+    /// A draft is still being edited and never alerts.
+    var confirmed = false
     /// Part of the item's name, any case.
     var name = ""
     /// The item's <SlotType>.
@@ -105,9 +109,27 @@ struct ItemRule: Codable, Hashable, Identifiable {
         (31, "Sigil"),
     ].sorted { $0.name < $1.name }
 
-    func matches(_ item: LootItem, catalog: RuleCatalog) -> Bool {
+    /// Nothing set: the rule would match nothing.
+    var isBlank: Bool {
+        name.trimmingCharacters(in: .whitespaces).isEmpty && slot == nil && minTier == nil && minRarity == .common
+            && enchant.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// The set parts in one line, for a confirmed rule: "Tome · Tier 4+ · Lucky Streak".
+    var summary: String {
+        var parts: [String] = []
         let name = name.trimmingCharacters(in: .whitespaces), enchant = enchant.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty || slot != nil || minTier != nil || minRarity != .common || !enchant.isEmpty else { return false }
+        if !name.isEmpty { parts.append("“\(name)”") }
+        if let slot { parts.append(Self.types.first { $0.slot == slot }?.name ?? "Type \(slot)") }
+        if let minTier { parts.append("Tier \(minTier)+") }
+        if minRarity != .common { parts.append(minRarity.name) }
+        if !enchant.isEmpty { parts.append(enchant) }
+        return parts.joined(separator: " · ")
+    }
+
+    func matches(_ item: LootItem, catalog: RuleCatalog) -> Bool {
+        guard confirmed, !isBlank else { return false }
+        let name = name.trimmingCharacters(in: .whitespaces), enchant = enchant.trimmingCharacters(in: .whitespaces)
         let info = catalog.items[item.id]
         if !name.isEmpty, !item.name.localizedCaseInsensitiveContains(name) { return false }
         if let slot, info?.slot != slot { return false }
@@ -120,11 +142,44 @@ struct ItemRule: Codable, Hashable, Identifiable {
     }
 }
 
+extension ItemRule {
+    /// Rules saved before titles and drafts existed load as confirmed, so their alerts keep working.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        confirmed = try c.decodeIfPresent(Bool.self, forKey: .confirmed) ?? true
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        slot = try c.decodeIfPresent(Int.self, forKey: .slot)
+        minTier = try c.decodeIfPresent(Int.self, forKey: .minTier)
+        minRarity = try c.decodeIfPresent(DropRarity.self, forKey: .minRarity) ?? .common
+        enchant = try c.decodeIfPresent(String.self, forKey: .enchant) ?? ""
+    }
+}
+
 /// What item rules look up: each item's type and tier from the item catalog (issue #40), and enchantment names.
 struct RuleCatalog: Equatable {
     struct Item: Equatable { var slot: Int?, tier: Int? }
     var items: [Int: Item] = [:]
     var enchants: [Int: String] = [:]
+    /// Item names to suggest while typing a rule, sorted.
+    var names: [String] = []
+
+    /// Up to `limit` of `options` for what is typed: names starting with it first, then names with a word
+    /// starting with it, then names containing it, each alphabetical. Nothing typed suggests nothing.
+    static func suggest(_ typed: String, from options: [String], limit: Int = 8) -> [String] {
+        let t = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty else { return [] }
+        var groups: [[String]] = [[], [], []]
+        for o in options {
+            let l = o.lowercased()
+            guard l != t else { continue }
+            if l.hasPrefix(t) { groups[0].append(o) }
+            else if l.contains(" " + t) { groups[1].append(o) }
+            else if l.contains(t) { groups[2].append(o) }
+        }
+        return Array(groups.flatMap { $0.sorted() }.prefix(limit))
+    }
 
     /// Reads the catalog's items and RealmHound's enchantments.xml (call it off the main thread).
     static func load(_ store: DropRateStore, xml: URL) -> RuleCatalog {
@@ -134,6 +189,10 @@ struct RuleCatalog: Equatable {
                 slot: Int(sqlite3_column_int64(s, 1)),
                 tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
         }
+        store.run("SELECT DISTINCT coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
+            if let t = sqlite3_column_text(s, 0) { catalog.names.append(String(cString: t)) }
+        }
+        catalog.names.sort()
         if let data = try? Data(contentsOf: xml.appendingPathComponent("enchantments.xml")) {
             catalog.enchants = enchantNames(inXML: String(decoding: data, as: UTF8.self))
         }
@@ -182,6 +241,8 @@ struct DropAlert: Equatable {
     var shiny: Bool
     var mob: String
     var dungeon: String
+    /// The title of the item rule that matched, if any.
+    var rule = ""
 
     var detail: String {
         var parts = [bag?.name ?? "Bag"]
@@ -207,9 +268,10 @@ enum DropRules {
         let bagChosen = bag.map(settings.bags.contains) ?? false
         let matches = drop.items.compactMap { item -> (ruled: Bool, alert: DropAlert)? in
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
-            let ruled = settings.rules.contains { $0.matches(item, catalog: catalog) }
-            guard ruled || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return (ruled, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon))
+            let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
+            guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
+            return (rule != nil, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+                                           rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? ""))
         }
         func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
         return matches.max { rank($0) < rank($1) }?.alert
