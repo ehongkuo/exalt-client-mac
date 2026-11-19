@@ -108,7 +108,7 @@ class Fetcher:
 
 
 # RealmEye pages. Layouts as of Nov 2026: the dungeon list's table rows open with a text link and an
-# anchor; a dungeon page lists its mobs as image links under <h2 id="enemies"> and the boss headings;
+# anchor; a dungeon page lists its mobs as image links between Layout and Drops of Interest (h2–h4);
 # a mob page has "Base HP" and a <h3 id="drops"> section of text links, tiers as /wiki/weapons#tier-7.
 
 def key(name):
@@ -147,17 +147,18 @@ def image_links(html):
 
 
 def dungeon_mobs(html):
-    """(slug, name) of the mobs a dungeon page lists: enemies and bosses, not environmental hazards."""
-    html = wiki(html)
-    start = html.find('<h2 id="enemies"')
-    if start < 0: return []
-    # The mobs run to the first heading after Enemies that isn't a boss's ("Boss", "Treasure Room Boss").
-    end = next((m.start() for m in re.finditer(r'<h2\b[^>]*>(.*?)</h2>', html[start:])
-                if m.start() > 0 and 'boss' not in m.group(1).casefold()), len(html) - start)
-    parts = re.split(r'<h[234][^>]*>(.*?)</h[234]>', html[start:start + end])
-    mobs = []
-    for heading, body in zip(parts[1::2], parts[2::2]):
-        if not re.sub('<[^>]+>', '', heading).strip().casefold().startswith('environmental'): mobs += image_links(body)
+    """(slug, name) of the image links in a dungeon page's mob part: from Layout (some pages list mobs there)
+    to the first section after the mobs, skipping environmental hazards. Heading levels vary by page, and
+    links that aren't mobs (maps, chests, portals) are dropped later by their pages' lack of stats."""
+    parts = re.split(r'<h[234]([^>]*)>(.*?)</h[234]>', wiki(html))
+    mobs, inside = [], False
+    for attrs, heading, body in zip(parts[1::3], parts[2::3], parts[3::3]):
+        hid = (re.search(r'id="#?([^"]*)"', attrs) or [None, ''])[1]
+        text = re.sub('<[^>]+>', '', heading).strip().casefold()
+        if hid in ('layout', 'enemies', 'boss', 'bosses', 'inhabitants'): inside = True
+        if hid in ('drops', 'interest', 'quests', 'tips', 'history', 'trivia', 'notes', 'mini-dungeons') or text.startswith('drops of'):
+            break
+        if inside and not text.startswith('environmental'): mobs += image_links(body)
     return list(dict.fromkeys(mobs))
 
 
@@ -210,12 +211,13 @@ class Game:
                 item='<Item/>' in body or '<Item />' in body, loot=el('BagType') is not None,
                 texture=bool(re.search(r'<(Animated)?Texture[ >]', body)), dungeon=el('DungeonName'))
 
-    def match(self, name, want, hint=''):
+    def match(self, name, want, hint='', every=False):
         """Type ids for a RealmEye name: Character objects for want='mob', loot items for 'item'. When several
-        share the name: the ones whose XML id is the name, then the ones in a file named like the dungeon (hint)."""
+        share the name: the ones whose XML id is the name, then the ones in a file named like the dungeon (hint).
+        every=True keeps them all: the Realm has a copy per biome (Djinn, City Djinn)."""
         found = [t for t in self.by_name.get(key(name), []) if
                  (self.objects[t]['cls'] == 'Character' if want == 'mob' else self.objects[t]['item'] and self.objects[t]['loot'])]
-        for narrow in (lambda t: key(self.objects[t]['id']) == key(name),
+        for narrow in () if every else (lambda t: key(self.objects[t]['id']) == key(name),
                        lambda t: hint and re.sub(r'[^a-z]', '', hint.casefold()) in self.objects[t]['file'].casefold()):
             if len(found) > 1 and any(map(narrow, found)): found = [t for t in found if narrow(t)]
         return sorted(found)
@@ -286,22 +288,23 @@ def build(fetch, game, sprites=SPRITES):
                 mobs[mob_slug] = dict(name=mob_name, realmeye=mob_slug, page=page, drops=drops, tiers=tiers, types=None)
             entry = mobs[mob_slug]
             if entry['types'] is None:
-                entry['types'] = game.match(entry['name'], 'mob', '' if name == REALM else name)
+                entry['types'] = game.match(entry['name'], 'mob', name, every=name == REALM)
                 if not entry['types']:
                     out['unmatched'].append(dict(kind='mob', realmeye=entry['name'], why='no Character object with this name'))
-                elif len(entry['types']) > 1:
+                elif len(entry['types']) > 1 and name != REALM:
                     out['ambiguous'].append(dict(kind='mob', realmeye=entry['name'], types=list(map(hexid, entry['types']))))
             types.update(entry['types'])
         out['dungeons'].append(dict(name=game_name, portal=(p := game.portal(game_name)) and hexid(p), realmeye=slug,
                                     mobs=list(map(hexid, sorted(types)))))
-    need_sprite = []
+    need_sprite, no_item = [], {}
+    places = set(names) | {key(n) for _, n in pages}   # a mob dropping a portal: a place, not loot
     for entry in sorted(mobs.values(), key=lambda e: key(e['name'])):
         if not entry['types']: continue
         drops = []
         for item in entry['drops']:
             found = game.match(item, 'item')
             if not found:
-                out['unmatched'].append(dict(kind='drop', realmeye=item, mob=entry['name'], why='no loot item with this name'))
+                if key(item) not in places: no_item.setdefault(item, []).append(entry['name'])
             elif len(found) > 1:
                 out['ambiguous'].append(dict(kind='drop', realmeye=item, types=list(map(hexid, found))))
             drops += found
@@ -309,6 +312,7 @@ def build(fetch, game, sprites=SPRITES):
         need_sprite += [(t, entry['name'], entry['page']) for t in entry['types'] if not game.objects[t]['texture']]
         out['mobs'].append(dict(name=entry['name'], types=list(map(hexid, entry['types'])), realmeye=entry['realmeye'],
                                 tiers=entry['tiers'], drops=list(map(hexid, sorted(set(drops))))))
+    out['unmatched'] += [dict(kind='drop', realmeye=item, mobs=m, why='no loot item with this name') for item, m in no_item.items()]
     out['dungeons'].sort(key=lambda d: d['name'])
     for k in ('unmatched', 'ambiguous'):
         out[k] = sorted({json.dumps(e, sort_keys=True): e for e in out[k]}.values(), key=lambda e: (e['kind'], key(e['realmeye'])))
@@ -401,22 +405,26 @@ def self_test():
                '<td><a href="/wiki/test-den"><img alt="Test Den" src="/s/x.png"></a></td></tr>'
                '<tr><td><a href="/wiki/oryx-s-nook">Oryx’s Nook</a><a id="nook"></a></td></tr></table></div>')
     assert dungeon_list(listing) == [('test-den', 'Test Den'), ('oryx-s-nook', 'Oryx’s Nook')]
-    den = ('<div class="wiki-page"><h2 id="layout">Layout</h2><a href="/wiki/x"><img alt="Layout map" src="/s/l.png"></a>'
+    den = ('<div class="wiki-page"><h4>Key</h4><a href="/wiki/den-key"><img alt="Den Key" src="/s/y.png"></a>'
+           '<h2 id="layout">Layout</h2><h4>Village</h4><a href="/wiki/den-guard"><img alt="Den Guard" src="/s/g.png"></a>'
            '<h2 id="enemies">Enemies and Environmental Hazards</h2><h3>Enemies</h3>'
            '<a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"><br>Den Rat</a>'
            '<h3>Environmental Hazards</h3><a href="/wiki/den-lava"><img alt="Den Lava" src="/s/v.png"></a>'
            '<h2 id="boss">Boss</h2><a href="/wiki/den-king"><img src="/s/k.png"><br>Den King</a>'
            '<h2>Treasure Room Boss</h2><a href="/wiki/den-idol"><img alt="Den Idol" src="/s/i.png"></a>'
            '<h2 id="interest">Drops of Interest</h2><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></div>')
-    assert dungeon_mobs(den) == [('den-rat', 'Den Rat'), ('den-king', 'Den King'), ('den-idol', 'Den Idol')], dungeon_mobs(den)
+    assert dungeon_mobs(den) == [('den-guard', 'Den Guard'), ('den-rat', 'Den Rat'), ('den-king', 'Den King'), ('den-idol', 'Den Idol')], dungeon_mobs(den)
+    hive = ('<div class="wiki-page"><h3 id="layout">Layout</h3><h3 id="boss">Boss</h3><a href="/wiki/q"><img alt="Q" src="/s/q.png"></a>'
+            '<h3 id="drops">Drops of Interest</h3><a href="/wiki/z"><img alt="Z" src="/s/z.png"></a></div>')
+    assert dungeon_mobs(hive) == [('q', 'Q')], dungeon_mobs(hive)
     king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><h3 id="stats">Stats</h3><p>HP: 100</p>'
             '<h3 id="drops">Drops</h3><table><tr><td><img alt="Purple Bag" src="/s/b.png"></td>'
             '<td><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></td><td><a href="/wiki/den-sword">Den Sword</a>'
             '<sup><abbr title="Guaranteed">G</abbr></sup></td><td><a href="/wiki/weapons#tier-7">Tier 7 Weapons</a></td>'
             '<td><a href="/wiki/rings#tier-3">Tier 3 Rings</a></td><td><a href="/wiki/weapons#tier-8">Tier 8 Weapons</a></td>'
-            '<td><a href="/wiki/pet-eggs">Pet Eggs</a></td></tr></table><h3 id="tips">Tips</h3><a href="/wiki/z">Not a drop</a></div>')
+            '<td><a href="/wiki/pet-eggs">Pet Eggs</a></td><td><a href="/wiki/test-den">Test Den</a></td></tr></table><h3 id="tips">Tips</h3><a href="/wiki/z">Not a drop</a></div>')
     assert is_mob(king) and not is_mob(den)
-    assert mob_drops(king) == (['Den Sword', 'Pet Eggs'], {'ring': [3], 'weapon': [7, 8]}), mob_drops(king)
+    assert mob_drops(king) == (['Den Sword', 'Pet Eggs', 'Test Den'], {'ring': [3], 'weapon': [7, 8]}), mob_drops(king)
     assert sprite_src(king, 'Den King') == '/s/k.png'
 
     xml = ('<Objects><Object type="0x0010" id="Test Den Portal"><Class>Portal</Class><DungeonName>Test Den</DungeonName>'
@@ -452,7 +460,7 @@ def self_test():
                                     drops=['0x0020']), c['mobs'][0]
         assert {(e['kind'], e['realmeye']) for e in c['unmatched']} == {('dungeon', 'Oryx’s Nook'), ('drop', 'Pet Eggs')}, c['unmatched']
         assert c['sprites'] == {'0x0013': '0x0013.png'} and open(os.path.join(art, '0x0013.png')).read() == 'PNG'
-        assert [p for p, _ in fetch.missing] == ['/wiki/den-idol']   # a dungeon the game lacks isn't fetched
+        assert [p for p, _ in fetch.missing] == ['/wiki/den-guard', '/wiki/den-idol']   # a dungeon the game lacks isn't fetched
         assert diff({}, c)[:2] == [f'+ dungeon {REALM}', '+ dungeon Test Den'] and diff(c, c) == []
         assert check(c, game, art) == [], check(c, game, art)
         bad = json.loads(json.dumps(c)); bad['mobs'][0]['drops'] += ['0x0013', '0x0999']; bad['sprites'] = {}
