@@ -1,39 +1,62 @@
 # Loot factors: what changes drop chance, and what we capture (issue #58)
 
-Checked on 2026-11-18 against `drop_rates.db` (captures from Nov 16 to 18), RealmHound's `loot_history.db`
-(read-only), the game XML RealmHound extracts, and the il2cpp dump of the current build. Stat names come from
-the open-source realmlib client (`src/models/stat-type.ts`).
+Checked on 2026-11-18. Sources:
+- `drop_rates.db`: captures from Nov 16 to 18.
+- RealmHound's `loot_history.db`, read-only.
+- The game XML RealmHound extracts (`mods.xml`, `enchantments.xml`, `equip.xml`).
+- The il2cpp dump of the current build.
+- Stat names from the realmlib client (`src/models/stat-type.ts`).
+- Values the XML lacks come from the official patch notes, linked below.
 
-## The factors
+## Everything that can change your drop chance
 
-| Factor | Effect, from the game data | In the game stream | Captured today |
-|---|---|---|---|
-| Loot Drop Potion | "more loot", 30 min; the multiplier isn't in the XML (community: ×1.5) | stat 67 `LD_TIMER`: seconds left, sent on map entry and when you drink one | Yes |
-| Loot Tier Potion | up to +3 tiers, 30 min | stat 68 `LT_TIMER` | Yes; never active since capture began |
-| Lucky Clover | both potions' effects, 20 min | expected as stats 67 and 68 | Yes (as above) |
-| Loot enchantments on gear | +0.5% to +3% loot drop each (`LootBonus` in `enchantments.xml`: Loot Bonus I–IV, XP/Dust Loot Bonus, Lucky Streak and others; 14 in all) | stat 80 `ENCHANTMENTS` (a text stat) on your player | **No**: the guard drops your text stats. Item types in slots 8–11 are kept |
-| Drop accelerators | +33% stat potions (1.5 h), +50% artifacts (24 h or 1 week): `acceleratorId="DROPLOOTBOOST"` with a label; `TIEREDLOOTBOOST` biases class drops | `AcceleratorsManager` (its own message, not a stat) | **No** |
-| Seasonal character | Shown in the XML only as a higher enchantment-slot chance; any effect on drop rate is unknown | stat 24 `SEASONAL_CHARACTER` | Yes: **1 on every captured kill** |
-| Crucible | "better rewards" with trade-offs; no multiplier in the XML | stat 128 `CRUCIBLE`; `CrucibleActive` in the character list | Yes: always 0 |
-| Blood Ritual | "the more you give, the more you receive"; no multiplier in the XML | `BloodRitualActive` in the character list; the in-game stat isn't found yet | **No** |
-| Dungeon modifiers | unknown per modifier | stat 121 `MODIFIERS` (text) | **No** (`map_info` is raw) |
-| Server-wide loot events | unknown | server announcements | **No** |
+"Stated" means the game data or patch notes give the number. "Live" means where the client holds it while you play.
 
-## How sure each boost reading is
+| # | Factor | Size | Stated? | Live in the client | Captured today |
+|---|---|---|---|---|---|
+| 1 | Loot Drop Potion | ×1.5 (community) | No | stat 67 `LD_TIMER`, seconds left | Yes |
+| 2 | Loot Tier Potion | up to +3 tiers, not more drops | No | stat 68 `LT_TIMER` | Yes, never on |
+| 3 | Lucky Clover (20 min), Golden Lucky Clover (60 min) | both potions' effects (`LDBoosted`, `LTBoosted`) | No | stats 67 and 68 | Yes |
+| 4 | Gear enchantments | +0.5% to +3% loot drop each (`LootBonus`: Loot Bonus I–IV 1/1.5/2/2.5%, XP or Dust Loot Bonus 0.5–1.25%, Lucky Streak 3%, an awakened ring 2%) | Yes, XML | stat 80 `ENCHANTMENTS` (text) with the item types in stats 8–11 | Item types only; the guard drops your text stats |
+| 5 | Dungeon modifiers | per mob and per item: `EntityDropMultiplier` ×1.01 to ×1.15+ on 205 of 249 modifiers (some only for bosses, minions or one potion). Reward modifiers: LOOTING +50%, REWARDING +25% | Yes, XML | the map info's modifier list, for example `ELITEMINIONS_2;FEEBLEMINIONS_2;` and a grade letter | **Yes, every map** (`map_info.info_58`) |
+| 6 | Crucible | the season's loot bonus: +10% in Season 31 (it was +10% to +20% before) | Patch notes; the client shows it (`Crucible.LootBonusHeader`) | stat 128 `CRUCIBLE`; the % is in `CruciblesManager` | Flag yes (always 0); % no |
+| 7 | Blood Ritual | ×1.1 at −10% HP, ×1.15 at −15%, ×1.25 at −20%; ×1 at −5% or less | Patch notes, and the client's definitions feed | stat 155 (its tier) | Yes, always 0 |
+| 8 | Drop accelerators | +33% stat potions (1.5 h); +50% artifacts (24 h, 1 week); `TIEREDLOOTBOOST` class bias | Yes, XML (`StartAccelerator`) | `AcceleratorsManager` (its own message) | **No** |
+| 9 | Server-wide loot events | e.g. "1.5× loot" events | In the announcement only | chat announcements | **No** |
+| 10 | Seasonal character | No drop bonus found. Seasonal raises enchantment-slot odds (rarity), and only seasonal characters can use the Crucible | XML (`seasonalChanceIncrease`) | stat 24 | Yes, 1 on every kill |
+| 11 | Eligibility | soulbound loot needs enough of your damage on the mob; below it, no roll at all | No | your damage vs the mob's max HP (already per kill) | Yes |
+
+Checked and ruled out:
+- Stat 102 is projectile speed, stat 113 exaltation damage, stat 152 account level. None is a loot factor.
+- No item carries a loot bonus outside its enchantments: `LootBonus` appears only in `enchantments.xml`.
+
+Open:
+- How factors combine (adding the percentages or multiplying them) isn't stated anywhere. It's measurable once
+  enough kills mix factors.
+- Whether a loot event shows anywhere but chat.
+
+## How sure the potion reading is
 
 - **Stat 67 = drop potion**, high. A boosted (17xx) bag needs a running boost, and all 1,955 of them came while the
   rule below said one was running. RealmHound's `loot_drop_active` agrees on all 312 of its drops, but it
   counts a boost as running past its end: 27 normal bags drop in that window, so it isn't an independent check.
 - **The per-kill rule:** take the last stat 67 value on the same map and subtract the seconds since it was read.
-  The game sends the timer only on map entry and when a potion is drunk. The timer pauses outside the game, so
-  the rule never subtracts across maps.
-- **Unexplained:** 25 normal brown, pink or white bags while a boost was clearly on. Perhaps those bags have no
-  boosted look. That's 1% of boosted bags.
-- **The multiplier, measured:** boosted ÷ normal over 3,051 item drops (565 normal and 4,010 boosted kills,
-  pooled per mob and item) is ×1.37, ±12% roughly. The seasonal state and enchants are unknown, so this mixes
-  every factor except the potion.
+  The game sends the timer only on map entry and when you drink. The timer pauses in safe zones and while
+  offline, so the rule never subtracts across maps.
+- **Unexplained:** 25 normal brown, pink or white bags while a boost was clearly on. That's 1% of boosted bags.
+- **Measured:** boosted ÷ normal over 3,051 item drops is ×1.37, ±12% roughly. This mixes in the unknown
+  enchantments.
 
 ## What this means for the data so far
 
-The potion state is known for every kill. Every kill is from a seasonal character with no crucible. Gear
-enchantments, accelerators, Blood Ritual, dungeon modifiers and loot events are unknown for all of them.
+Known for every kill: potion state, dungeon modifiers, Blood Ritual (off), crucible (off) and seasonal (on).
+Unknown: gear enchantments (only the item types), accelerators and loot events.
+
+## Sources
+
+- [Season 31 patch notes](https://hub.realmofthemadgod.com/news0/updates0/s31notes1) (Crucible, Blood Ritual)
+- [Season 31 public testing notes](https://hub.realmofthemadgod.com/news0/updates0/s31pt1) (Blood Ritual tiers)
+- [Season 30 part 2 notes](https://hub.realmofthemadgod.com/news0/updates0/motmg) (earlier Crucible values)
+- [RealmHound issue 64](https://github.com/pillarzz/RealmHound/issues/64) (Blood Ritual tier in stat 155)
+- [Realm Shop: loot boosters](https://realmshop.info/product-category/informational/restoratives-and-boosters/loot-boosters/) (timers stack in time, not strength)
+- [RealmEye loot guide](https://www.realmeye.com/forum/t/guide-to-loot-and-drop-rates/60740) (×1.5 potion)
