@@ -1625,7 +1625,9 @@ private struct TermList: View {
     let hint: String
     @Binding var terms: [String]
     let options: [String]
-    @State private var text = ""
+    @StateObject private var typed = Typed()
+    /// What is typed but not yet added. (@State needs a compiler plugin this build doesn't load.)
+    final class Typed: ObservableObject { @Published var text = "" }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -1640,10 +1642,10 @@ private struct TermList: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(Color.accentColor.opacity(0.2)))
                 }
-                TextField(terms.isEmpty ? "contains…" : "add another…", text: $text)
+                TextField(terms.isEmpty ? "contains…" : "add another…", text: $typed.text)
                     .frame(width: 170)
                     .onSubmit(add)
-                    .modifier(Suggestions(options: RuleCatalog.suggest(text, from: options)))
+                    .modifier(Suggestions(options: RuleCatalog.suggest(typed.text, from: options)))
             }
             if !hint.isEmpty, !terms.isEmpty { Text(hint).foregroundStyle(.tertiary) }
         }
@@ -1651,9 +1653,9 @@ private struct TermList: View {
     }
 
     private func add() {
-        let t = text.trimmingCharacters(in: .whitespaces)
+        let t = typed.text.trimmingCharacters(in: .whitespaces)
         if !t.isEmpty, !terms.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) { terms.append(t) }
-        text = ""
+        typed.text = ""
     }
 }
 
