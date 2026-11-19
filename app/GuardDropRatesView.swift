@@ -531,7 +531,7 @@ struct DropRatesView: View {
                     Text("**Per run** counts runs where a boss died with at least one copy. **Surest first** sorts by the low end of each range, so a lucky early drop doesn't come out on top.")
                     Divider()
                     Text("How rates are calculated").font(.headline)
-                    Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual.")
+                    Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual. **Guaranteed drops**, seen on every kill over \(DropReport.guaranteedKills) kills or more, count each kill once, since boosts can't raise them. No rate goes over 100%.")
                     Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
                     if model.report.gearUnknown > 0 {
                         Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
@@ -676,7 +676,8 @@ struct MobPage: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(n > 0 ? "\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills" : "\(name): not dropped by this mob yet")
+        .help(n > 0 ? "\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills"
+              + (report.guaranteed(mob, n) ? ", every one: guaranteed, so boosts don't count" : "") : "\(name): not dropped by this mob yet")
         .accessibilityLabel("\(name), \(report.perKill(mob, n).percent) per kill")
     }
 

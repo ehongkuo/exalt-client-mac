@@ -401,10 +401,10 @@ enum Enchantments {
 struct DropRate: Equatable {
     var count: Int, of: Int
     /// Base rates (issue #58): the kills, each counted as its loot multiplier, so a ×1.5 kill counts 1.5. The rate
-    /// and its range divide by this; the ± stays the drops' (it depends on the count only).
+    /// and its range divide by this; the ± stays the drops' (it depends on the count only). Nil for guaranteed drops (#62).
     var exposure: Double?
     private var per: Double { of > 0 ? exposure ?? Double(of) : 0 }
-    var rate: Double { per > 0 ? Double(count) / per : 0 }
+    var rate: Double { per > 0 ? min(1, Double(count) / per) : 0 }   // a chance never tops 100% (#62)
     /// How far off the rate may be, at 95%, as a fraction (0.44 reads ±44%): about 1.96 ÷ √drops. Nil under 4 drops,
     /// too few to say. It shrinks as data grows; there is no threshold where a rate becomes "solid".
     var precision: Double? { count >= 4 ? 1.96 / Double(count).squareRoot() : nil }
@@ -710,8 +710,15 @@ struct DropReport: Equatable {
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
     static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
-    /// A mob's base rate per kill for `n` kills with a drop (issue #58).
-    func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
+    /// Kills a drop must be seen on every one of to count as guaranteed (issue #62).
+    // shortcut: 20 is a guess (a 90% drop shows on 20 kills in a row 12% of the time); set it from live data once bosses have more kills.
+    static let guaranteedKills = 20
+    /// A drop seen on every kill, over at least `guaranteedKills` kills: boosts can't raise it, so each kill counts once.
+    func guaranteed(_ mob: Mob, _ n: Int) -> Bool { let k = kills[mob] ?? 0; return k >= Self.guaranteedKills && n >= k }
+    /// A mob's base rate per kill for `n` kills with a drop (issue #58); guaranteed drops count each kill once (#62).
+    func perKill(_ mob: Mob, _ n: Int) -> DropRate {
+        DropRate(count: n, of: kills[mob] ?? 0, exposure: guaranteed(mob, n) ? nil : weight[mob])
+    }
     /// The best rarity (as an enchantment count) of any copy of an item, from every mob or one dungeon's; nil when none was read.
     func bestEnchants(_ item: Int, dungeon: String? = nil, mob: Mob? = nil) -> Int? {
         rarity.filter { (dungeon == nil || $0.key.dungeon == dungeon) && (mob == nil || $0.key == mob) }.compactMap { $0.value[item]?.lastIndex { $0 > 0 } }.max()
@@ -1103,9 +1110,9 @@ final class DropRatesModel: ObservableObject {
         if let now { cutSprites(now.textures) }
     }
     /// Your rate now: the base rate times your multiplier for this mob, and its dungeon's modifiers only while you're in
-    /// it. Nil when no game runs, nothing dropped yet or nothing boosts it.
+    /// it. Nil when no game runs, nothing dropped yet, it's already 100% (a guaranteed drop) or nothing boosts it.
     func yours(_ rate: DropRate, _ mob: DropReport.Mob, at time: Double = Date().timeIntervalSince1970) -> Double? {
-        guard let now, rate.count > 0 else { return nil }
+        guard let now, rate.count > 0, rate.rate < 1 else { return nil }
         let m = now.state(at: time).multiplier(catalog, labels: report.labels[mob.type] ?? [], inDungeon: mob.dungeon == now.map)
         return abs(m - 1) < 0.001 ? nil : min(1, rate.rate * m)
     }

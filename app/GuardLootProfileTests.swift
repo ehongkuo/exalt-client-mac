@@ -114,6 +114,20 @@ enum LootProfileTests {
         check(now.map { near($0.state.potion, 30.1) && near($0.state(at: 140).potion, 20.1) } == true &&
               now?.state.enchants == [[], [], [], [0x5B1]] && now?.state.modifiers == ["LOOTING"] && now?.state.crucible == true, "your boosts now")
         check(now.map { near($0.state.multiplier(catalog, labels: []), 1.5 * 1.015 * 1.5 * 1.1) } == true, "your multiplier now")
+
+        // Guaranteed drops (issue #62): seen on every one of 20+ kills, each kill counts once, whatever the boost.
+        var boosted = DropReport()
+        boosted.kills[mob] = 20; boosted.weight[mob] = 40
+        let sure = boosted.perKill(mob, 20), rare = boosted.perKill(mob, 2)
+        check(boosted.guaranteed(mob, 20) && sure.rate == 1 && !boosted.guaranteed(mob, 19), "a drop on every ×2 kill reads 100%")
+        check(near(rare.rate, 2.0 / 40) && rare.exposure == 40, "a rare drop's base rate is unchanged")
+        boosted.kills[mob] = 19; boosted.weight[mob] = 38
+        check(!boosted.guaranteed(mob, 19) && near(boosted.perKill(mob, 19).rate, 0.5), "under 20 kills, still boosted")
+        check(DropRate(count: 3, of: 2).rate == 1 && DropRate(count: 2, of: 4, exposure: 1).rate == 1, "no rate tops 100%")
+        let tab = DropRatesModel()
+        tab.update(now: now)
+        check(tab.yours(sure, mob, at: 130) == nil && tab.yours(rare, mob, at: 130).map { $0 > rare.rate } == true,
+              "yours: none on a guaranteed drop, boosted on a rare one")
         let json = """
             {"characters": {"characters": [
               {"char_id": 1, "class_id": 782, "level": 20, "seasonal": true, "crucible_active": true, "loot_boost_secs": 0,
