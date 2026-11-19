@@ -39,6 +39,7 @@ struct DropRatesView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            LootProfileView(model: model, bar: true).padding(.horizontal, 8).padding(.bottom, 8)
             Divider()
             if let problem = model.problem {
                 Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -280,7 +281,8 @@ struct DropRatesView: View {
     // MARK: Right pane
 
     @ViewBuilder private var rightPane: some View {
-        if let item = model.item { itemPane(report.base(item)) }
+        if model.lootDetails { LootProfileView(model: model) }
+        else if let item = model.item { itemPane(report.base(item)) }
         else if let group = model.group, let d = dungeon { groupPane(group, d) }
         else if let mob = model.mob { MobPage(model: model, mob: mob, bagSprites: drops.bagSprites) }
         else if let d = dungeon { summaryPane(d) }
@@ -368,7 +370,7 @@ struct DropRatesView: View {
     /// The name goes to the dungeon, keeping the item open.
     private func sourceBox(_ s: DropReport.Source, grew: Bool) -> some View {
         let mobs = s.mobs.sorted {
-            DropRate(count: $0.value, of: report.kills[$0.key] ?? 0).range.lowerBound > DropRate(count: $1.value, of: report.kills[$1.key] ?? 0).range.lowerBound
+            report.perKill($0.key, $0.value).range.lowerBound > report.perKill($1.key, $1.value).range.lowerBound
         }
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -387,7 +389,8 @@ struct DropRatesView: View {
                     SpriteIcon(image: model.sprites[mob.type], size: 20)
                     Text(report.name(mob.type)).lineLimit(1).help(report.name(mob.type))
                     Spacer()
-                    RateView(rate: .init(count: n, of: report.kills[mob] ?? 0), unit: "kills", compact: true)
+                    let rate = report.perKill(mob, n)
+                    RateView(rate: rate, unit: "kills", compact: true, yours: model.yours(rate, mob))
                 }
                 .padding(.trailing, 20)
             }
@@ -486,6 +489,16 @@ struct DropRatesView: View {
                     Text("**Too few drops**: under 4 drops, the rate is a rough guess. Faded rates are looser than ±50%.")
                     Text("**Rarer than 1 in 22**: none yet in that many runs, so the rate is probably below that.")
                     Text("**Per run** counts runs where a boss died with at least one copy. **Surest first** sorts by the low end of each range, so a lucky early drop doesn't come out on top.")
+                    Divider()
+                    Text("How rates are calculated").font(.headline)
+                    Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual.")
+                    Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
+                    if model.report.gearUnknown > 0 {
+                        Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Drop accelerators and server loot events aren't captured yet, so they're left out. So is the Crucible on kills from before this build, and on the first map after launch.").foregroundStyle(.secondary)
+                    Text("**Per run** and bag colour rates are as seen, boosts included.").foregroundStyle(.secondary)
                 }
                 .font(.callout).frame(width: 340).padding(14)
             }
@@ -544,13 +557,13 @@ struct MobPage: View {
                                 Text("\(row.count) \(row.count == 1 ? "entry" : "entries")").font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            numbers(report.killsWith(mob, row), of: kills, stacked: false)
+                            numbers(report.killsWith(mob, row), stacked: false)
                             Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 4).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(bag?.name ?? "No bag"), \(DropRate(count: report.killsWith(mob, row), of: kills).percent) per kill")
+                    .accessibilityLabel("\(bag?.name ?? "No bag"), \(report.perKill(mob, report.killsWith(mob, row)).percent) per kill")
                     .accessibilityAddTraits(open ? .isSelected : [])
                     if open {
                         // Untiered items in a grid, then each tier group as a full-width row that opens in place.
@@ -613,7 +626,7 @@ struct MobPage: View {
                 .frame(width: 32, height: 32).opacity(n > 0 ? 1 : 0.35)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    numbers(n, of: kills, stacked: false)
+                    numbers(n, stacked: false)
                 }
                 Spacer(minLength: 0)
                 if let open { Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary) }
@@ -624,16 +637,24 @@ struct MobPage: View {
         }
         .buttonStyle(.plain)
         .help(n > 0 ? "\(name): dropped in \(n.formatted()) of \(kills.formatted()) kills" : "\(name): not dropped by this mob yet")
-        .accessibilityLabel("\(name), \(DropRate(count: n, of: kills).percent) per kill")
+        .accessibilityLabel("\(name), \(report.perKill(mob, n).percent) per kill")
     }
 
     /// "45%" over "9/20 · ±65%" ("too few" under 4 drops, "under 18%" with none), faded when looser than ±50% as elsewhere in the tab.
-    private func numbers(_ n: Int, of kills: Int, stacked: Bool) -> some View {
-        let rate = DropRate(count: n, of: kills), counts = "\(n.formatted())/\(kills.formatted())"
+    /// The % is the base rate; while you play, "→ 68%" in gold is yours now (issue #58).
+    private func numbers(_ n: Int, stacked: Bool) -> some View {
+        let report = model.report, kills = report.kills[mob] ?? 0
+        let rate = report.perKill(mob, n), counts = "\(n.formatted())/\(kills.formatted())"
         // None yet: the top of the 95% range, as "rarer than 1 in N" reads elsewhere in the tab.
         let detail = n == 0 ? "under \(DropRate.percent(rate.range.upperBound))" : rate.plusMinus ?? "too few"
         return VStack(alignment: stacked ? .center : .leading, spacing: 0) {
-            Text(rate.percent).font(.system(size: 14, weight: .semibold))
+            HStack(spacing: 4) {
+                Text(rate.percent).font(.system(size: 14, weight: .semibold))
+                if let yours = model.yours(rate, mob) {
+                    Text("→ \(DropRate.percent(yours))").font(.system(size: 12, weight: .semibold)).foregroundStyle(lootGold)
+                        .help("Yours now, with your loot boosts")
+                }
+            }
             if stacked { Text(counts); Text(detail) } else { Text("\(counts) · \(detail)") }
         }
         .font(.caption2).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
@@ -746,6 +767,7 @@ struct RateView: View {
     var rate: DropRate
     var unit: String
     var compact = false
+    var yours: Double?   // the rate with your loot boosts now (issue #58)
 
     var body: some View {
         let precision = rate.precision
@@ -759,6 +781,7 @@ struct RateView: View {
                 HStack(spacing: 6) {
                     main.fontWeight(.semibold)
                     Text(detail.isEmpty ? counts : detail).font(.caption).foregroundStyle(.secondary)
+                    if let yours { Text("yours \(DropRate.oneIn(yours))").font(.caption.weight(.semibold)).foregroundStyle(lootGold) }
                 }
                 .monospacedDigit()
             } else {

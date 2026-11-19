@@ -28,7 +28,7 @@ private let dataURL: URL = {
     }
     return staging
 }()
-/// One drop_rates.db for the installed and staging apps (issue #49): it lives in the installed app's data folder.
+/// One drop database for the installed and staging apps (issue #49): it lives in the installed app's data folder.
 private let dropsURL: URL = {
     let prod = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
     try? FileManager.default.createDirectory(at: prod, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -1341,11 +1341,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
     private var lootTimer: Timer?
+    private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
+    private var catalogChecked = -Double.infinity
     private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
-    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    /// Moves the guard's drop-rate capture into the drop database, off the main thread (issue #38).
     private func importLoot() {
         let logs = GuardPaths.logs(data: dataURL)
         // With no loot file and the health already shown, there is nothing to do.
@@ -1354,17 +1356,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         let noCatalog = drops.catalog.items.isEmpty
+        // The game data changes only with a new game build, so its files are checked every 30 s, not every import.
+        let checkCatalog = noCatalog || Date().timeIntervalSince1970 - catalogChecked >= 30
+        if checkCatalog { catalogChecked = Date().timeIntervalSince1970 }
         lootQueue.async {
-            var health: CaptureHealth?, catalog: RuleCatalog?
+            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
-                if GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
+                if checkCatalog, GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
                     catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
                 }
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
+                now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }
+            let loot = self.catalog()
             DispatchQueue.main.async {
+                self.rates.catalog = loot
+                self.rates.update(now: now)
                 if let health { self.rates.update(health: health); self.healthLoaded = true }
                 if let catalog { self.drops.catalog = catalog }
                 self.lootBusy = false
@@ -1399,15 +1408,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         ratesLoaded = Date().timeIntervalSince1970
         lootQueue.async {
             guard let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) else {
-                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
+                DispatchQueue.main.async { self.rates.problem = "The drop database (\(LootImport.dbName) in the Exalt Client Mac data folder) can't be opened." }
                 return
             }
-            let report = DropReport.load(store)
+            let report = DropReport.load(store, catalog: self.catalog())
             let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
             let problem = report.dungeons.isEmpty && xml.isEmpty
                 ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
             DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
         }
+    }
+    /// The loot numbers from the game's XML, read once (issue #58). On lootQueue.
+    private func catalog() -> LootCatalog {
+        if let lootCatalog { return lootCatalog }
+        let catalog = LootCatalog.load(folder: RealmHoundPaths.xml)
+        if !catalog.modifiers.isEmpty { lootCatalog = catalog }   // RealmHound may extract the XML later
+        return catalog
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
@@ -1437,7 +1453,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         importLoot()
-        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
+        // Each second, so the loot bar follows gear swaps and potions (the guard writes every 0.1 s); an import reads
+        // only the lines added since the last one.
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.importLoot() }
         #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
