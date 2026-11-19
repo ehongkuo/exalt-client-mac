@@ -137,7 +137,7 @@ def dungeon_list(html):
 def image_links(html):
     """(slug, name) of each image link, the way mobs are shown: the name is the image's alt text, else the
     caption after it (a boss's image may have no alt)."""
-    found = re.findall(r'<a href="/wiki/([^"#]+)"><img ([^>]*)>(?:\s*<br>\s*([^<]+))?', html)
+    found = re.findall(r'<a href="/wiki/([^"#]+)"><img ([^>]*)>(?:\s*(?:<br>)?\s*(?:<b>)?([^<]+))?', html)
     out = []
     for slug, attrs, caption in found:
         alt = re.search(r'\balt="([^"]*)"', attrs)
@@ -155,7 +155,7 @@ def dungeon_mobs(html):
     for attrs, heading, body in zip(parts[1::3], parts[2::3], parts[3::3]):
         hid = (re.search(r'id="#?([^"]*)"', attrs) or [None, ''])[1]
         text = re.sub('<[^>]+>', '', heading).strip().casefold()
-        if hid in ('layout', 'enemies', 'boss', 'bosses', 'inhabitants'): inside = True
+        if hid in ('layout', 'enemies', 'boss', 'bosses', 'inhabitants') or text.startswith(('boss', 'enem')): inside = True
         if hid in ('drops', 'interest', 'quests', 'tips', 'history', 'trivia', 'notes', 'mini-dungeons') or text.startswith('drops of'):
             break
         if inside and not text.startswith('environmental'): mobs += image_links(body)
@@ -414,7 +414,7 @@ def self_test():
            '<h2>Treasure Room Boss</h2><a href="/wiki/den-idol"><img alt="Den Idol" src="/s/i.png"></a>'
            '<h2 id="interest">Drops of Interest</h2><a href="/wiki/den-sword"><img alt="Den Sword" src="/s/s.png"></a></div>')
     assert dungeon_mobs(den) == [('den-guard', 'Den Guard'), ('den-rat', 'Den Rat'), ('den-king', 'Den King'), ('den-idol', 'Den Idol')], dungeon_mobs(den)
-    hive = ('<div class="wiki-page"><h3 id="layout">Layout</h3><h3 id="boss">Boss</h3><a href="/wiki/q"><img alt="Q" src="/s/q.png"></a>'
+    hive = ('<div class="wiki-page"><h3>Bosses</h3><a href="/wiki/q"><img src="/s/q.png"><br><b>Q</b></a>'
             '<h3 id="drops">Drops of Interest</h3><a href="/wiki/z"><img alt="Z" src="/s/z.png"></a></div>')
     assert dungeon_mobs(hive) == [('q', 'Q')], dungeon_mobs(hive)
     king = ('<div class="wiki-page"><img alt="Den King" title="Den King" src="/s/k.png"><h3 id="stats">Stats</h3><p>HP: 100</p>'
