@@ -494,9 +494,10 @@ struct DropRatesView: View {
                     Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual.")
                     Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
                     if model.report.gearUnknown > 0 {
-                        Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off). Drop accelerators and server loot events aren't captured yet.")
+                        Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
                             .foregroundStyle(.secondary)
                     }
+                    Text("The Crucible, drop accelerators and server loot events aren't captured yet, so they're left out.").foregroundStyle(.secondary)
                     Text("**Per run** and bag colour rates are as seen, boosts included.").foregroundStyle(.secondary)
                 }
                 .font(.callout).frame(width: 340).padding(14)

@@ -360,8 +360,15 @@ static void loot_tick(void *player) {
     int32_t id = 0;
     il2cpp_field_get_value(player, loot_id_field, &id);
     if (loot_map == loot_named_map || !last_map_info || !id || id != loot_self_id) return;
-    loot_named_map = loot_map;
+    /* Your class is your object's type, which can come a few ticks after your id: wait for it, up to 3 s. */
+    static uint64_t waiting_since;
     uint64_t now = monotonic_ns();
+    if (!loot_type_get(loot_types, id)) {
+        if (!waiting_since) waiting_since = now;
+        if (now - waiting_since < 3 * NSEC_PER_SEC) return;
+    }
+    waiting_since = 0;
+    loot_named_map = loot_map;
     LootEvent e = {.ns = now, .map = loot_map, .kind = LOOT_MAP};
     snprintf(e.text, sizeof e.text, "%s", live_data.map);
     loot_push(&loot_ring, &e);

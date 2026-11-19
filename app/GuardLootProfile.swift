@@ -97,13 +97,15 @@ struct LootState: Equatable {
     var potion: Double = 0          // seconds left on the Loot Drop Potion (stat 67)
     var tier: Double = 0            // seconds left on the Loot Tier Potion (stat 68): better tiers, not more drops
     var enchants: [[Int]]?          // your four equipment slots' enchantment ids; nil before the capture had them
-    var crucible = false            // stat 128
+    /// Nil: not captured. Stat 128 never arrives, so it isn't the crucible; the client keeps it in CruciblesManager,
+    /// which needs a hook of its own. Only a known crucible counts.
+    var crucible: Bool?
     var ritual = 0                  // stat 155, the Blood Ritual's tier
     var modifiers: [String] = []    // the map's dungeon modifiers
 
     func multiplier(_ catalog: LootCatalog, labels: Set<String>, inDungeon: Bool = true) -> Double {
         LootMath.combine([potion > 0 ? LootMath.potion : 1, 1 + LootMath.gear(enchants ?? [], catalog) / 100,
-                          crucible ? LootMath.crucible : 1, LootMath.ritual(ritual),
+                          crucible == true ? LootMath.crucible : 1, LootMath.ritual(ritual),
                           inDungeon ? LootMath.dungeon(modifiers, catalog, labels: labels) : 1])
     }
 }
@@ -124,10 +126,10 @@ struct LootTimeline {
         }
         return LootState(potion: left(67), tier: left(68),
                          enchants: gear.last { $0.time <= time }.map { Enchantments.ids($0.text).prefix(4).map { $0 ?? [] } },
-                         crucible: (last(128, at: time)?.value ?? 0) != 0, ritual: last(155, at: time)?.value ?? 0,
+                         ritual: last(155, at: time)?.value ?? 0,
                          modifiers: modifiers)
     }
-    static let statTypes = "67, 68, 128, 155"
+    static let statTypes = "67, 68, 155"
 }
 
 /// What the loot bar and its details show: your character and its loot factors in the game running now.

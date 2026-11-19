@@ -1343,6 +1343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var lootTimer: Timer?
     private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
+    private var catalogChecked = -Double.infinity
     private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
@@ -1355,11 +1356,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         let noCatalog = drops.catalog.items.isEmpty
+        // The game data changes only with a new game build, so its files are checked every 30 s, not every import.
+        let checkCatalog = noCatalog || Date().timeIntervalSince1970 - catalogChecked >= 30
+        if checkCatalog { catalogChecked = Date().timeIntervalSince1970 }
         lootQueue.async {
             var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
-                if GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
+                if checkCatalog, GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {
                     catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
                 }
                 LootImport.run(logs: logs, store: store, appVersion: version)
@@ -1449,7 +1453,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         importLoot()
-        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
+        // Each second, so the loot bar follows gear swaps and potions (the guard writes every 0.1 s); an import reads
+        // only the lines added since the last one.
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.importLoot() }
         #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)

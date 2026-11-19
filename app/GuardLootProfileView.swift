@@ -58,7 +58,7 @@ struct LootProfileView: View {
                         Text(s.potion > 0 ? LootMath.clock(s.potion) + " left" : "not running").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                     }
                     small(LootNow.tierSprite, on: s.tier > 0, "Loot Tier Potion" + (s.tier > 0 ? ": \(LootMath.clock(s.tier)) left" : ": off"))
-                    small(LootNow.crucibleSprite, on: s.crucible, "Crucible: " + (s.crucible ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
+                    small(LootNow.crucibleSprite, on: s.crucible == true, "Crucible: " + (s.crucible == nil ? "not captured yet" : s.crucible! ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
                     small(LootNow.ritualSprite, on: s.ritual > 0, "Blood Ritual: " + (s.ritual > 0 ? "−\(s.ritual * 5)% HP, ×" + LootMath.times(LootMath.ritual(s.ritual)) : "off"))
                 }
                 barDivider
@@ -130,7 +130,8 @@ struct LootProfileView: View {
                       value: "×" + LootMath.times(LootMath.potion))
                 boost(LootNow.tierSprite, "Loot Tier Potion", on: s.tier > 0,
                       detail: (s.tier > 0 ? "\(LootMath.clock(s.tier)) left · " : "") + "better tiers, not more drops", value: nil)
-                boost(LootNow.crucibleSprite, "Crucible", on: s.crucible, detail: s.crucible ? "this season's loot bonus" : "off",
+                boost(LootNow.crucibleSprite, "Crucible", on: s.crucible == true,
+                      detail: s.crucible == nil ? "not captured yet: left out" : s.crucible! ? "this season's loot bonus" : "off",
                       value: "×" + LootMath.times(LootMath.crucible))
                 boost(LootNow.ritualSprite, "Blood Ritual", on: LootMath.ritual(s.ritual) > 1,
                       detail: s.ritual > 0 ? "−\(s.ritual * 5)% HP" : "off · up to ×1.25 at −20% HP",
@@ -148,7 +149,7 @@ struct LootProfileView: View {
         panel {
             VStack(alignment: .leading, spacing: 6) {
                 header("NOT CAPTURED YET")
-                Text("Drop accelerators (+33% stat potions, +50% artifacts) and server-wide loot events. They're left out of every number here.")
+                Text("Crucible (+10% this season), drop accelerators (+33% stat potions, +50% artifacts) and server-wide loot events. They're left out of every number here.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -167,7 +168,7 @@ struct LootProfileView: View {
                     }
                     HStack(spacing: 6) {
                         chip(now.seasonal ? "Seasonal" : "Not seasonal", on: now.seasonal)
-                        chip(s.crucible ? "Crucible on" : "Crucible off", on: s.crucible)
+                        chip(s.crucible == nil ? "Crucible ?" : s.crucible! ? "Crucible on" : "Crucible off", on: s.crucible == true)
                         chip(s.ritual > 0 ? "Blood Ritual −\(s.ritual * 5)%" : "Blood Ritual off", on: s.ritual > 0)
                     }
                     HStack(spacing: 6) {
@@ -192,7 +193,7 @@ struct LootProfileView: View {
             : "dungeon ×" + LootMath.times(LootMath.dungeon(s.modifiers, catalog, labels: []))
         var parts: [String] = [s.potion > 0 ? "potion ×" + LootMath.times(LootMath.potion) : "no potion",
                                s.enchants == nil ? "gear not captured" : "gear +" + LootMath.times(gear) + "%", dungeonText]
-        if s.crucible { parts.append("crucible ×" + LootMath.times(LootMath.crucible)) }
+        if s.crucible == true { parts.append("crucible ×" + LootMath.times(LootMath.crucible)) }
         if LootMath.ritual(s.ritual) > 1 { parts.append("ritual ×" + LootMath.times(LootMath.ritual(s.ritual))) }
         return panel {
             VStack(alignment: .leading, spacing: 3) {
