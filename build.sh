@@ -126,6 +126,7 @@ cp "$out/ExaltGuard.dylib" "$src/guard/game-build.sha256" "$app/Contents/Resourc
 cp "$src/compatibility/profiles/$(cat "$src/compatibility/active-profile.txt")" "$app/Contents/Resources/compatibility-profile.json"
 cp "$src/data/drop_catalog.json" "$app/Contents/Resources/"   # the drop catalog (issue #51)
 cp "$src"/data/icons/*.png "$app/Contents/Resources/"     # the game's rarity and shiny marks
+[[ -d "$src/data/sprites" ]] && cp -R "$src/data/sprites" "$app/Contents/Resources/"   # RealmEye's, where the game draws nothing
 
 print "== Build $app_name.app (Apple silicon)"
 xcrun swiftc "${swift_flags[@]}" -O -target arm64-apple-macos13.0 -module-cache-path "$cache" -warnings-as-errors \

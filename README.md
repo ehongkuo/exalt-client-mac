@@ -258,7 +258,7 @@ The automated tests use a simulated game/runtime and do not act on the real game
 | `probe/` | Shared production damage hooks and prediction policy, plus standalone diagnostic tools. Its production headers are required by the app build. |
 | `tests/` | Synthetic game fixtures, guard/integration tests, native-hook regressions, shared-memory checks, and UI fixtures. |
 | `tools/` | Command-line utilities for reading live state and sending settings or Join requests, the README screenshot script, and `drop_check.py`, which checks a drop-rate capture against RealmHound. |
-| `data/` | The drop catalog (`drop_catalog.json`, from RealmEye and the game data, built by `tools/drop_catalog.py`) and `icons/`, the game's rarity and shiny marks (credits in [data/icons/README.md](data/icons/README.md)). |
+| `data/` | The drop catalog (`drop_catalog.json`, from RealmEye and the game data, built by `tools/drop_catalog.py`) `icons/`, the game's rarity and shiny marks (credits in [data/icons/README.md](data/icons/README.md)), and `sprites/`, RealmEye's pictures of mobs and portals the game draws invisibly (Realm of the Mad God art © DECA Games, from [RealmEye](https://www.realmeye.com)). |
 | `docs/` | Architecture notes, intervention notes, and screenshots (regenerate with `tools/readme-screenshots.sh`). |
 | `build/`, `module-cache/` | Generated binaries and compiler caches, excluded from Git. |
 

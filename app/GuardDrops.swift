@@ -471,6 +471,22 @@ enum GameIcons {
     /// A cell of CollectionIcon.png: 16 px squares, 20 a row, numbered from the top left (the items' collectionIcon).
     static func cell(_ index: Int) -> CGRect { CGRect(x: index % 20 * 16, y: index / 20 * 16, width: 16, height: 16) }
 
+    /// RealmEye's sprites for mobs and items the game draws nothing for (no texture, or the "invisible" sheet: Hermit
+    /// God, Oryx), by type: the catalog's "sprites" map of hex type → file, the files in the app's sprites folder.
+    static func realmEye(catalog: URL?, folder: URL?) -> [Int: CGImage] {
+        guard let catalog, let folder, let data = try? Data(contentsOf: catalog),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let files = root["sprites"] as? [String: String] else { return [:] }
+        var out: [Int: CGImage] = [:]
+        for (hex, file) in files {
+            guard hex.hasPrefix("0x"), let type = Int(hex.dropFirst(2), radix: 16), !file.contains("/"),
+                  let source = CGImageSourceCreateWithURL(folder.appendingPathComponent(file) as CFURL, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { continue }
+            out[type] = image
+        }
+        return out
+    }
+
     /// Each catalog dungeon's collection icon ("icon" in data/drop_catalog.json), by dungeon name.
     static func dungeons(assets: URL, catalog: URL?) -> [String: CGImage] {
         guard let catalog, let data = try? Data(contentsOf: catalog),

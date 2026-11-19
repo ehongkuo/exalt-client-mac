@@ -13,6 +13,10 @@ file: 90 mob pages (traps, turrets, statues, a few bosses the game data names di
 101 drop names (categories such as Pet Eggs, Cloths, Set Shards) and 6 dungeons with no game portal. The Inner
 Workings, Chess and Admin Arena list no mobs on RealmEye.
 
+**Sprites:** mobs and portals whose game texture is on the `invisible` sheet (182, among them Hermit God, Oryx and The
+Puppet Master: other objects draw them in game) get RealmEye's picture in `data/sprites`, which the app bundles and
+prefers for those types.
+
 **Refreshing after a game update:** run `tools/drop_catalog.py build`. It fetches only pages not in the cache (`--refresh`
 fetches again), prints a diff and lists mobs and items seen in play but missing from the catalog.
 

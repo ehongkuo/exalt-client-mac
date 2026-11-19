@@ -9,7 +9,8 @@
 build reads RealmEye's dungeon list, each dungeon's page and each of its mobs' pages, matches every
 name to the game's type ids in RealmHound's XML (read-only), and writes data/drop_catalog.json. It
 prints what changed since the last file, and what drop_rates.db has seen in play that the catalog
-still lacks. Mobs and items with no sprite in the game data get RealmEye's, in data/sprites/.
+still lacks. Mobs and items with no sprite in the game data (no texture, or the 'invisible' sheet) get RealmEye's, in
+data/sprites/.
 
 Run it yourself, not from an AI agent: RealmEye's robots.txt blocks AI agents by name. Every request
 is checked against robots.txt for this tool's User-Agent, spaced at least 2 s apart (RealmEye asks for
@@ -29,6 +30,7 @@ import sqlite3
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import urllib.robotparser
 
@@ -70,6 +72,7 @@ class Fetcher:
 
     def get(self, url):
         self.wait()
+        url = urllib.parse.quote(url, safe=':/?#=&%')   # RealmEye has image paths with spaces (Enemies/Lord Ruthven.png)
         with self.opener(urllib.request.Request(url, headers={'User-Agent': AGENT}), timeout=30) as r:
             return r.read()
 
@@ -187,6 +190,8 @@ def sprite_src(html, name):
     """The site path of the image RealmEye shows for a name, or None."""
     for alt in (htmllib.escape(name), name):
         if m := re.search(r'<img [^>]*?alt="' + re.escape(alt) + r'"[^>]*?src="(/s/[^"]+)"', html): return m[1]
+    for alt in (htmllib.escape(name), name):   # a form of it: "Archbishop Leucoryx (light form)"
+        if m := re.search(r'<img [^>]*?alt="' + re.escape(alt) + r' \([^"]*\)"[^>]*?src="(/s/[^"]+)"', html): return m[1]
     return None
 
 
@@ -214,7 +219,9 @@ class Game:
             self.objects[int(t[1], 16)] = dict(
                 id=oid, name=display if display and not display.startswith('{') else oid, cls=el('Class'), file=file,
                 item='<Item/>' in body or '<Item />' in body, loot=el('BagType') is not None,
-                texture=bool(re.search(r'<(Animated)?Texture[ >]', body)), dungeon=el('DungeonName'),
+                # A texture on the 'invisible' sheet draws nothing (Hermit God, Oryx: other objects draw them), so it counts as none.
+                texture=bool(re.search(r'<(Animated)?Texture[ >]', body)) and not re.search(r'<File>\s*invisible\s*</File>', body),
+                dungeon=el('DungeonName'),
                 icon=icon and int(icon[1]))
 
     def match(self, name, want, hint='', every=False):
@@ -295,6 +302,7 @@ def build(fetch, game, sprites=SPRITES):
     names = game.dungeons()
     pages = [(slug, name) for slug, name in dungeon_list(listing)] + [('the-realm-enemies', REALM)]
     mobs = {}   # slug → entry
+    portal_sprites = []   # (portal type, dungeon name, its page) for portals the game draws nothing for
     for slug, name in pages:
         game_name = REALM if name == REALM else names.get(key(name))
         if game_name is None:
@@ -323,7 +331,8 @@ def build(fetch, game, sprites=SPRITES):
             types.update(entry['types'])
         out['dungeons'].append(dict(name=game_name, portal=(p := game.portal(game_name)) and hexid(p), realmeye=slug,
                                     mobs=list(map(hexid, sorted(types)))))
-    need_sprite, no_item = [], {}
+        if p and not game.objects[p]['texture']: portal_sprites.append((p, name, html))
+    need_sprite, no_item = list(portal_sprites), {}
     places = set(names) | {key(n) for _, n in pages}   # a mob dropping a portal: a place, not loot
     for entry in sorted(mobs.values(), key=lambda e: key(e['name'])):
         if not entry['types']: continue
@@ -346,9 +355,14 @@ def build(fetch, game, sprites=SPRITES):
         out[k] = sorted({json.dumps(e, sort_keys=True): e for e in out[k]}.values(), key=lambda e: (e['kind'], key(e['realmeye'])))
     # RealmEye's sprite for anything the game data draws nothing for.
     out['sprites'] = {}
-    for t, (name, page) in sorted({t: (n, p) for t, n, p in need_sprite}.items()):
-        src = sprite_src(page, name)
-        data = src and fetch.raw(src)
+    # Several RealmEye pages can name one game id (Rogue Puppet under each class's puppet page): use the first that
+    # shows a picture under that name.
+    candidates = {}
+    for t, n, p in need_sprite: candidates.setdefault(t, []).append((n, p))
+    for t, tries in sorted(candidates.items()):
+        src = data = None
+        for n, p in tries:   # the first page with a picture we can get (cached, when offline)
+            if (src := sprite_src(p, n)) and (data := fetch.raw(src)): break
         if data:
             os.makedirs(sprites, exist_ok=True)
             file = f'{hexid(t)}{os.path.splitext(src)[1]}'
@@ -427,6 +441,7 @@ def self_test():
         assert all(a == AGENT for _, a in asked)
         assert slept == [2.0], slept   # 2 s between requests even though robots.txt asks for 1
         assert Fetcher(cache, offline=True).page('/wiki/elsewhere') is None
+        assert f.raw('/s/a/img/wiki/d/Enemies/Lord Ruthven.png') == b'<html>page</html>' and asked[-1][0].endswith('/Enemies/Lord%20Ruthven.png'), asked[-1]
 
     # Made-up pages in RealmEye's layout.
     listing = ('<div class="wiki-page"><table><tr><td rowspan="3"><a href="/wiki/test-den">Test Den</a><a id="test-den"></a></td>'
@@ -454,12 +469,13 @@ def self_test():
     assert is_mob(king) and not is_mob(den)
     assert mob_drops(king) == (['Den Sword', 'Pet Eggs', 'Test Den'], {'ring': [3], 'weapon': [7, 8]}), mob_drops(king)
     assert sprite_src(king, 'Den King') == '/s/k.png'
+    assert sprite_src('<img alt="Den King (light form)" src="/s/l.png"><img alt="Den King (chaos form)" src="/s/c.png">', 'Den King') == '/s/l.png'
 
     xml = ('<Objects><Object type="0x0010" id="Test Den Portal"><Class>Portal</Class><DungeonName>Test Den</DungeonName>'
            '<Texture><File>a</File><Index>1</Index></Texture></Object>'
            '<Object type="0x0011" id="Den King"><Class>Character</Class><Texture><File>a</File><Index>2</Index></Texture></Object>'
            '<Object type="0x0012" id="Heroic Den King"><Class>Character</Class><DisplayId>Den King</DisplayId></Object>'
-           '<Object type="0x0013" id="Den Rat"><Class>Character</Class></Object>'
+           '<Object type="0x0013" id="Den Rat"><Class>Character</Class><Texture><File>invisible</File><Index>0</Index></Texture></Object>'
            '<Object id="Den Sword" type="0x0020" collectionIcon="42"><Class>Equipment</Class><Item/><BagType>2</BagType>'
            '<Texture><File>a</File><Index>3</Index></Texture></Object>'
            '<Object type="0x0021" id="Den Sword Skin"><DisplayId>Den Sword</DisplayId><Item/></Object></Objects>')

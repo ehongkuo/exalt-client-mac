@@ -140,6 +140,7 @@ final class DropRateStore {
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
         CREATE INDEX IF NOT EXISTS bags_map_object ON bags(map, object_id);
         CREATE INDEX IF NOT EXISTS bag_items_item ON bag_items(item_type);
+        CREATE INDEX IF NOT EXISTS bag_stats_bag ON bag_stats(bag);   -- the report reads each bag's enchantments by bag
         """
 
     init?(path: String) {
@@ -1043,6 +1044,7 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var sprites: [Int: CGImage] = [:]
     @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
+    private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
 
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }
     func update(_ report: DropReport) {
@@ -1051,7 +1053,12 @@ final class DropRatesModel: ObservableObject {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
                 let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: GameNames.bundledCatalog)
-                DispatchQueue.main.async { self.collectionIcons = icons }
+                let realmEye = GameIcons.realmEye(catalog: GameNames.bundledCatalog, folder: Bundle.main.resourceURL?.appendingPathComponent("sprites"))
+                DispatchQueue.main.async {
+                    self.collectionIcons = icons
+                    self.fallbacks = realmEye
+                    self.sprites.merge(realmEye) { _, new in new }
+                }
             }
         }
         // Sprites are cut once per type, off the main thread. The first report holds every catalog mob and drop, so
@@ -1061,7 +1068,8 @@ final class DropRatesModel: ObservableObject {
         spritesAsked.formUnion(wanted.keys)
         DispatchQueue.global(qos: .utility).async {
             let cut = GameSprites.load(assets: RealmHoundPaths.assets, wanted)
-            DispatchQueue.main.async { self.sprites.merge(cut) { _, new in new } }
+            // A game sprite that draws nothing (the "invisible" sheet) keeps RealmEye's.
+            DispatchQueue.main.async { self.sprites.merge(cut.filter { self.fallbacks[$0.key] == nil }) { _, new in new } }
         }
     }
     /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.

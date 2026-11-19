@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import SQLite3
 
 private func check(_ condition: Bool, _ message: String, line: Int = #line) {
@@ -146,6 +148,19 @@ enum DropTests {
         try! Data(#"{"dungeons": [{"name": "Abyss of Demons", "icon": 133}, {"name": "Off the sheet", "icon": 999}, {"name": "No icon"}]}"#.utf8).write(to: iconCatalog)
         defer { try? FileManager.default.removeItem(at: iconCatalog) }
         check(GameIcons.dungeons(assets: URL(fileURLWithPath: "/nonexistent"), catalog: iconCatalog).isEmpty, "no icon sheet: no dungeon icons")
+        // RealmEye's sprites: by the catalog's hex type → file map, from the app's sprites folder.
+        let spriteFolder = FileManager.default.temporaryDirectory.appendingPathComponent("realmeye-sprites-\(getpid())")
+        try? FileManager.default.createDirectory(at: spriteFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: spriteFolder) }
+        let dot = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+        let png = CGImageDestinationCreateWithURL(spriteFolder.appendingPathComponent("0x0d61.png") as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(png, dot, nil); _ = CGImageDestinationFinalize(png)
+        let spriteCatalog = spriteFolder.appendingPathComponent("catalog.json")
+        try! Data(#"{"sprites": {"0x0d61": "0x0d61.png", "0x0d62": "missing.png", "0x0d63": "../escape.png"}}"#.utf8).write(to: spriteCatalog)
+        let fallback = GameIcons.realmEye(catalog: spriteCatalog, folder: spriteFolder)
+        check(Set(fallback.keys) == [0x0d61] && fallback[0x0d61]?.width == 8, "RealmEye sprites by type; a missing file or a path out is skipped")
+        check(GameIcons.realmEye(catalog: spriteCatalog, folder: nil).isEmpty, "no sprites folder: no RealmEye sprites")
         check(GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: nil).isEmpty, "no catalog: no dungeon icons")
         if FileManager.default.fileExists(atPath: RealmHoundPaths.assets.appendingPathComponent("sprites/CollectionIcon.png").path) {
             let icons = GameIcons.dungeons(assets: RealmHoundPaths.assets, catalog: iconCatalog)
