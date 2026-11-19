@@ -6,7 +6,7 @@ import SQLite3
 /// Drop-rate capture (issue #38). The guard registers drops as RealmHound does, for every bag type:
 /// each hit mob the server removes (a kill), each bag once per map, and which kill each bag came from, to
 /// logs/loot-<started>-<pid>.tsv (guard/loot_core.h has the columns). This imports those lines into
-/// drop_rates.db and removes each file once it is fully imported and its game has ended.
+/// drop_rates_v2.db and removes each file once it is fully imported and its game has ended.
 /// Nothing here computes a rate: the rows stay raw so any later question can be asked of them.
 
 struct LootKill: Equatable {
@@ -209,7 +209,10 @@ final class DropRateStore {
 }
 
 enum LootImport {
-    static func dbPath(data: URL) -> String { data.appendingPathComponent("drop_rates.db").path }
+    /// drop_rates_v2.db from issue #58 on: base rates need every kill's loot factors, so it starts empty. drop_rates.db,
+    /// the data captured before, stays as it was for builds from before #58.
+    static let dbName = "drop_rates_v2.db"
+    static func dbPath(data: URL) -> String { data.appendingPathComponent(dbName).path }
 
     /// Imports every loot file in `logs`. Returns the number of lines stored.
     @discardableResult

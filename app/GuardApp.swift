@@ -28,7 +28,7 @@ private let dataURL: URL = {
     }
     return staging
 }()
-/// One drop_rates.db for the installed and staging apps (issue #49): it lives in the installed app's data folder.
+/// One drop database for the installed and staging apps (issue #49): it lives in the installed app's data folder.
 private let dropsURL: URL = {
     let prod = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
     try? FileManager.default.createDirectory(at: prod, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -1272,7 +1272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
-    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    /// Moves the guard's drop-rate capture into the drop database, off the main thread (issue #38).
     private func importLoot() {
         let logs = GuardPaths.logs(data: dataURL)
         // With no loot file and the health already shown, there is nothing to do.
@@ -1325,7 +1325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         ratesLoaded = Date().timeIntervalSince1970
         lootQueue.async {
             guard let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) else {
-                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
+                DispatchQueue.main.async { self.rates.problem = "The drop database (\(LootImport.dbName) in the Exalt Client Mac data folder) can't be opened." }
                 return
             }
             let report = DropReport.load(store, catalog: self.catalog())
