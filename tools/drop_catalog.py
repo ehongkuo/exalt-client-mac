@@ -8,7 +8,7 @@
 
 build reads RealmEye's dungeon list, each dungeon's page and each of its mobs' pages, matches every
 name to the game's type ids in RealmHound's XML (read-only), and writes data/drop_catalog.json. It
-prints what changed since the last file, and what drop_rates.db has seen in play that the catalog
+prints what changed since the last file, and what drop_rates_v2.db has seen in play that the catalog
 still lacks. Mobs and items with no sprite in the game data (no texture, or the 'invisible' sheet) get RealmEye's, in
 data/sprites/.
 
@@ -38,8 +38,8 @@ SITE = 'https://www.realmeye.com'
 AGENT = 'exalt-client-mac-drop-catalog/1.0 (personal tool, one page every 2 s, cached)'
 CACHE = os.path.expanduser('~/Library/Caches/Exalt Client Mac/realmeye')
 XML = os.path.expanduser('~/Library/Application Support/RealmHound/assets/xml')
-DBS = [os.path.expanduser(f'~/Library/Application Support/{app}/drop_rates.db')
-       for app in ('Exalt Client Mac', 'Exalt Client Mac Staging')]
+# The installed and staging apps share one database in the installed app's folder (#49); #58 started a new file.
+DBS = [os.path.expanduser('~/Library/Application Support/Exalt Client Mac/drop_rates_v2.db')]
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, 'data', 'drop_catalog.json')
 SPRITES = os.path.join(REPO, 'data', 'sprites')
@@ -386,7 +386,7 @@ def diff(old, new):
 
 
 def missing_in_play(catalog, dbs):
-    """Lines naming maps, mobs and dropped items seen in drop_rates.db that the catalog lacks."""
+    """Lines naming maps, mobs and dropped items seen in the drop database that the catalog lacks."""
     dungeons = {d['name'] for d in catalog['dungeons']}
     mobs = {int(t, 16) for m in catalog['mobs'] for t in m['types']}
     drops = {int(t, 16) for m in catalog['mobs'] for t in m['drops']}
@@ -538,7 +538,7 @@ def main():
     fetch = sub.add_parser('fetch', help='fetch pages into the cache')
     fetch.add_argument('paths', nargs='+')
     b = sub.add_parser('build', help='build data/drop_catalog.json')
-    b.add_argument('--db', action='append', help=f'drop_rates.db to check for gaps (default: {", ".join(DBS)})')
+    b.add_argument('--db', action='append', help=f'drop database to check for gaps (default: {", ".join(DBS)})')
     b.add_argument('--out', default=OUT)
     sub.add_parser('check', help='check data/drop_catalog.json against the game data')
     args = parser.parse_args()

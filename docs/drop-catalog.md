@@ -112,8 +112,8 @@ Capture doesn't depend on the catalog: the guard stores raw type ids and map nam
 - **Shown:** an unknown mob or item shows by its game name from `objects`/`items` (or `#0x....` if even the game data
   lacks it), and an unknown map by its name, as today.
 - **Listed:** the Drop rates tab gets a short "Not in the catalog yet" list: map names, mob types and dropped item types
-  seen in `drop_rates.db` but missing from the catalog.
-- **Picked up:** the refresh script reads `drop_rates.db` read-only and prints the same list, so the next refresh
+  seen in `drop_rates_v2.db` but missing from the catalog.
+- **Picked up:** the refresh script reads `drop_rates_v2.db` read-only and prints the same list, so the next refresh
   targets them; anything it still can't match lands in `unmatched`.
 
 ## 5. Plan once the choices are made
