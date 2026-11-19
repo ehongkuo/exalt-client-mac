@@ -73,6 +73,7 @@ enum LootProfileTests {
             map\t100.000\t1\tAbyss of Demons
             map_info\t100.100\t1\t782\t0\t0\t0\t0\t0\t0\t0\tAbyss\tx\tLOOTING;|D
             player_stat\t100.100\t1\t67\t60
+            crucible\t100.100\t1\t1100\t31\t0\t1\t0\t1\t0\tS31
             player_stat\t100.100\t1\t7\t20
             player_stat\t100.100\t1\t24\t1
             player_stat\t100.100\t1\t8\t2712
@@ -89,6 +90,9 @@ enum LootProfileTests {
         var texts = 0
         store.run("SELECT count(*) FROM player_texts WHERE stat_type = 80") { texts = Int(sqlite3_column_int64($0, 0)) }
         check(texts == 1, "your gear's enchantments kept as text")
+        var crucible = ""
+        store.run("SELECT f_70 || ',' || b_90 || ',' || b_a0 || ',' || s_98 FROM crucible_info") { crucible = String(cString: sqlite3_column_text($0, 0)) }
+        check(crucible == "1100,1,1,S31", "the Crucible manager's fields kept raw, per map")
 
         let report = DropReport.load(store, catalog: catalog)
         let mob = DropReport.Mob(type: 3340, dungeon: "Abyss of Demons")

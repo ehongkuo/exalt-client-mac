@@ -51,6 +51,9 @@ static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_
 /* Raw, until a staging run shows what they hold: two connection ints (character id?), and the map
  * info message's ints and strings (seed, difficulty, dungeon modifiers?). */
 static void *loot_connection_ints[2], *loot_info_ints[5], *loot_info_texts[2], *loot_info_list;
+/* Raw too: the Crucible manager's candidate fields (float, 2 ints, 4 bools, id string). Optional:
+ * without them only the crucible line is skipped. */
+static void *loot_crucible_class, *loot_crucible_fields[8];
 static ListFields loot_stat_list;
 static uintptr_t loot_base;
 static int loot_prepared, loot_attempted, loot_installed;
@@ -116,6 +119,13 @@ static void loot_prepare(const void *game) {
         loot_info_texts[1] = typed_field(map_info, "NDFKPKPKPCP", "System.String");
         loot_info_list = typed_field(map_info, "DGGDBIMMDHE", "System.String[]");
     }
+    loot_crucible_class = il2cpp_class_from_name(game, "DecaGames.RotMG.Managers", "CruciblesManager");
+    static const char *const crucible_names[8][2] = {
+        {"GMFCEKNEBGI", "System.Single"}, {"MOOLFALCGOK", "System.Int32"}, {"DAONLGNNKII", "System.Int32"},
+        {"PHGPAOODNPG", "System.Boolean"}, {"KNIOIDLOBKK", "System.Boolean"}, {"<PIDFDICJKJF>k__BackingField", "System.Boolean"},
+        {"ENKOHKBAPPD", "System.Boolean"}, {"<IIDBBEMEHGM>k__BackingField", "System.String"}};
+    for (int i = 0; loot_crucible_class && i < 8; ++i)
+        if (!(loot_crucible_fields[i] = typed_field(loot_crucible_class, crucible_names[i][0], crucible_names[i][1]))) loot_crucible_class = NULL;
     if (!(loot_id_field && loot_shooter_field && loot_type_field && loot_status_field && loot_status_id_field &&
           loot_pos_field && loot_stats_field && loot_x_field && loot_y_field && loot_stat_type_field &&
           loot_stat_int_field && loot_stat_text_field && loot_own_field && loot_connection_ints[0] && loot_connection_ints[1] &&
@@ -390,6 +400,17 @@ static void loot_tick(void *player) {
     }
     snprintf(info.text, sizeof info.text, "%s\t%s\t%s", a, b, list);
     loot_push(&loot_ring, &info);
+    void *crucibles = loot_crucible_class ? find_object(loot_crucible_class) : NULL;
+    if (crucibles) {
+        LootEvent c = {.ns = now, .map = loot_map, .kind = LOOT_CRUCIBLE};
+        float f = 0; uint8_t flag;
+        il2cpp_field_get_value(crucibles, loot_crucible_fields[0], &f);
+        c.v[0] = (int32_t)lroundf(f * 1000);
+        for (int i = 1; i < 3; ++i) il2cpp_field_get_value(crucibles, loot_crucible_fields[i], &c.v[i]);
+        for (int i = 3; i < 7; ++i) { flag = 0; il2cpp_field_get_value(crucibles, loot_crucible_fields[i], &flag); c.v[i] = flag; }
+        read_text(read_reference(crucibles, loot_crucible_fields[7]), c.text, sizeof c.text);
+        loot_push(&loot_ring, &c);
+    }
 }
 
 static void loot_open(const char *folder) {

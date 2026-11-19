@@ -35,6 +35,8 @@ enum LootLine: Equatable {
     case mapInfo(time: Double, generation: Int, values: [Int], texts: [String])
     /// Text only for stat 80, your equipment's enchantments (format 4).
     case playerStat(time: Double, generation: Int, stat: Int, value: Int, text: String = "")
+    /// The Crucible manager's candidate fields, raw (issue #58): a float ×1000, two ints, four bools, an id string.
+    case crucible(time: Double, generation: Int, values: [Int], text: String)
     case gap(time: Double, lost: Int, reason: String)
     case status(time: Double, text: String)
     case summary(String)
@@ -74,6 +76,10 @@ enum LootLine: Equatable {
         case "player_stat":
             guard f.count == 5 || f.count == 6, let t = d(1), let g = n(2), let s = n(3), let v = n(4) else { return nil }
             self = .playerStat(time: t, generation: g, stat: s, value: v, text: f.count == 6 ? f[5] : "")
+        case "crucible":
+            let values = (3..<10).compactMap(n)
+            guard f.count == 11, values.count == 7, let t = d(1), let g = n(2) else { return nil }
+            self = .crucible(time: t, generation: g, values: values, text: f[10])
         case "gap":
             guard let t = d(1), let lost = n(2) else { return nil }
             self = .gap(time: t, lost: lost, reason: f.count > 3 ? f[3] : "")
@@ -115,6 +121,10 @@ final class DropRateStore {
         -- Your text stats (issue #58): stat 80, the enchantments of your four equipment slots, each time they change and
         -- again on each map.
         CREATE TABLE IF NOT EXISTS player_texts(map INTEGER NOT NULL, time REAL NOT NULL, stat_type INTEGER, text TEXT);
+        -- Raw until a staging run with the Crucible on and off names them (issue #58): CruciblesManager's fields
+        -- by offset, read once per map. f_70 is a float x1000.
+        CREATE TABLE IF NOT EXISTS crucible_info(map INTEGER PRIMARY KEY, f_70 INTEGER, i_74 INTEGER, i_78 INTEGER,
+            b_90 INTEGER, b_91 INTEGER, b_a0 INTEGER, b_b8 INTEGER, s_98 TEXT);
         -- Game catalog (issue #40), rebuilt from RealmHound's XML by GameNames.refreshCatalog. name is the
         -- XML id; display_name the in-game name when it differs (show coalesce(display_name, name)). Labels and
         -- origin are wrapped in commas (",UT,TAB_UT,"), so `labels LIKE '%,UT,%'` matches one label exactly.
@@ -306,6 +316,11 @@ enum LootImport {
                         INSERT OR REPLACE INTO map_info(map, class, info_30, info_34, info_38, info_50, info_54, connection_10c,
                             connection_110, info_28, info_48, info_58) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, [map(generation, time)] + values.map { $0 as Any? } + texts.map { $0 as Any? })
+                case let .crucible(time, generation, values, text):
+                    store.run("""
+                        INSERT OR REPLACE INTO crucible_info(map, f_70, i_74, i_78, b_90, b_91, b_a0, b_b8, s_98)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, [map(generation, time)] + values.map { $0 as Any? } + [text])
                 case let .playerStat(time, generation, stat, _, text) where !text.isEmpty:
                     store.run("INSERT INTO player_texts(map, time, stat_type, text) VALUES (?, ?, ?, ?)",
                               [map(generation, time), time, stat, text])
