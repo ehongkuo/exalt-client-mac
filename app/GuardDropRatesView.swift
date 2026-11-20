@@ -715,6 +715,7 @@ struct MobPage: View {
             Text(rate.likely)
             Text(caption)
         }
+        .frame(minWidth: copies ? 0 : 170, alignment: stacked ? .center : .leading)   // bag and portal rows line up; tiles stay narrow
         .font(.caption2).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
         .opacity(rate.precision.map { $0 > 0.5 } ?? true ? 0.65 : 1)
     }
