@@ -131,7 +131,7 @@ enum TrafficTests {
     static func loot() {
         var lines: [String] = []
         let loot = TrafficLoot(portals: [1900]) { lines.append($0) }
-        loot.projectile = { object, from, to in object == 50 && from == 10 && to == 20 ? (300, 25) : (0, 0) }
+        loot.projectile = { object, from, to in object == 50 && from == 10 && to == 20 + TrafficLoot.lateHit ? (300, 25) : (0, 0) }
         func feed(_ type: UInt8, _ payload: [UInt8], _ time: Double, outgoing: Bool = false) {
             guard let p = TrafficPacket.parse(type: type, payload: payload, outgoing: outgoing) else { return check(false, "parse \(type)") }
             loot.handle(p, time: time)
@@ -165,7 +165,7 @@ enum TrafficTests {
         check(kinds("drop").isEmpty, "bags wait one tick")
         feed(ID.update, update([], drops: [50, 51]), 20)
         check(kinds("kill").isEmpty, "a kill waits for the hits file")
-        feed(ID.newTick, newTick(), 20.4)
+        feed(ID.newTick, newTick(), 20.6)
         let kill = kinds("kill")
         check(kill.count == 1 && kill[0][3...] == ["50", "3000", "6.00", "5.00", "0.00", "300", "25", "80", "1000", "removed", "6000", "90"],
               "kill with your damage by source, max HP, time since the last hit and others' damage: \(kill)")
@@ -173,6 +173,15 @@ enum TrafficTests {
         check(kinds("bag_stat").first?[4...] == ["80", "0", "AAIE_f_9__3__f8="], "bag text stat")
         check(kinds("portal").first?[3...4] == ["61", "1900"], "portal")
         check(kinds("drop").map { [$0[3], $0[4]] } == [["60", "50"], ["61", "50"]], "bag and portal go to the kill")
+
+        // The same mob back in view and killed again: only the hits since it left count.
+        var windows: [(Double, Double)] = []
+        loot.projectile = { _, from, to in windows.append((from, to)); return (0, 0) }
+        feed(ID.update, update([(type: 3000, id: 50, x: 6, y: 5, stats: [(0, 1000, nil)])]), 21)
+        feed(ID.enemyHit, enemyHit(50), 22, outgoing: true)
+        feed(ID.update, update([], drops: [50]), 23)
+        loot.flush(now: 24)
+        check(windows.count == 1 && windows[0] == (20 + TrafficLoot.lateHit, 23 + TrafficLoot.lateHit), "second kill's window: \(windows)")
 
         // A second sighting of the same bag is not a new bag.
         feed(ID.update, update([(type: 1287, id: 60, x: 6, y: 5, stats: [])]), 21)
@@ -188,7 +197,7 @@ enum TrafficTests {
         check(kinds("bag").count == 2, "an id seen last map is new here")
         feed(ID.update, update([], drops: [50]), 32)
         loot.flush(now: 100, all: true)
-        check(kinds("kill").count == 1 && loot.kills == 1, "an object never hit this map is no kill")
+        check(kinds("kill").count == 2 && loot.kills == 2, "an object never hit this map is no kill")
         // Every drop line comes after the kill it names.
         let order = lines.map { $0.split(separator: "\t").prefix(1).joined() }
         check(order.firstIndex(of: "kill")! < order.firstIndex(of: "drop")!, "kill before its drop: \(order)")

@@ -42,8 +42,10 @@ enum TrafficCapture {
                 return write(out, started: started, pid: pid, build: build,
                              problem: "can't capture on \(device): \(why) (is ChmodBPF installed?)")
             }
+            // pcap's own timeout doesn't fire in immediate mode with no traffic, so wait on its descriptor instead.
+            pcap_setnonblock(handle, 1, &error)
             run(handle, out: out, started: started, pid: pid, build: build, portals: portals, hits: hits,
-                alive: { guard_process_alive(pid) != 0 })
+                alive: { guard_process_alive(pid) != 0 }, wait: pcap_get_selectable_fd(handle))
             pcap_close(handle)
         }
     }
@@ -72,7 +74,7 @@ enum TrafficCapture {
     private struct Connection { var incoming = TrafficFlow(outgoing: false), outgoing = TrafficFlow(outgoing: true), reported = false }
 
     private static func run(_ handle: OpaquePointer, out: URL, started: Double, pid: Int32, build: String, portals: Set<Int>,
-                            hits hitsFile: () -> URL?, alive: () -> Bool) {
+                            hits hitsFile: () -> URL?, alive: () -> Bool, wait fd: Int32 = -1) {
         guard FileManager.default.createFile(atPath: out.path, contents: nil, attributes: [.posixPermissions: 0o600]),
               let file = try? FileHandle(forWritingTo: out) else { return }
         defer { try? file.close() }
@@ -100,6 +102,7 @@ enum TrafficCapture {
 
         var header: UnsafeMutablePointer<pcap_pkthdr>?, bytes: UnsafePointer<UInt8>?
         while true {
+            if fd >= 0 { var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0); _ = poll(&p, 1, 100) }
             let result = pcap_next_ex(handle, &header, &bytes)
             if result == -2 { break }   // end of a saved capture
             if result < 0 { emit("status\t\(String(format: "%.3f", Date().timeIntervalSince1970))\tcapture_error \(TrafficLoot.clean(String(cString: pcap_geterr(handle))))\n"); break }

@@ -222,7 +222,9 @@ final class TrafficLoot {
     static let bags: Set<Int> = [1280, 1286, 1287, 1288, 1289, 1291, 1292, 1294, 1295, 1296,
                                  1708, 1709, 1710, 1722, 1723, 1724, 1725, 1726, 1727, 1728]
     /// How long a kill waits for the guard's hit lines (it writes every 100 ms) before it is written.
-    static let hold = 0.3
+    static let hold = 0.5
+    /// The game applies your last shots a few ms after the packet that removes the mob arrives (parity run: up to 15 ms).
+    static let lateHit = 0.25
 
     let portals: Set<Int>
     private let sink: (String) -> Void
@@ -234,6 +236,7 @@ final class TrafficLoot {
     private struct Kill { var time: Double, map: Int, start: Double, id: Int, object: Object, hit: Hit, since: Double }
     private var objects: [Int: Object] = [:]   // never cleared within a connection's map, as the guard's type table
     private var hits: [Int: Hit] = [:]
+    private var removedAt: [Int: Double] = [:]   // a mob that left view and came back is removed again; its hits start over
     private var seen: Set<Int> = []
     private var tickBags: [[(id: Int, x: Float, y: Float)]] = [[], []], killed: [(id: Int, x: Float, y: Float)] = []
     private var toggle = 0
@@ -268,7 +271,7 @@ final class TrafficLoot {
         case let .createSuccess(id):
             // Each connection is one map and starts with your new id, before the map's objects.
             selfID = id; map += 1; mapStart = time
-            hits = [:]; seen = []; tickBags = [[], []]; killed = []; known = [:]; texts = [:]; objects = [:]; failures = [:]
+            hits = [:]; removedAt = [:]; seen = []; tickBags = [[], []]; killed = []; known = [:]; texts = [:]; objects = [:]; failures = [:]
         case let .update(new, drops):
             // Yours first, so the map is named before anything on it is written.
             for (type, status) in new.filter({ $0.status.id == selfID }) + new.filter({ $0.status.id != selfID }) {
@@ -354,7 +357,9 @@ final class TrafficLoot {
         guard let h = hits.removeValue(forKey: id) else { return }
         // Where the server last put it; one it never sent can't be placed, so RealmHound skips it too.
         guard let o = objects[id] else { return }
-        queue.append(.kill(Kill(time: time, map: map, start: mapStart, id: id, object: o, hit: h, since: time - h.last)))
+        let start = removedAt[id].map { $0 + Self.lateHit } ?? mapStart
+        removedAt[id] = time
+        queue.append(.kill(Kill(time: time, map: map, start: start, id: id, object: o, hit: h, since: time - h.last)))
         killed.append((id, o.x, o.y))
     }
 
@@ -374,7 +379,7 @@ final class TrafficLoot {
             guard case let .kill(k) = first else { queue.removeFirst(); if case let .line(l) = first { sink(l) }; continue }
             guard all || now - k.time >= Self.hold else { break }
             queue.removeFirst()
-            let (main, alt) = projectile(k.id, k.start, k.time)
+            let (main, alt) = projectile(k.id, k.start, k.time + Self.lateHit)
             sink("kill\t\(t(k.time))\t\(k.map)\t\(k.id)\t\(k.object.type)\t\(f(k.object.x))\t\(f(k.object.y))\t0.00\t" +
                  "\(main)\t\(alt)\t\(k.hit.ability)\t\(k.object.maxHP)\tremoved\t\(Int(k.since * 1000))\t\(k.hit.others)\n")
             kills += 1
