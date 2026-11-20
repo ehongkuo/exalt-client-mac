@@ -715,9 +715,10 @@ struct DropReport: Equatable {
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
-        var listed: [String: Dungeon] = [:]
+        var listed: [String: Dungeon] = [:], realmPortal: Int?
         store.run("SELECT name, portal, texture_file, texture_index, labels FROM dungeons") {
             let name = text($0, 0), portal = sqlite3_column_type($0, 1) == SQLITE_NULL ? nil : int($0, 1)
+            if name == "Random Realm" { realmPortal = portal }
             if let portal, sqlite3_column_type($0, 2) != SQLITE_NULL { r.textures[portal] = GameTexture(file: text($0, 2), index: int($0, 3)) }
             let labels = sqlite3_column_type($0, 4) == SQLITE_NULL ? nil : Set(text($0, 4).split(separator: ",").map(String.init))
             if labels != nil || Self.dropTags[name] != nil || r.catalogMobs[name] != nil || r.kills.keys.contains(where: { $0.dungeon == name }) {
@@ -725,6 +726,8 @@ struct DropReport: Equatable {
             }
         }
         for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
+        // The Realm has no portal of its own in the game data: it shows the Realm portal (issue #66).
+        if listed[Self.realm]?.portal == nil { listed[Self.realm]?.portal = realmPortal }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
             r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
@@ -866,12 +869,13 @@ struct DropReport: Equatable {
     }
     /// Items as tiles by bag (nil: no bag known). Shinies fold into their base. Sorted weapons, abilities, armors, rings,
     /// then everything else (potions, eggs, …); within each, untiered (UTs, STs) first, then best tier, then by name.
+    /// The gold bag goes by kind first: blueprints, skins, pets, then the rest (issue #66).
     func tiles(_ items: Set<Int>) -> [DropBag?: [Tile]] {
         let bases = Set(items.map(base))
-        func key(_ tile: Tile) -> (Int, Int, String) {
+        func key(_ tile: Tile) -> (Int, Int, Int, String) {
             let first = tile.items[0], tier = tiers[first]
             let family = slots[first].flatMap(Self.family)?.rawValue ?? Group.Family.allCases.count
-            return (family, tier.map { -$0 } ?? Int.min, name(first))
+            return (family, bag(first) == .gold ? goldKind(first) : 0, tier.map { -$0 } ?? Int.min, name(first))
         }
         return Dictionary(grouping: bases) { bag($0) }.mapValues { inBag in
             let byGroup = Dictionary(grouping: inBag) { group($0) }
@@ -882,6 +886,15 @@ struct DropReport: Equatable {
             }
             return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }
+    }
+
+    static let realm = "Realm of the Mad God"
+    /// A gold bag item's kind, in display order. The game data has no kind for them, so it goes by the blueprint table and the name.
+    func goldKind(_ item: Int) -> Int {
+        let n = name(item)
+        if unlocks[item] != nil || n.contains("Blueprint") { return 0 }
+        if n.contains("Pet Stone") || n.contains("Pet Skin") { return 2 }
+        return n.contains(" Skin") ? 1 : 3
     }
 
     /// Where an item (or any of a set) dropped: one per dungeon, with its runs, runs with one, and copies per mob.
