@@ -110,7 +110,7 @@ struct DropRatesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No drops recorded yet").font(.headline)
             Text("Start the game from the Guard tab. Every kill and bag you see is recorded here, and rates appear as your runs add up.")
-            Text("Rates show “1 in N · ±X%”: ±X% is how far off they may still be. The ⓘ next to them explains more.").foregroundStyle(.secondary)
+            Text("Rates show a percent and a bar: the wider its band, the less sure. Hover a rate for its counts; the ⓘ explains more.").foregroundStyle(.secondary)
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.accentColor.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -328,6 +328,7 @@ struct DropRatesView: View {
         let rows = model.stable("group", members.sorted { report.runsWith(d.name, report.variants($0)) > report.runsWith(d.name, report.variants($1)) }) {
             report.runsWith(d.name, report.variants($0))
         }
+        let scale = RateAxis(rows.map { DropRate(count: report.runsWith(d.name, report.variants($0.row)), of: runs) })
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 GroupTile(sprites: model.rotation(members, first: members[0]), tier: group.tier, size: 40)
@@ -348,7 +349,7 @@ struct DropRatesView: View {
                         Text(report.name(item)).lineLimit(1).help(report.name(item))
                         Spacer()
                         if grew { newMark }
-                        if runs > 0 { RateView(rate: .init(count: report.runsWith(d.name, report.variants(item)), of: runs), unit: "runs", compact: true) }
+                        if runs > 0 { RateView(rate: .init(count: report.runsWith(d.name, report.variants(item)), of: runs), unit: "runs", scale: scale) }
                     }
                     .accessibilityLabel(report.name(item))
                 }
@@ -391,7 +392,8 @@ struct DropRatesView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     sectionTitle("WHERE IT DROPS")
-                    ForEach(sources, id: \.row.dungeon) { entry in sourceBox(entry.row, grew: entry.grew) }
+                    let scale = RateAxis(sources.compactMap { $0.row.perRun })
+                    ForEach(sources, id: \.row.dungeon) { entry in sourceBox(entry.row, grew: entry.grew, scale: scale) }
                 }
             }
             if let shiny = shinies.min() { shinyBox(shiny, shinies: shinies, of: types, sources: sources.map(\.row)) }
@@ -408,10 +410,11 @@ struct DropRatesView: View {
 
     /// A dungeon on the item page: its total rate per run (or a note when no boss died there), then each mob's per kill.
     /// The name goes to the dungeon, keeping the item open.
-    private func sourceBox(_ s: DropReport.Source, grew: Bool) -> some View {
+    private func sourceBox(_ s: DropReport.Source, grew: Bool, scale: RateAxis) -> some View {
         let mobs = s.mobs.sorted {
             report.perKill($0.key, $0.value).range.lowerBound > report.perKill($1.key, $1.value).range.lowerBound
         }
+        let mobScale = RateAxis(mobs.map { report.perKill($0.key, $0.value) })
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Button { model.select(dungeon: s.dungeon, keepItem: true) } label: {
@@ -420,7 +423,7 @@ struct DropRatesView: View {
                 .buttonStyle(.plain).help("Show \(s.dungeon)")
                 if grew { newMark }
                 Spacer()
-                if let perRun = s.perRun { RateView(rate: perRun, unit: "runs", compact: true) }
+                if let perRun = s.perRun { RateView(rate: perRun, unit: "runs", scale: scale) }
                 else { Text("no runs: no boss died here").font(.caption).foregroundStyle(.secondary) }
                 rateInfo(s.dungeon)
             }
@@ -430,7 +433,7 @@ struct DropRatesView: View {
                     Text(report.name(mob.type)).lineLimit(1).help(report.name(mob.type))
                     Spacer()
                     let rate = report.perKill(mob, n)
-                    RateView(rate: rate, unit: "kills", compact: true, yours: model.yours(rate, mob))
+                    RateView(rate: rate, unit: "kills", copies: true, yours: model.yours(rate, mob), scale: mobScale)
                 }
                 .padding(.trailing, 20)
             }
@@ -458,12 +461,12 @@ struct DropRatesView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     HStack(spacing: 6) {
                         Text("per run").font(.caption).foregroundStyle(.secondary)
-                        if runs > 0 { RateView(rate: .init(count: shinyRuns, of: runs), unit: "runs", compact: true) } else { Text("no runs yet").font(.caption) }
+                        if runs > 0 { RateView(rate: .init(count: shinyRuns, of: runs), unit: "runs") } else { Text("no runs yet").font(.caption) }
                         rateInfo("shiny")
                     }
                     HStack(spacing: 6) {
                         Text("of drops").font(.caption).foregroundStyle(.secondary)
-                        RateView(rate: .init(count: shinyCopies, of: copies), unit: "drops", compact: true)
+                        RateView(rate: .init(count: shinyCopies, of: copies), unit: "drops", verb: "shiny")
                     }
                     .padding(.trailing, 20)
                 }
@@ -479,9 +482,10 @@ struct DropRatesView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) { Text(d.name).font(.title3.weight(.semibold)); collectionIcon(d) }
             if let bosses = report.bossBags[d.name], let runs = report.runs[d.name] {
+                let scale = RateAxis((bosses[nil] ?? [:]).values.map { DropRate(count: $0, of: runs) })
                 section("BEST BAG FROM THE BOSSES, PER RUN") {
                     ForEach(sortedBags(bosses[nil] ?? [:]), id: \.self) { bag in
-                        row { bagLabel(bag); Spacer(); RateView(rate: .init(count: bosses[nil]![bag]!, of: runs), unit: "runs", compact: true) }
+                        row { bagLabel(bag); Spacer(); RateView(rate: .init(count: bosses[nil]![bag]!, of: runs), unit: "runs", scale: scale) }
                     }
                 }
             } else {
@@ -524,15 +528,13 @@ struct DropRatesView: View {
             .popover(isPresented: Binding(get: { model.rateHelp == key }, set: { if !$0, model.rateHelp == key { model.rateHelp = nil } }), arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("How to read a rate").font(.headline)
-                    Text("**1 in 20** is your rate so far: drops ÷ runs (or kills, for a mob).")
-                    Text("**±44%** is how far off it may still be, at 95% confidence. It's about 2 ÷ √drops, so it narrows as drops add up: ±44% at 20 drops, ±20% at 100, ±10% at 400.")
-                    Text("**Too few drops**: under 4 drops, the rate is a rough guess. Faded rates are looser than ±50%.")
-                    Text("**Rarer than 1 in 22**: none yet in that many runs, so the rate is probably below that.")
+                    Text("**5%** is your rate so far: drops ÷ runs (or kills, for a mob).")
+                    Text("**The bar**: the tick is the rate, the band where the true rate likely is (95% confidence). A wide band means few drops yet; it narrows as they add up. Bars in one list share a scale, each step ×10, so a band is as wide for an unsure 0.1% as for an unsure 50%. Hover a rate for its counts.")
                     Text("**Per run** counts runs where a boss died with at least one copy. **Surest first** sorts by the low end of each range, so a lucky early drop doesn't come out on top.")
                     Divider()
                     Text("How rates are calculated").font(.headline)
                     Text("**Per kill rates are base rates**, with loot boosts taken out: each kill counts as its loot multiplier then, so a kill with a Loot Drop Potion (×1.5) counts as 1.5 kills. The factors multiply: potion, gear enchantments, the dungeon's modifiers, Crucible and Blood Ritual. **Items count every copy**: two vits from one kill count 2. So a rate can top 100%: 130% is one sure and a 30% chance of a second.")
-                    Text("**Yours** (in gold, while you play) is the base rate × your multiplier now. The loot bar above shows it.")
+                    Text("**Gold** (while you play) is the base rate × your loot boosts now, as a number and a tick on the bar. The loot bar above shows it.")
                     if model.report.gearUnknown > 0 {
                         Text("Gear enchantments weren't captured for \(model.report.gearUnknown.formatted()) kills; they count without one (at most +12% off).")
                             .foregroundStyle(.secondary)
@@ -642,14 +644,18 @@ struct MobPage: View {
                     Divider()
                 }
             }
-            Text("Drop chance: a bag's is the share of kills that dropped one; an item's or tier group's counts every copy, so two in one kill count 2 and it can top 100%. Faded: not dropped by this mob yet (RealmEye's tiers for it; a boss also lists its dungeon's drops). A portal's is the share of kills that opened one where the mob died, loot boosts included. Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
-                .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Per kill, with loot boosts taken out. Items count every copy, so a rate can top 100%.")
+                Text("Faded: not dropped by this mob yet. Portals count as seen, boosts included.")
+                Text("Click a bag or a tier group to open it; an item opens its page. Esc steps back.")
+            }
+            .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     /// An item or tier group: sprite (a group cycles its kinds, with its tier), name, drop chance, drops/kills · ±.
     private func grid(_ tiles: [DropReport.Tile], kills: Int) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(tiles, id: \.self) { cell($0, kills: kills) }
         }
     }
@@ -679,7 +685,7 @@ struct MobPage: View {
                 .frame(width: 32, height: 32).opacity(n > 0 ? 1 : 0.35)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    numbers(n, stacked: false)
+                    numbers(n, stacked: false, copies: true, scale: tileScale(tile))
                 }
                 Spacer(minLength: 0)
                 if let open { Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary) }
@@ -695,26 +701,25 @@ struct MobPage: View {
         .accessibilityLabel("\(name), \(report.perKill(mob, n).percent) per kill")
     }
 
-    /// "45%" over "9/20 · ±65%" ("too few" under 4 drops, "under 18%" with none), faded when looser than ±50% as elsewhere in the tab.
-    /// The % is the base rate; while you play, "→ 68%" in gold is yours now (issue #58).
+    /// A mob's rate as a number and a bar (issue #67). The % is the base rate; while you play, yours shows in gold.
+    /// `copies`: every copy counts (items, tier groups); else a share of kills (bags, portals). Bags share one scale,
+    /// portals another; a tile passes its bag's. `stacked` is kept for its callers and no longer changes the layout.
     /// `asSeen`: per kill as seen, not a base rate (portals: whether boosts change them is still open, #64).
-    private func numbers(_ n: Int, stacked: Bool, asSeen: Bool = false) -> some View {
+    private func numbers(_ n: Int, stacked: Bool, copies: Bool = false, scale: RateAxis? = nil, asSeen: Bool = false) -> some View {
         let report = model.report, kills = report.kills[mob] ?? 0
-        let rate = asSeen ? DropRate(count: n, of: kills) : report.perKill(mob, n), counts = "\(n.formatted())/\(kills.formatted())"
-        // None yet: the top of the 95% range, as "rarer than 1 in N" reads elsewhere in the tab.
-        let detail = n == 0 ? "under \(DropRate.percent(rate.range.upperBound))" : rate.plusMinus ?? "too few"
-        return VStack(alignment: stacked ? .center : .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Text(rate.percent).font(.system(size: 14, weight: .semibold))
-                if !asSeen, let yours = model.yours(rate, mob) {
-                    Text("→ \(DropRate.percent(yours))").font(.system(size: 12, weight: .semibold)).foregroundStyle(lootGold)
-                        .help("Yours now, with your loot boosts")
-                }
-            }
-            if stacked { Text(counts); Text(detail) } else { Text("\(counts) · \(detail)") }
+        let rate = asSeen ? DropRate(count: n, of: kills) : report.perKill(mob, n)
+        let scale = scale ?? RateAxis(asSeen ? (report.portals[mob] ?? [:]).values.map { DropRate(count: $0, of: kills) }
+                                      : report.tiles(of: mob).values.map { report.perKill(mob, report.killsWith(mob, $0)) })
+        return RateView(rate: rate, unit: "kills", copies: copies, verb: asSeen ? "opened" : "dropped",
+                        yours: asSeen ? nil : model.yours(rate, mob), scale: scale)
+    }
+    /// A tile's bar axis: the one its bag's tiles share (a group's members sit under the group).
+    private func tileScale(_ tile: DropReport.Tile) -> RateAxis? {
+        let report = model.report
+        let row = report.tiles(of: mob).values.first { row in
+            row.contains(tile) || row.contains { if case .group(_, let items) = $0, case .item(let i) = tile { return items.contains(i) } else { return false } }
         }
-        .font(.caption2).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-        .opacity(rate.precision.map { $0 > 0.5 } ?? true ? 0.65 : 1)
+        return row.map { RateAxis($0.map { report.perKill(mob, report.copies(mob, [$0])) }) }
     }
 
     private func pill(_ text: String) -> some View {
@@ -817,38 +822,102 @@ struct SpriteIcon: View {
     }
 }
 
-/// "1 in 41 · ±44%" over "10 in 410 runs". Under 4 drops "too few drops" takes the ±'s place; with none, "rarer than
-/// 1 in N" (the top of the 95% range). Rates looser than ±50% are faded. `compact` is one line, right-aligned.
+/// A rate as a number and a bar (issue #67, the format the whole tab uses): the tick is the rate, the band its 95%
+/// range, on `scale`, the log axis its list shares (nil: its own). A gold number and
+/// tick show yours. Hovering opens `RateCard`, which labels the bar. `copies`, `verb`: see `DropRate.caption`.
 struct RateView: View {
     var rate: DropRate
     var unit: String
-    var compact = false
+    var copies = false
+    var verb = "dropped"
     var yours: Double?   // the rate with your loot boosts now (issue #58)
+    var scale: RateAxis?
+    @StateObject private var hover = Hover()
+    /// Whether the pointer is over the rate. (@State needs a compiler plugin this build doesn't load.)
+    final class Hover: ObservableObject { @Published var on = false }
 
     var body: some View {
-        let precision = rate.precision
-        let main: Text = rate.count == 0 ? Text("rarer than \(DropRate.oneIn(rate.range.upperBound))") : Text(DropRate.oneIn(rate.rate))
-        let detail = rate.plusMinus ?? (rate.count == 0 ? "" : "too few drops")
-        let counts = "\(rate.count.formatted()) in \(rate.of.formatted()) \(unit)"
-        Group {
-            if rate.of == 0 {
-                Text("no \(unit) yet").font(.caption).foregroundStyle(.secondary)
-            } else if compact {
-                HStack(spacing: 6) {
-                    main.fontWeight(.semibold)
-                    Text(detail.isEmpty ? counts : detail).font(.caption).foregroundStyle(.secondary)
-                    if let yours { Text("yours \(DropRate.oneIn(yours))").font(.caption.weight(.semibold)).foregroundStyle(lootGold) }
-                }
-                .monospacedDigit()
-            } else {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) { main.fontWeight(.semibold); Text(detail).foregroundStyle(.secondary) }
-                    Text(counts).font(.caption).foregroundStyle(.secondary)
-                }
-                .monospacedDigit()
+        if rate.of == 0 {
+            Text("no \(unit) yet").font(.caption).foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 8) {
+                Text(rate.percent).fontWeight(.semibold).frame(minWidth: 40, alignment: .trailing)
+                if let yours { Text(DropRate.percent(yours)).font(.caption.weight(.semibold)).foregroundStyle(lootGold) }
+                RateBar(rate: rate, axis: scale ?? RateAxis([rate]), yours: yours).frame(width: 80)
             }
+            .monospacedDigit()
+            .contentShape(Rectangle())
+            .onHover { hover.on = $0 }
+            .popover(isPresented: $hover.on, arrowEdge: .bottom) {
+                RateCard(rate: rate, axis: scale ?? RateAxis([rate]), caption: rate.caption(unit, copies: copies, verb: verb), yours: yours)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(rate.percent), \(rate.likely), \(rate.caption(unit, copies: copies, verb: verb))")
         }
-        .opacity(precision.map { $0 > 0.5 } ?? true ? 0.65 : 1)
-        .help(rate.of == 0 ? "" : "\(counts). 95% range: \(DropRate.oneIn(rate.range.upperBound)) to \(rate.count == 0 ? "never" : DropRate.oneIn(rate.range.lowerBound)).")
     }
 }
+
+/// The hover card (issue #67): the bar drawn large on the same axis as its row, with faint gridlines at each power of
+/// ten (0.1%, 1%, 10%) labelled under it, so the band reads without sentences. The rate sits over its tick, yours over a
+/// gold tick; the counts go under it.
+struct RateCard: View {
+    var rate: DropRate, axis: RateAxis, caption: String, yours: Double?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GeometryReader { g in
+                let w = g.size.width
+                let x = { (v: Double) in CGFloat(axis.position(v)) * w }
+                let at = { (v: Double) in min(max(x(v), 18), w - 18) }   // labels stay inside the card
+                let (rateAt, yoursAt) = RateAxis.apart(Double(x(rate.rate)), yours.map { Double(x($0)) }, width: Double(w))
+                ZStack(alignment: .topLeading) {
+                    Capsule().fill(Color.white.opacity(0.1)).frame(width: w, height: 10).position(x: w / 2, y: 28)
+                    ForEach(axis.decades, id: \.self) { d in
+                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1, height: 16).position(x: x(d), y: 28)
+                        Text(DropRate.percent(d)).position(x: at(d), y: 48)
+                    }
+                    Capsule().fill(Color.accentColor.opacity(0.6)).frame(width: max(x(rate.range.upperBound) - x(rate.range.lowerBound), 4), height: 10)
+                        .position(x: (x(rate.range.lowerBound) + x(rate.range.upperBound)) / 2, y: 28)
+                    if rate.count > 0 {
+                        tick(.primary).position(x: x(rate.rate), y: 28)
+                        Text(rate.percent).font(.callout.weight(.semibold)).foregroundStyle(.primary).position(x: rateAt, y: 8)
+                    }
+                    if let yours {
+                        tick(lootGold).position(x: x(yours), y: 28)
+                        Text(DropRate.percent(yours)).font(.callout.weight(.semibold)).foregroundStyle(lootGold)
+                            .position(x: yoursAt, y: 8)
+                    }
+                }
+                .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .frame(height: 56)
+            HStack {
+                Label(caption, systemImage: "scope").lineLimit(1)
+                Spacer(minLength: 8)
+                if yours != nil { Label("your boosts", systemImage: "sparkles").foregroundStyle(lootGold) }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .monospacedDigit().padding(14).frame(width: 320)
+    }
+    private func tick(_ color: Color) -> some View { RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 20) }
+}
+
+/// The bar: a track, the 95% range as a band, the rate as a tick, yours as a gold tick, on `axis`.
+struct RateBar: View {
+    var rate: DropRate, axis: RateAxis, yours: Double?
+    var body: some View {
+        GeometryReader { g in
+            let x = { (v: Double) in CGFloat(axis.position(v)) * g.size.width }
+            let low = x(rate.range.lowerBound), high = x(rate.range.upperBound)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.1))
+                Capsule().fill(Color.accentColor.opacity(0.55)).frame(width: max(high - low, 4)).offset(x: low)
+                if rate.count > 0 { tick(.primary).offset(x: x(rate.rate) - 1) }
+                if let yours { tick(lootGold).offset(x: x(yours) - 1) }
+            }
+        }
+        .frame(height: 6)
+    }
+    private func tick(_ color: Color) -> some View { RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 2, height: 12) }
+}
+

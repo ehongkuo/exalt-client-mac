@@ -463,14 +463,55 @@ struct DropRate: Equatable {
         return (x == 0 ? 0 : mean(x - 1, 0.975), mean(x, 0.025))
     }
 
+    /// "likely 3.6% to 6.5%": the 95% range; "likely under 1.2%" with none yet. Shown at any count, not capped at 100%:
+    /// the caption's counts say how much data it rests on (issue #67).
+    var likely: String {
+        count == 0 ? "likely under \(Self.percent(range.upperBound))" : "likely \(Self.percent(range.lowerBound)) to \(Self.percent(range.upperBound))"
+    }
+    /// What the counts are: every copy reads "dropped 4 times in 300 kills"; a share of kills or runs reads
+    /// "dropped in 50 of 1,020 runs" (`verb` for portals and shinies).
+    func caption(_ unit: String, copies: Bool = false, verb: String = "dropped") -> String {
+        let n = count.formatted(), of = self.of.formatted()
+        if !copies { return "\(verb) in \(count == 0 ? "none" : n) of \(of) \(unit)" }
+        return count == 0 ? "not \(verb) in \(of) \(unit)" : "\(verb) \(count == 1 ? "once" : "\(n) times") in \(of) \(unit)"
+    }
     /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
-    /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
-    var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
     /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
     var percent: String { Self.percent(rate) }
     static func percent(_ rate: Double) -> String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
     static func oneIn(_ rate: Double) -> String {
         rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
+    }
+}
+
+/// A log axis that a list of rates shares (issue #67). On it a band's width is how sure a rate is: one drop's band spans
+/// a factor of about 200, a hundred drops' about 1.5, at 0.1% as at 50%, and rare and common drops fit one bar. It runs
+/// from under the lowest range start to over the highest end, at least a factor of 10 wide. A rate with none yet starts
+/// its band at the axis's start.
+struct RateAxis: Equatable {
+    var low: Double, high: Double
+    init(_ rates: [DropRate]) {
+        let seen = rates.filter { $0.of > 0 }
+        var low = max((seen.map { $0.count > 0 ? $0.range.lowerBound : $0.range.upperBound / 10 }.min() ?? 0.01) / 1.5, 1e-6)
+        var high = max((seen.map(\.range.upperBound).max() ?? 1) * 1.5, low)
+        if high / low < 10 { let mid = (low * high).squareRoot(); low = mid / 10.0.squareRoot(); high = mid * 10.0.squareRoot() }
+        self.low = low; self.high = high
+    }
+    /// Where `v` sits, 0...1; at or below the start, 0.
+    func position(_ v: Double) -> Double { v <= low ? 0 : min(log(v / low) / log(high / low), 1) }
+    /// Where the card puts the rate's and yours' labels: over their ticks, pushed apart when they'd overlap, inside the card.
+    static func apart(_ rate: Double, _ yours: Double?, width w: Double, half: Double = 24) -> (Double, Double) {
+        let inside = { (v: Double) in min(max(v, half), w - half) }
+        guard let yours else { return (inside(rate), 0) }
+        var (l, r) = (min(rate, yours), max(rate, yours))
+        if r - l < 2 * half { let mid = (l + r) / 2; (l, r) = (mid - half, mid + half) }
+        let shift = max(half - l, 0) - max(r - (w - half), 0)   // slide the pair back inside
+        (l, r) = (l + shift, r + shift)
+        return rate <= yours ? (l, r) : (r, l)
+    }
+    /// The powers of ten inside it (0.001, 0.01, …): the card's gridlines.
+    var decades: [Double] {
+        stride(from: ceil(log10(low)), through: floor(log10(high)), by: 1).map { pow(10, $0) }
     }
 }
 
