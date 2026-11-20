@@ -5,8 +5,8 @@ import SystemConfiguration
 /// app that launched the game, so only one app captures; it ends when the game exits. Reading /dev/bpf needs
 /// Wireshark's ChmodBPF (RealmHound needs it too).
 ///
-/// Phase A of #61 writes traffic-loot-<started>-<pid>.tsv, which the importer skips (it reads only loot-*), so it can be
-/// compared with the guard's own loot file before the hooks go.
+/// It writes loot-<started>-<pid>.tsv (pid: the game's), which the importer reads as it did the guard's loot files.
+/// The parity run before the guard's other loot hooks went matched every kill, bag and drop link they recorded.
 enum TrafficCapture {
     static let port: UInt16 = 2050
 
@@ -22,7 +22,7 @@ enum TrafficCapture {
                 Thread.sleep(forTimeInterval: 0.5)
             }
             guard pid > 0 else { return }
-            let out = logs.appendingPathComponent(String(format: "traffic-loot-%.0f-%d.tsv", started, pid))
+            let out = logs.appendingPathComponent(String(format: "loot-%.0f-%d.tsv", started, pid))
             let hits = { () -> URL? in
                 let names = (try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []
                 return names.first { $0.hasPrefix("hits-") && $0.hasSuffix("-\(pid).tsv") }.map(logs.appendingPathComponent)
@@ -90,7 +90,7 @@ enum TrafficCapture {
         }
         let link = pcap_datalink(handle)
         let loot = TrafficLoot(portals: portals, emit: emit)
-        var hits = TrafficHits(), hitsHandle: FileHandle?, mapStart = 0.0
+        var hits = TrafficHits(), hitsHandle: FileHandle?, mapStart = 0.0, hitsRefusalWritten = false
         loot.projectile = { hits.damage($0, from: $1, to: $2) }
         var connections: [String: Connection] = [:]
         var lastTime = 0.0, lastCheck = Date().timeIntervalSince1970, decoded = 0
@@ -98,6 +98,10 @@ enum TrafficCapture {
         func readHits() {
             if hitsHandle == nil, let url = hitsFile() { hitsHandle = try? FileHandle(forReadingFrom: url) }
             if let data = hitsHandle?.readDataToEndOfFile(), !data.isEmpty { hits.add(String(decoding: data, as: UTF8.self)) }
+            if let why = hits.refused, !hitsRefusalWritten {   // the damage hook failed: your projectile damage reads 0
+                hitsRefusalWritten = true
+                emit("status\t\(String(format: "%.3f", Date().timeIntervalSince1970))\trefused\tdamage_hook \(TrafficLoot.clean(why))\n")
+            }
         }
 
         var header: UnsafeMutablePointer<pcap_pkthdr>?, bytes: UnsafePointer<UInt8>?

@@ -397,6 +397,8 @@ final class TrafficLoot {
 struct TrafficHits {
     private var byObject: [Int: [(time: Double, alt: Bool, damage: Int)]] = [:]
     private var partial = ""
+    /// Why the guard couldn't hook the damage method, from its `status <t> refused <why>` line.
+    private(set) var refused: String?
 
     /// Takes the file's new text; a line cut short waits for the rest.
     mutating func add(_ text: String) {
@@ -405,6 +407,7 @@ struct TrafficHits {
         partial = String(lines.removeLast())
         for line in lines {
             let f = line.split(separator: "\t")
+            if f.count >= 4, f[0] == "status", f[2] == "refused" { refused = f[3...].joined(separator: " ") }
             guard f.count == 5, f[0] == "hit", let t = Double(f[1]), let id = Int(f[2]), let src = Int(f[3]), let dmg = Int(f[4]) else { continue }
             byObject[id, default: []].append((t, src == 1, dmg))
         }
