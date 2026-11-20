@@ -292,6 +292,11 @@ enum DropRateTests {
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
+        var gold = DropReport()
+        gold.names = [1: "Zed Key", 2: "Ninja Skin", 3: "Amber Pet Stone", 4: "Blueprint_7", 5: "Assassin Skin", 6: "Bee Pet Skin"]
+        for item in 1...6 { gold.bags[item] = .gold }
+        check(gold.tiles([1, 2, 3, 4, 5, 6])[.gold] == [4, 5, 2, 3, 6, 1].map(DropReport.Tile.item),
+              "gold bag: blueprints, skins, pets, the rest, each by name")
         check(row[.cyan] == [.group(weapons, [800, 801]), .item(803)] && weapons.name == "T12 weapons",
               "one tile per tier group in rotation order (sword, dagger), shinies folded in, a lone member stays an item; weapons before armors")
         check(tiled.rotation(801)! == (1, 6) && tiled.rotation(803)! == (2, 3) && tiled.rotation(9) == nil, "rotation places: dagger 2nd of 6, robe 3rd of 3")

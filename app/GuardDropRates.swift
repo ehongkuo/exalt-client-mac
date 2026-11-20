@@ -725,6 +725,12 @@ struct DropReport: Equatable {
             }
         }
         for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
+        // The Realm has no dungeon row: it shows the plain Realm Portal, the arch dungeons use (issue #66).
+        if listed[Self.realm]?.portal == nil {
+            store.run("SELECT type, texture_file, texture_index FROM objects WHERE name = 'Realm Portal' AND texture_file IS NOT NULL") {
+                r.textures[int($0, 0)] = GameTexture(file: text($0, 1), index: int($0, 2)); listed[Self.realm]?.portal = int($0, 0)
+            }
+        }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
             r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
@@ -866,12 +872,13 @@ struct DropReport: Equatable {
     }
     /// Items as tiles by bag (nil: no bag known). Shinies fold into their base. Sorted weapons, abilities, armors, rings,
     /// then everything else (potions, eggs, …); within each, untiered (UTs, STs) first, then best tier, then by name.
+    /// The gold bag goes by kind first: blueprints, skins, pets, then the rest (issue #66).
     func tiles(_ items: Set<Int>) -> [DropBag?: [Tile]] {
         let bases = Set(items.map(base))
-        func key(_ tile: Tile) -> (Int, Int, String) {
+        func key(_ tile: Tile) -> (Int, Int, Int, String) {
             let first = tile.items[0], tier = tiers[first]
             let family = slots[first].flatMap(Self.family)?.rawValue ?? Group.Family.allCases.count
-            return (family, tier.map { -$0 } ?? Int.min, name(first))
+            return (family, bag(first) == .gold ? goldKind(first) : 0, tier.map { -$0 } ?? Int.min, name(first))
         }
         return Dictionary(grouping: bases) { bag($0) }.mapValues { inBag in
             let byGroup = Dictionary(grouping: inBag) { group($0) }
@@ -882,6 +889,15 @@ struct DropReport: Equatable {
             }
             return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }
+    }
+
+    static let realm = "Realm of the Mad God"
+    /// A gold bag item's kind, in display order. The game data has no kind for them, so it goes by the blueprint table and the name.
+    func goldKind(_ item: Int) -> Int {
+        let n = name(item)
+        if unlocks[item] != nil || n.contains("Blueprint") { return 0 }
+        if n.contains("Pet Stone") || n.contains("Pet Skin") { return 2 }
+        return n.contains(" Skin") ? 1 : 3
     }
 
     /// Where an item (or any of a set) dropped: one per dungeon, with its runs, runs with one, and copies per mob.

@@ -579,6 +579,19 @@ struct MobPage: View {
             Text("\(kills.formatted()) kills · "
                  + (runs > 0 ? "killed in \((report.mobRuns[mob] ?? 0).formatted()) of \(runs.formatted()) runs" : "no runs: no boss died here")
                  + " · \((report.maxHP[mob] ?? 0).formatted()) HP").foregroundStyle(.secondary)
+            if let portals = report.portals[mob], !portals.isEmpty {
+                Text("PORTALS · per kill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                ForEach(portals.sorted { ($1.value, report.name($0.key)) < ($0.value, report.name($1.key)) }, id: \.key) { type, n in
+                    HStack(spacing: 10) {
+                        SpriteIcon(image: model.sprites[type], size: 28).frame(width: 36, height: 36)
+                        Text(report.name(type)).font(.callout.weight(.medium)).lineLimit(1)
+                        Spacer()
+                        numbers(n, stacked: false, asSeen: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    Divider()
+                }
+            }
             Text("DROPS · per kill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             if tiles.isEmpty { Text("No drops from this mob yet.").foregroundStyle(.secondary) }
             ForEach(DropBag.allCases.reversed().map(Optional.some) + [nil], id: \.self) { bag in
@@ -626,19 +639,6 @@ struct MobPage: View {
                         }
                         .padding(.leading, 46)
                     }
-                    Divider()
-                }
-            }
-            if let portals = report.portals[mob], !portals.isEmpty {
-                Text("PORTALS · per kill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                ForEach(portals.sorted { ($1.value, report.name($0.key)) < ($0.value, report.name($1.key)) }, id: \.key) { type, n in
-                    HStack(spacing: 10) {
-                        SpriteIcon(image: model.sprites[type], size: 28).frame(width: 36, height: 36)
-                        Text(report.name(type)).font(.callout.weight(.medium)).lineLimit(1)
-                        Spacer()
-                        numbers(n, stacked: false, asSeen: true)
-                    }
-                    .accessibilityElement(children: .combine)
                     Divider()
                 }
             }
