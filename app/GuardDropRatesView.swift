@@ -328,7 +328,7 @@ struct DropRatesView: View {
         let rows = model.stable("group", members.sorted { report.runsWith(d.name, report.variants($0)) > report.runsWith(d.name, report.variants($1)) }) {
             report.runsWith(d.name, report.variants($0))
         }
-        let scale = rows.map { DropRate(count: report.runsWith(d.name, report.variants($0.row)), of: runs).range.upperBound }.max()
+        let scale = RateAxis(rows.map { DropRate(count: report.runsWith(d.name, report.variants($0.row)), of: runs) })
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 GroupTile(sprites: model.rotation(members, first: members[0]), tier: group.tier, size: 40)
@@ -392,7 +392,7 @@ struct DropRatesView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     sectionTitle("WHERE IT DROPS")
-                    let scale = sources.compactMap { $0.row.perRun?.range.upperBound }.max()
+                    let scale = RateAxis(sources.compactMap { $0.row.perRun })
                     ForEach(sources, id: \.row.dungeon) { entry in sourceBox(entry.row, grew: entry.grew, scale: scale) }
                 }
             }
@@ -410,11 +410,11 @@ struct DropRatesView: View {
 
     /// A dungeon on the item page: its total rate per run (or a note when no boss died there), then each mob's per kill.
     /// The name goes to the dungeon, keeping the item open.
-    private func sourceBox(_ s: DropReport.Source, grew: Bool, scale: Double?) -> some View {
+    private func sourceBox(_ s: DropReport.Source, grew: Bool, scale: RateAxis) -> some View {
         let mobs = s.mobs.sorted {
             report.perKill($0.key, $0.value).range.lowerBound > report.perKill($1.key, $1.value).range.lowerBound
         }
-        let mobScale = mobs.map { report.perKill($0.key, $0.value).range.upperBound }.max()
+        let mobScale = RateAxis(mobs.map { report.perKill($0.key, $0.value) })
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Button { model.select(dungeon: s.dungeon, keepItem: true) } label: {
@@ -482,7 +482,7 @@ struct DropRatesView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) { Text(d.name).font(.title3.weight(.semibold)); collectionIcon(d) }
             if let bosses = report.bossBags[d.name], let runs = report.runs[d.name] {
-                let scale = (bosses[nil] ?? [:]).values.map { DropRate(count: $0, of: runs).range.upperBound }.max()
+                let scale = RateAxis((bosses[nil] ?? [:]).values.map { DropRate(count: $0, of: runs) })
                 section("BEST BAG FROM THE BOSSES, PER RUN") {
                     ForEach(sortedBags(bosses[nil] ?? [:]), id: \.self) { bag in
                         row { bagLabel(bag); Spacer(); RateView(rate: .init(count: bosses[nil]![bag]!, of: runs), unit: "runs", scale: scale) }
@@ -529,7 +529,7 @@ struct DropRatesView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("How to read a rate").font(.headline)
                     Text("**5%** is your rate so far: drops ÷ runs (or kills, for a mob).")
-                    Text("**The bar**: the tick is the rate, the band where the true rate likely is (95% confidence). A wide band means few drops yet; it narrows as they add up. Bars in one list share a scale. Hover a rate for its counts.")
+                    Text("**The bar**: the tick is the rate, the band where the true rate likely is (95% confidence). A wide band means few drops yet; it narrows as they add up. Bars in one list share a scale, each step ×10, so a band is as wide for an unsure 0.1% as for an unsure 50%. Hover a rate for its counts.")
                     Text("**Per run** counts runs where a boss died with at least one copy. **Surest first** sorts by the low end of each range, so a lucky early drop doesn't come out on top.")
                     Divider()
                     Text("How rates are calculated").font(.headline)
@@ -705,21 +705,21 @@ struct MobPage: View {
     /// `copies`: every copy counts (items, tier groups); else a share of kills (bags, portals). Bags share one scale,
     /// portals another; a tile passes its bag's. `stacked` is kept for its callers and no longer changes the layout.
     /// `asSeen`: per kill as seen, not a base rate (portals: whether boosts change them is still open, #64).
-    private func numbers(_ n: Int, stacked: Bool, copies: Bool = false, scale: Double? = nil, asSeen: Bool = false) -> some View {
+    private func numbers(_ n: Int, stacked: Bool, copies: Bool = false, scale: RateAxis? = nil, asSeen: Bool = false) -> some View {
         let report = model.report, kills = report.kills[mob] ?? 0
         let rate = asSeen ? DropRate(count: n, of: kills) : report.perKill(mob, n)
-        let scale = scale ?? (asSeen ? (report.portals[mob] ?? [:]).values.map { DropRate(count: $0, of: kills).range.upperBound }.max()
-                              : report.tiles(of: mob).values.map { report.perKill(mob, report.killsWith(mob, $0)).range.upperBound }.max())
+        let scale = scale ?? RateAxis(asSeen ? (report.portals[mob] ?? [:]).values.map { DropRate(count: $0, of: kills) }
+                                      : report.tiles(of: mob).values.map { report.perKill(mob, report.killsWith(mob, $0)) })
         return RateView(rate: rate, unit: "kills", copies: copies, verb: asSeen ? "opened" : "dropped",
                         yours: asSeen ? nil : model.yours(rate, mob), scale: scale)
     }
-    /// A tile's bar scale: the highest range end among the tiles of its bag (a group's members sit under the group).
-    private func tileScale(_ tile: DropReport.Tile) -> Double? {
+    /// A tile's bar axis: the one its bag's tiles share (a group's members sit under the group).
+    private func tileScale(_ tile: DropReport.Tile) -> RateAxis? {
         let report = model.report
         let row = report.tiles(of: mob).values.first { row in
             row.contains(tile) || row.contains { if case .group(_, let items) = $0, case .item(let i) = tile { return items.contains(i) } else { return false } }
         }
-        return row?.map { report.perKill(mob, report.copies(mob, [$0])).range.upperBound }.max()
+        return row.map { RateAxis($0.map { report.perKill(mob, report.copies(mob, [$0])) }) }
     }
 
     private func pill(_ text: String) -> some View {
@@ -823,7 +823,7 @@ struct SpriteIcon: View {
 }
 
 /// A rate as a number and a bar (issue #67, the format the whole tab uses): the tick is the rate, the band its 95%
-/// range, on 0...`scale` (the highest range end in its list, so rare drops still show; nil: its own). A gold number and
+/// range, on `scale`, the log axis its list shares (nil: its own). A gold number and
 /// tick show yours. Hovering opens `RateCard`, which labels the bar. `copies`, `verb`: see `DropRate.caption`.
 struct RateView: View {
     var rate: DropRate
@@ -831,7 +831,7 @@ struct RateView: View {
     var copies = false
     var verb = "dropped"
     var yours: Double?   // the rate with your loot boosts now (issue #58)
-    var scale: Double?
+    var scale: RateAxis?
     @StateObject private var hover = Hover()
     /// Whether the pointer is over the rate. (@State needs a compiler plugin this build doesn't load.)
     final class Hover: ObservableObject { @Published var on = false }
@@ -843,13 +843,13 @@ struct RateView: View {
             HStack(spacing: 8) {
                 Text(rate.percent).fontWeight(.semibold).frame(minWidth: 40, alignment: .trailing)
                 if let yours { Text(DropRate.percent(yours)).font(.caption.weight(.semibold)).foregroundStyle(lootGold) }
-                RateBar(rate: rate, scale: scale ?? rate.range.upperBound, yours: yours).frame(width: 80)
+                RateBar(rate: rate, axis: scale ?? RateAxis([rate]), yours: yours).frame(width: 80)
             }
             .monospacedDigit()
             .contentShape(Rectangle())
             .onHover { hover.on = $0 }
             .popover(isPresented: $hover.on, arrowEdge: .bottom) {
-                RateCard(rate: rate, caption: rate.caption(unit, copies: copies, verb: verb), yours: yours)
+                RateCard(rate: rate, axis: scale ?? RateAxis([rate]), caption: rate.caption(unit, copies: copies, verb: verb), yours: yours)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(rate.percent), \(rate.likely), \(rate.caption(unit, copies: copies, verb: verb))")
@@ -857,35 +857,36 @@ struct RateView: View {
     }
 }
 
-/// The hover card (issue #67): the bar drawn large and labelled, so it needs no sentences. The rate sits over its tick,
-/// the range's ends under the band, yours over a gold tick; the counts go under it.
+/// The hover card (issue #67): the bar drawn large on the same axis as its row, with faint gridlines at each power of
+/// ten (0.1%, 1%, 10%) labelled under it, so the band reads without sentences. The rate sits over its tick, yours over a
+/// gold tick; the counts go under it.
 struct RateCard: View {
-    var rate: DropRate, caption: String, yours: Double?
+    var rate: DropRate, axis: RateAxis, caption: String, yours: Double?
     var body: some View {
-        let low = rate.range.lowerBound, high = rate.range.upperBound
-        let scale = max(high, yours ?? 0) * 1.08   // room past the band for its label
         VStack(alignment: .leading, spacing: 10) {
             GeometryReader { g in
                 let w = g.size.width
-                let x = { (v: Double) in min(max(CGFloat(scale > 0 ? v / scale : 0) * w, 0), w) }
-                let at = { (v: Double) in min(max(x(v), 16), w - 16) }   // labels stay inside the card
+                let x = { (v: Double) in CGFloat(axis.position(v)) * w }
+                let at = { (v: Double) in min(max(x(v), 18), w - 18) }   // labels stay inside the card
                 ZStack(alignment: .topLeading) {
                     Capsule().fill(Color.white.opacity(0.1)).frame(width: w, height: 10).position(x: w / 2, y: 28)
-                    Capsule().fill(Color.accentColor.opacity(0.55)).frame(width: max(x(high) - x(low), 4), height: 10)
-                        .position(x: (x(low) + x(high)) / 2, y: 28)
+                    ForEach(axis.decades, id: \.self) { d in
+                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1, height: 16).position(x: x(d), y: 28)
+                        Text(DropRate.percent(d)).position(x: at(d), y: 48)
+                    }
+                    Capsule().fill(Color.accentColor.opacity(0.6)).frame(width: max(x(rate.range.upperBound) - x(rate.range.lowerBound), 4), height: 10)
+                        .position(x: (x(rate.range.lowerBound) + x(rate.range.upperBound)) / 2, y: 28)
                     if rate.count > 0 {
                         tick(.primary).position(x: x(rate.rate), y: 28)
-                        Text(rate.percent).font(.callout.weight(.semibold)).position(x: at(rate.rate), y: 8)
+                        Text(rate.percent).font(.callout.weight(.semibold)).foregroundStyle(.primary).position(x: at(rate.rate), y: 8)
                     }
                     if let yours {
                         tick(lootGold).position(x: x(yours), y: 28)
                         Text(DropRate.percent(yours)).font(.callout.weight(.semibold)).foregroundStyle(lootGold)
-                            .position(x: at(yours) + (abs(x(yours) - x(rate.rate)) < 36 ? 36 : 0), y: 8)
+                            .position(x: at(yours) + (abs(x(yours) - x(rate.rate)) < 40 ? 40 : 0), y: 8)
                     }
-                    Text(DropRate.percent(low)).position(x: at(low), y: 48)
-                    Text(DropRate.percent(high)).position(x: at(high), y: 48)
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.tertiary)
             }
             .frame(height: 56)
             HStack {
@@ -900,12 +901,12 @@ struct RateCard: View {
     private func tick(_ color: Color) -> some View { RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 20) }
 }
 
-/// The bar: a track, the 95% range as a band, the rate as a tick, yours as a gold tick. Past `scale` is clipped.
+/// The bar: a track, the 95% range as a band, the rate as a tick, yours as a gold tick, on `axis`.
 struct RateBar: View {
-    var rate: DropRate, scale: Double, yours: Double?
+    var rate: DropRate, axis: RateAxis, yours: Double?
     var body: some View {
         GeometryReader { g in
-            let x = { (v: Double) in CGFloat(scale > 0 ? min(v / scale, 1) : 0) * g.size.width }
+            let x = { (v: Double) in CGFloat(axis.position(v)) * g.size.width }
             let low = x(rate.range.lowerBound), high = x(rate.range.upperBound)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.1))

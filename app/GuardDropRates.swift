@@ -484,6 +484,27 @@ struct DropRate: Equatable {
     }
 }
 
+/// A log axis that a list of rates shares (issue #67). On it a band's width is how sure a rate is: one drop's band spans
+/// a factor of about 200, a hundred drops' about 1.5, at 0.1% as at 50%, and rare and common drops fit one bar. It runs
+/// from under the lowest range start to over the highest end, at least a factor of 10 wide. A rate with none yet starts
+/// its band at the axis's start.
+struct RateAxis: Equatable {
+    var low: Double, high: Double
+    init(_ rates: [DropRate]) {
+        let seen = rates.filter { $0.of > 0 }
+        var low = max((seen.map { $0.count > 0 ? $0.range.lowerBound : $0.range.upperBound / 10 }.min() ?? 0.01) / 1.5, 1e-6)
+        var high = max((seen.map(\.range.upperBound).max() ?? 1) * 1.5, low)
+        if high / low < 10 { let mid = (low * high).squareRoot(); low = mid / 10.0.squareRoot(); high = mid * 10.0.squareRoot() }
+        self.low = low; self.high = high
+    }
+    /// Where `v` sits, 0...1; at or below the start, 0.
+    func position(_ v: Double) -> Double { v <= low ? 0 : min(log(v / low) / log(high / low), 1) }
+    /// The powers of ten inside it (0.001, 0.01, …): the card's gridlines.
+    var decades: [Double] {
+        stride(from: ceil(log10(low)), through: floor(log10(high)), by: 1).map { pow(10, $0) }
+    }
+}
+
 /// Everything the drop rates views show past Today (issues #41, #45), from all the data kept. Every query of the
 /// views is here, so a change in the data's shape after a staging run changes this one place.
 /// - A kill is `died`; its drops are the items in bags linked to it (`bags.kill`).

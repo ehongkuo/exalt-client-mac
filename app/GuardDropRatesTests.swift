@@ -334,6 +334,13 @@ enum DropRateTests {
         check(DropRate(count: 50, of: 1020).caption("runs") == "dropped in 50 of 1,020 runs" &&
               DropRate(count: 0, of: 12).caption("runs") == "dropped in none of 12 runs" &&
               DropRate(count: 3, of: 40).caption("kills", verb: "opened") == "opened in 3 of 40 kills", "share caption")
+        // The bars' log axis (issue #67): one drop's band is wide, a hundred drops' narrow, at any rate.
+        let one = DropRate(count: 1, of: 134), many = DropRate(count: 100, of: 13_400), common = DropRate(count: 100, of: 200)
+        let axis = RateAxis([one, many, common]), band = { (r: DropRate) in axis.position(r.range.upperBound) - axis.position(r.range.lowerBound) }
+        check(band(one) > 3 * band(many) && abs(band(many) - band(common)) < 0.01, "a band's width is how sure, not how common")
+        check(axis.position(0) == 0 && axis.position(axis.high) == 1 && axis.position(one.rate) < axis.position(common.rate), "the axis runs low to high")
+        check(RateAxis([DropRate(count: 0, of: 12)]).high / RateAxis([DropRate(count: 0, of: 12)]).low >= 10 &&
+              RateAxis([DropRate(count: 1, of: 100)]).decades == [0.001, 0.01], "at least ×10 wide; its gridlines at powers of ten")
         // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
         let tab = DropRatesModel()
         tab.item = 588; tab.openGroups = [weapons]; tab.openBags = [.cyan, nil]; tab.pick(mob: boss)
