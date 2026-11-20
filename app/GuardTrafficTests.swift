@@ -189,6 +189,16 @@ enum TrafficTests {
         feed(ID.update, update([], drops: [50]), 32)
         loot.flush(now: 100, all: true)
         check(kinds("kill").count == 1 && loot.kills == 1, "an object never hit this map is no kill")
+        // Every drop line comes after the kill it names.
+        let order = lines.map { $0.split(separator: "\t").prefix(1).joined() }
+        check(order.firstIndex(of: "kill")! < order.firstIndex(of: "drop")!, "kill before its drop: \(order)")
+        check(order.lastIndex(of: "kill")! < order.lastIndex(of: "map")!, "a held kill is written before the next map")
+
+        // A wanted packet with a changed layout says so once.
+        check(TrafficPacket.reads(type: TrafficPacket.ID.update, outgoing: false) && !TrafficPacket.reads(type: 1, outgoing: false), "reads")
+        check(TrafficPacket.parse(type: TrafficPacket.ID.update, payload: update([]) + [0], outgoing: false) == nil, "extra bytes fail")
+        loot.failed(type: TrafficPacket.ID.update, time: 40); loot.failed(type: TrafficPacket.ID.update, time: 41)
+        check(kinds("status").map { $0[2] } == ["parse_failed id=42 map=2"], "one status per packet id")
         print("Traffic decoder tests passed")
     }
 }

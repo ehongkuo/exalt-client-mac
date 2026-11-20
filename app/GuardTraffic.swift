@@ -86,11 +86,17 @@ enum TrafficPacket: Equatable {
     /// Stats sent as text, everything else as a compact int (RealmHound's StatType::is_string_stat).
     static let textStats: Set<Int> = [6, 31, 38, 54, 62, 71, 72, 78, 80, 82, 115, 121, 127, 128, 147, 155]
 
+    /// Whether the loot rules read this packet, so a nil from `parse` means its layout changed.
+    static func reads(type: UInt8, outgoing: Bool) -> Bool {
+        outgoing ? type == ID.enemyHit : [ID.newTick, ID.update, ID.damage, ID.mapInfo, ID.createSuccess].contains(type)
+    }
+
     /// The packets the loot rules read; nil for every other one, or one that doesn't parse.
     static func parse(type: UInt8, payload: [UInt8], outgoing: Bool) -> TrafficPacket? {
         var r = WireReader(payload)
         if outgoing {
-            guard type == ID.enemyHit, r.i32() != nil, r.i16() != nil, r.i32() != nil, let target = r.i32() else { return nil }
+            guard type == ID.enemyHit, r.i32() != nil, r.i16() != nil, r.i32() != nil, let target = r.i32(),
+                  r.bool() != nil, r.i32() != nil, r.remaining == 0 else { return nil }
             return .enemyHit(target: Int(target))
         }
         switch type {
@@ -106,7 +112,7 @@ enum TrafficPacket: Equatable {
             guard let d = r.count() else { return nil }
             var drops: [Int] = []
             for _ in 0..<d { guard let id = r.compact() else { return nil }; drops.append(id) }
-            return .update(objects: objects, drops: drops)
+            return r.remaining == 0 ? .update(objects: objects, drops: drops) : nil   // no optional tail: extra bytes mean a new layout
         case ID.newTick:
             guard r.i32() != nil, r.i32() != nil, r.u32() != nil, r.u16() != nil, let n = r.i16(), (0...1000).contains(n) else { return nil }
             var statuses: [TrafficStatus] = []
@@ -219,7 +225,7 @@ final class TrafficLoot {
     static let hold = 0.3
 
     let portals: Set<Int>
-    let emit: (String) -> Void
+    private let sink: (String) -> Void
     /// Your projectile damage on an object between two times, from the guard's damage hook: (main, alt).
     var projectile: (_ object: Int, _ from: Double, _ to: Double) -> (Int, Int) = { _, _, _ in (0, 0) }
 
@@ -231,12 +237,23 @@ final class TrafficLoot {
     private var seen: Set<Int> = []
     private var tickBags: [[(id: Int, x: Float, y: Float)]] = [[], []], killed: [(id: Int, x: Float, y: Float)] = []
     private var toggle = 0
-    private var held: [Kill] = []
+    /// Lines wait behind the oldest held kill, so a drop line never comes before its kill.
+    private enum Out { case line(String), kill(Kill) }
+    private var queue: [Out] = []
+    private var failures: [UInt8: Int] = [:]
     private var map = 0, selfID = 0, mapStart = 0.0, named = -1, info: TrafficMapInfo?
     private var known: [Int: Int] = [:], texts: [Int: String] = [:]
     private(set) var kills = 0, bagCount = 0, portalCount = 0
 
-    init(portals: Set<Int>, emit: @escaping (String) -> Void) { self.portals = portals; self.emit = emit }
+    init(portals: Set<Int>, emit: @escaping (String) -> Void) { self.portals = portals; self.sink = emit }
+
+    private func emit(_ line: String) { if queue.isEmpty { sink(line) } else { queue.append(.line(line)) } }
+
+    /// A packet the rules read that didn't parse: its layout changed, so say so once per map and packet id.
+    func failed(type: UInt8, time: Double) {
+        failures[type, default: 0] += 1
+        if failures[type] == 1 { emit("status\t\(t(time))\tparse_failed id=\(type) map=\(map)\n") }
+    }
 
     private func t(_ time: Double) -> String { String(format: "%.3f", time) }
     private func f(_ v: Float) -> String { String(format: "%.2f", v) }
@@ -246,12 +263,14 @@ final class TrafficLoot {
         switch packet {
         case let .mapInfo(m): info = m
         case let .createSuccess(id):
-            // A new map starts when the server gives you a new id, before it sends the map's objects.
-            guard id != selfID else { break }
+            // Each connection is one map and starts with your new id, before the map's objects.
             selfID = id; map += 1; mapStart = time
-            hits = [:]; seen = []; tickBags = [[], []]; killed = []; known = [:]; texts = [:]; objects = [:]
+            hits = [:]; seen = []; tickBags = [[], []]; killed = []; known = [:]; texts = [:]; objects = [:]; failures = [:]
         case let .update(new, drops):
-            for (type, status) in new { arrive(type: type, status, time: time) }
+            // Yours first, so the map is named before anything on it is written.
+            for (type, status) in new.filter({ $0.status.id == selfID }) + new.filter({ $0.status.id != selfID }) {
+                arrive(type: type, status, time: time)
+            }
             for id in drops { removed(id, time: time) }
         case let .newTick(statuses):
             for s in statuses { self.status(s, time: time) }
@@ -273,8 +292,8 @@ final class TrafficLoot {
 
     private func arrive(type: Int, _ s: TrafficStatus, time: Double) {
         objects[s.id] = Object(type: type, x: s.x, y: s.y, maxHP: s.stats.first { $0.type == 0 }?.value ?? 0)
-        status(s, time: time)
         if s.id == selfID { nameMap(time: time) }
+        status(s, time: time)
         if portals.contains(type) {
             guard seen.insert(s.id).inserted else { return }
             emit("portal\t\(t(time))\t\(map)\t\(s.id)\t\(type)\t\(f(s.x))\t\(f(s.y))\n")
@@ -320,7 +339,7 @@ final class TrafficLoot {
     /// Once per map, when your object (and so your class) has arrived: the map's name and its info message.
     private func nameMap(time: Double) {
         guard named != map, let m = info, let me = objects[selfID] else { return }
-        named = map
+        named = map; info = nil   // a MapInfo that fails to parse leaves the next map unnamed, not misnamed
         emit("map\t\(t(time))\t\(map)\t\(Self.clean(m.name))\n")
         // Same columns as the guard's raw read of the client's message (info_30 ... connection_110, then three texts).
         let values = [me.type, m.maxPlayers, m.seed, m.background, m.opened, m.unknown, m.width, m.height]
@@ -332,7 +351,7 @@ final class TrafficLoot {
         guard let h = hits.removeValue(forKey: id) else { return }
         // Where the server last put it; one it never sent can't be placed, so RealmHound skips it too.
         guard let o = objects[id] else { return }
-        held.append(Kill(time: time, map: map, start: mapStart, id: id, object: o, hit: h, since: time - h.last))
+        queue.append(.kill(Kill(time: time, map: map, start: mapStart, id: id, object: o, hit: h, since: time - h.last)))
         killed.append((id, o.x, o.y))
     }
 
@@ -348,10 +367,12 @@ final class TrafficLoot {
 
     /// Writes the kills older than `hold`, with your projectile damage; `all` at the end of capture.
     func flush(now: Double, all: Bool = false) {
-        while let k = held.first, all || now - k.time >= Self.hold {
-            held.removeFirst()
+        while let first = queue.first {
+            guard case let .kill(k) = first else { queue.removeFirst(); if case let .line(l) = first { sink(l) }; continue }
+            guard all || now - k.time >= Self.hold else { break }
+            queue.removeFirst()
             let (main, alt) = projectile(k.id, k.start, k.time)
-            emit("kill\t\(t(k.time))\t\(k.map)\t\(k.id)\t\(k.object.type)\t\(f(k.object.x))\t\(f(k.object.y))\t0.00\t" +
+            sink("kill\t\(t(k.time))\t\(k.map)\t\(k.id)\t\(k.object.type)\t\(f(k.object.x))\t\(f(k.object.y))\t0.00\t" +
                  "\(main)\t\(alt)\t\(k.hit.ability)\t\(k.object.maxHP)\tremoved\t\(Int(k.since * 1000))\t\(k.hit.others)\n")
             kills += 1
         }
