@@ -463,9 +463,19 @@ struct DropRate: Equatable {
         return (x == 0 ? 0 : mean(x - 1, 0.975), mean(x, 0.025))
     }
 
+    /// "likely 3.6% to 6.5%": the 95% range; "likely under 1.2%" with none yet. Shown at any count, not capped at 100%:
+    /// the caption's counts say how much data it rests on (issue #67).
+    var likely: String {
+        count == 0 ? "likely under \(Self.percent(range.upperBound))" : "likely \(Self.percent(range.lowerBound)) to \(Self.percent(range.upperBound))"
+    }
+    /// What the counts are: every copy reads "dropped 4 times in 300 kills"; a share of kills or runs reads
+    /// "dropped in 50 of 1,020 runs" (`verb` for portals and shinies).
+    func caption(_ unit: String, copies: Bool = false, verb: String = "dropped") -> String {
+        let n = count.formatted(), of = self.of.formatted()
+        if !copies { return "\(verb) in \(count == 0 ? "none" : n) of \(of) \(unit)" }
+        return count == 0 ? "not \(verb) in \(of) \(unit)" : "\(verb) \(count == 1 ? "once" : "\(n) times") in \(of) \(unit)"
+    }
     /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
-    /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
-    var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
     /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
     var percent: String { Self.percent(rate) }
     static func percent(_ rate: Double) -> String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }

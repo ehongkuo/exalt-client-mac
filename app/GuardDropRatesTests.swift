@@ -319,7 +319,16 @@ enum DropRateTests {
         check(tiled.tiles(of: minion) == [.white: [.item(588)]] && tiled.tiles(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
               "a minion's own drops; an unknown mob has none")
         check(DropRate(count: 9, of: 20).percent == "45%" && DropRate(count: 1, of: 20).percent == "5%" &&
-              DropRate(count: 9, of: 20).plusMinus == "±65%" && DropRate(count: 3, of: 20).plusMinus == nil, "percent and ±")
+              DropRate(count: 9, of: 20).percent == "45%", "percent")
+        // Range and caption text (issue #67): a range at any count, never capped at 100%.
+        check(ten.likely == "likely 0.48% to 1.8%" && none.likely == "likely under 3.7%", "the range: low to high; under its top with none")
+        check(DropRate(count: 2, of: 3).likely == "likely 8.1% to 240%", "a range shows under 4 drops and above 100%")
+        check(DropRate(count: 4, of: 300).caption("kills", copies: true) == "dropped 4 times in 300 kills" &&
+              DropRate(count: 1, of: 300).caption("kills", copies: true) == "dropped once in 300 kills" &&
+              DropRate(count: 0, of: 300).caption("kills", copies: true) == "not dropped in 300 kills", "copies caption")
+        check(DropRate(count: 50, of: 1020).caption("runs") == "dropped in 50 of 1,020 runs" &&
+              DropRate(count: 0, of: 12).caption("runs") == "dropped in none of 12 runs" &&
+              DropRate(count: 3, of: 40).caption("kills", verb: "opened") == "opened in 3 of 40 kills", "share caption")
         // The mob page's navigation: a mob click closes an open item; Esc steps item → mob page → dungeon.
         let tab = DropRatesModel()
         tab.item = 588; tab.openGroups = [weapons]; tab.openBags = [.cyan, nil]; tab.pick(mob: boss)
