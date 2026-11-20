@@ -61,6 +61,8 @@ struct DropAlertSettings: Equatable {
     var shiny = true
     /// Item rules (issue #47) alert in any bag, alongside the filters above.
     var rules: [ItemRule] = []
+    /// Dungeons whose portal alerts when a mob drops it (issue #74), by name.
+    var portals: Set<String> = []
 }
 
 extension DropAlertSettings {
@@ -71,6 +73,7 @@ extension DropAlertSettings {
         if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { minRarity = r }
         if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { shiny = v }
         if let v = defaults.data(forKey: "dropAlertRules"), let r = try? JSONDecoder().decode([ItemRule].self, from: v) { rules = r }
+        if let v = defaults.stringArray(forKey: "dropAlertPortals") { portals = Set(v) }
     }
     func save(to defaults: UserDefaults) {
         defaults.set(enabled, forKey: "dropAlerts")
@@ -79,6 +82,7 @@ extension DropAlertSettings {
         defaults.set(minRarity.rawValue, forKey: "dropAlertRarity")
         defaults.set(shiny, forKey: "dropAlertShiny")
         defaults.set(try? JSONEncoder().encode(rules), forKey: "dropAlertRules")
+        defaults.set(portals.sorted(), forKey: "dropAlertPortals")
     }
 }
 
@@ -275,9 +279,11 @@ struct DropAlert: Equatable {
     var dungeon: String
     /// The title of the item rule that matched, if any.
     var rule = ""
+    /// A dungeon portal a mob dropped (issue #74): `item` names it, `dungeon` picks its sprite.
+    var portal = false
 
     var detail: String {
-        var parts = [bag?.name ?? "Bag"]
+        var parts = [portal ? "Portal" : bag?.name ?? "Bag"]
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -307,6 +313,53 @@ enum DropRules {
         }
         func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
         return matches.max { rank($0) < rank($1) }?.alert
+    }
+
+    /// A portal alerts when its dungeon is chosen (issue #74).
+    static func alert(for drop: PortalDrop, settings: DropAlertSettings, nowMs: Int64) -> DropAlert? {
+        guard settings.enabled, settings.portals.contains(drop.dungeon), nowMs - Int64(drop.time * 1000) <= freshness else { return nil }
+        return DropAlert(item: "\(drop.dungeon) portal", bag: nil, rarity: .common, shiny: false, mob: drop.mob, dungeon: drop.dungeon, portal: true)
+    }
+    /// The newest alert among portals not in `seen`; every portal found joins `seen`, so each alerts at most once and
+    /// turning alerts on never replays one.
+    static func alert(for found: [PortalDrop], seen: inout Set<Int64>, settings: DropAlertSettings, nowMs: Int64) -> DropAlert? {
+        let new = found.filter { seen.insert($0.id).inserted }
+        return new.compactMap { alert(for: $0, settings: settings, nowMs: nowMs) }.last
+    }
+}
+
+/// A dungeon portal a mob dropped, from the guard's capture (issue #74).
+struct PortalDrop: Equatable {
+    var id: Int64, time: Double, dungeon: String, mob: String
+
+    /// Portals linked to a kill that died on the portal's spot (as the drop rates count them), from the loot `files`
+    /// this app imported, since `since` (epoch seconds). Portals open without a kill (a Realm closing, an exit) have
+    /// none. shortcut: a portal type's dungeon is the one whose lowest portal type it is (`dungeons.portal`); every
+    /// mob-dropped portal seen so far is one, add a type map if a variant shows up.
+    static func linked(_ store: DropRateStore, files: [String], since: Double) -> [PortalDrop] {
+        guard !files.isEmpty else { return [] }
+        var found: [PortalDrop] = []
+        store.run("""
+            SELECT p.id, p.time, d.name, coalesce(o.display_name, o.name, '') FROM portals p JOIN kills k ON k.id = p.kill
+            JOIN maps m ON m.id = p.map JOIN sessions s ON s.id = m.session JOIN dungeons d ON d.portal = p.portal_type
+            LEFT JOIN objects o ON o.type = k.mob_type
+            WHERE p.time >= ? AND s.file IN (\(files.map { _ in "?" }.joined(separator: ", "))) AND \(DropReport.died)
+            AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= \(DropReport.portalSpot) ORDER BY p.id
+            """, [since] + files) {
+            found.append(PortalDrop(id: sqlite3_column_int64($0, 0), time: sqlite3_column_double($0, 1),
+                                    dungeon: String(cString: sqlite3_column_text($0, 2)), mob: String(cString: sqlite3_column_text($0, 3))))
+        }
+        return found
+    }
+
+    /// Every dungeon with a portal, by name, and its portal's texture, for the settings list.
+    static func dungeons(_ store: DropRateStore) -> (names: [String], textures: [String: GameTexture]) {
+        var names: [String] = [], textures: [String: GameTexture] = [:]
+        store.run("SELECT name, texture_file, texture_index FROM dungeons WHERE portal IS NOT NULL ORDER BY name") {
+            let name = String(cString: sqlite3_column_text($0, 0)); names.append(name)
+            if let file = sqlite3_column_text($0, 1) { textures[name] = GameTexture(file: String(cString: file), index: Int(sqlite3_column_int64($0, 2))) }
+        }
+        return (names, textures)
     }
 }
 

@@ -200,6 +200,74 @@ enum DropTests {
         check(log.poll().isEmpty, "each drop once")
         sqlite3_close(db)
         try? FileManager.default.removeItem(at: folder)
+        portals()
         print("Drop alert tests passed")
     }
+
+    /// Portal alerts (issue #74): which captured portals count as a mob's drop, and which alert.
+    static func portals() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("portal-test-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
+        store.exec("""
+            INSERT INTO dungeons(name, portal, texture_file, texture_index) VALUES ('Snake Pit', 1816, 'lofiEnvironment2', 5),
+                ('Undead Lair', 1818, NULL, NULL), ('Pet Yard', NULL, NULL, NULL);
+            INSERT INTO objects(type, name, display_name, class, boss, drop_source) VALUES (3340, 'Medusa', NULL, 'Character', 0, 1);
+            """)
+        let dungeons = PortalDrop.dungeons(store)
+        check(dungeons.names == ["Snake Pit", "Undead Lair"] && dungeons.textures == ["Snake Pit": GameTexture(file: "lofiEnvironment2", index: 5)],
+              "dungeons with a portal, and their sprites")
+        // 600: dropped on its kill's spot. 601: no kill (a Realm closing). 602: linked to a kill 10 tiles away.
+        // 603: a kill that only the server removed long after your last hit. 604: its link arrives in the next import.
+        let t = Date().timeIntervalSince1970
+        func line(_ fields: Any...) -> String { fields.map { "\($0)" }.joined(separator: "\t") }
+        let mine = folder.appendingPathComponent("loot-1-4242.tsv"), other = folder.appendingPathComponent("loot-2-4343.tsv")
+        try! [line("loot_session", 5, "b", t, 4242), line("map", t, 1, "Realm"),
+              line("kill", t, 1, 500, 3340, "10.00", "20.00", "0.00", 900, 0, 0, 4000, "projectile", 10, 0),
+              line("portal", t, 1, 600, 1816, "10.50", "20.50"), line("drop", t, 1, 600, 500),
+              line("portal", t, 1, 601, 1818, "10.00", "20.00"), line("drop", t, 1, 601, 0),
+              line("kill", t, 1, 501, 3340, "30.00", "20.00", "0.00", 900, 0, 0, 4000, "projectile", 10, 0),
+              line("portal", t, 1, 602, 1818, "40.00", "20.00"), line("drop", t, 1, 602, 501),
+              line("kill", t, 1, 502, 3340, "50.00", "20.00", "0.00", 0, 0, 0, 4000, "removed", 5000, 0),
+              line("portal", t, 1, 603, 1818, "50.00", "20.00"), line("drop", t, 1, 603, 502),
+              line("kill", t, 1, 503, 3340, "60.00", "20.00", "0.00", 900, 0, 0, 4000, "projectile", 10, 0),
+              line("portal", t, 1, 604, 1818, "60.00", "20.00"), ""].joined(separator: "\n").write(to: mine, atomically: false, encoding: .utf8)
+        try! [line("loot_session", 5, "b", t, 4343), line("map", t, 1, "Realm"),
+              line("kill", t, 1, 500, 3340, "10.00", "20.00", "0.00", 900, 0, 0, 4000, "projectile", 10, 0),
+              line("portal", t, 1, 600, 1816, "10.00", "20.00"), line("drop", t, 1, 600, 500), ""]
+            .joined(separator: "\n").write(to: other, atomically: false, encoding: .utf8)
+        LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in true })
+        let files = [mine.lastPathComponent]
+        var found = PortalDrop.linked(store, files: files, since: t - 120)
+        check(found.map(\.dungeon) == ["Snake Pit"] && found[0].mob == "Medusa",
+              "only a portal on its kill's spot, from this app's own game, counts")
+        check(PortalDrop.linked(store, files: files, since: t + 1).isEmpty && PortalDrop.linked(store, files: [], since: 0).isEmpty,
+              "older portals and no loot file find nothing")
+
+        let nowMs = Int64(t * 1000)
+        var s = DropAlertSettings(), seen: Set<Int64> = []
+        check(DropRules.alert(for: found, seen: &seen, settings: s, nowMs: nowMs) == nil, "an unchosen dungeon stays quiet")
+        s.portals = ["Snake Pit", "Undead Lair"]
+        check(DropRules.alert(for: found, seen: &seen, settings: s, nowMs: nowMs) == nil, "a portal seen with alerts off never replays")
+        try! FileHandle(forWritingTo: mine).seekToEndAndWrite(line("drop", t, 1, 604, 503) + "\n")
+        LootImport.run(logs: folder, store: store, appVersion: "t", alive: { _ in true })
+        found = PortalDrop.linked(store, files: files, since: t - 120)
+        let alert = DropRules.alert(for: found, seen: &seen, settings: s, nowMs: nowMs)
+        check(alert == DropAlert(item: "Undead Lair portal", bag: nil, rarity: .common, shiny: false, mob: "Medusa", dungeon: "Undead Lair", portal: true)
+              && alert?.detail == "Portal · Medusa", "a link in a later import alerts, naming the dungeon and the mob")
+        check(DropRules.alert(for: found, seen: &seen, settings: s, nowMs: nowMs) == nil, "once per portal")
+        var fresh: Set<Int64> = []
+        check(DropRules.alert(for: found, seen: &fresh, settings: s, nowMs: nowMs + 200_000) == nil, "an old portal stays quiet")
+        s.enabled = false; fresh = []
+        check(DropRules.alert(for: found, seen: &fresh, settings: s, nowMs: nowMs) == nil, "off with drop alerts")
+
+        let defaults = UserDefaults(suiteName: "portal-test-\(UUID().uuidString)")!
+        var saved = DropAlertSettings(); saved.portals = ["Snake Pit"]; saved.save(to: defaults)
+        check(DropAlertSettings(defaults: defaults).portals == ["Snake Pit"], "chosen dungeons are saved")
+    }
+}
+
+private extension FileHandle {
+    func seekToEndAndWrite(_ text: String) { seekToEndOfFile(); write(Data(text.utf8)) }
 }

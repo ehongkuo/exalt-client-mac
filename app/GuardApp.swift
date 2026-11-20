@@ -302,6 +302,10 @@ final class DropAlerts: ObservableObject {
     @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
+    /// Dungeons with a portal, by name, and each portal's sprite (issue #74), loaded with the drop-rate catalog.
+    @Published var portalDungeons: [String] = []
+    @Published var portalSprites: [String: CGImage] = [:]
+    private var announcedPortals: Set<Int64> = []
     /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
@@ -353,6 +357,11 @@ final class DropAlerts: ObservableObject {
         }
         #endif
     }
+    /// Portals the latest loot import linked to a kill (issue #74); each alerts at most once.
+    func portalsDropped(_ found: [PortalDrop]) {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        if let alert = DropRules.alert(for: found, seen: &announcedPortals, settings: settings, nowMs: nowMs) { show(alert) }
+    }
     func show(_ alert: DropAlert) {
         popup = alert; shownAt = now
         #if !GUARD_UI_TEST
@@ -368,14 +377,15 @@ struct DropPopupView: View {
 
     var body: some View {
         if let drop = drops.popup {
-            DropPopupContent(drop: drop, bagSprite: drop.bag.flatMap { drops.bagSprites[$0] }).onTapGesture { drops.dismiss() }
+            DropPopupContent(drop: drop, bagSprite: drop.portal ? drops.portalSprites[drop.dungeon] : drop.bag.flatMap { drops.bagSprites[$0] })
+                .onTapGesture { drops.dismiss() }
         }
     }
 }
 
 struct DropPopupContent: View {
     var drop: DropAlert
-    /// The bag's game sprite; the SF Symbol stands in when RealmHound's assets are missing.
+    /// The bag's (or portal's) game sprite; the SF Symbol stands in when RealmHound's assets are missing.
     var bagSprite: CGImage? = nil
 
     var body: some View {
@@ -1198,6 +1208,7 @@ struct GuardPanel {
                 }
                 .fixedSize()
                 Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+                portalAlerts()
                 Divider().padding(.vertical, 2)
                 Text("Item rules").fontWeight(.semibold)
                 Text("Also alert when any item matches a rule, in any bag.").foregroundStyle(.secondary)
@@ -1212,6 +1223,33 @@ struct GuardPanel {
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))
+    }
+
+    /// Dungeon portals (issue #74): chosen dungeons, each with its portal's sprite.
+    private func portalAlerts() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.vertical, 2)
+            Text("Dungeon portals").fontWeight(.semibold)
+            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary)
+            ForEach(drops.settings.portals.sorted(), id: \.self) { name in
+                HStack(spacing: 6) {
+                    SpriteIcon(image: drops.portalSprites[name], size: 16)
+                    Text(name)
+                    Spacer()
+                    Button { drops.settings.portals.remove(name) } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless).help("Stop alerting for \(name)")
+                }
+            }
+            Menu("Add dungeon") {
+                ForEach(drops.portalDungeons.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
+                    Button(name) { drops.settings.portals.insert(name) }
+                }
+            }
+            .controlSize(.small).fixedSize().disabled(drops.portalDungeons.isEmpty)
+            if !drops.settings.portals.isEmpty && !source.link.isLive {
+                Text("Portals come from the guard's capture: they alert only when you start the game from this app.").foregroundStyle(bad)
+            }
+        }
     }
 
     private func diagnostics(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -1367,23 +1405,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        let noCatalog = drops.catalog.items.isEmpty
+        let noCatalog = drops.catalog.items.isEmpty, noDungeons = drops.portalDungeons.isEmpty
+        // This app's own loot files: another app sharing the database announces its own game's portals.
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).filter { $0.hasPrefix("loot-") }
         // The game data changes only with a new game build, so its files are checked every 30 s, not every import.
         let checkCatalog = noCatalog || Date().timeIntervalSince1970 - catalogChecked >= 30
         if checkCatalog { catalogChecked = Date().timeIntervalSince1970 }
         lootQueue.async {
-            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?
+            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?, portals: [PortalDrop] = []
+            var dungeons: (names: [String], textures: [String: GameTexture])?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
                 if checkCatalog, GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {   // and the bundled drop catalog
                     catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
                 }
+                if catalog != nil || noDungeons {
+                    let list = PortalDrop.dungeons(store)
+                    if !list.names.isEmpty { dungeons = list }
+                }
                 LootImport.run(logs: logs, store: store, appVersion: version)
+                portals = PortalDrop.linked(store, files: files, since: Date().timeIntervalSince1970 - Double(DropRules.freshness) / 1000)
                 health = CaptureHealth.load(store)
                 now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }
             let loot = self.catalog()
+            let portalSprites = dungeons.map { GameSprites.load(assets: RealmHoundPaths.assets, $0.textures) }
             DispatchQueue.main.async {
+                if let dungeons, let portalSprites { self.drops.portalDungeons = dungeons.names; self.drops.portalSprites = portalSprites }
+                self.drops.portalsDropped(portals)
                 self.rates.catalog = loot
                 self.rates.update(now: now)
                 if let health { self.rates.update(health: health); self.healthLoaded = true }

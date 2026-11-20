@@ -577,6 +577,8 @@ struct DropReport: Equatable {
     /// that left your view.
     // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
     // that left a bag.
+    /// How far from its kill a portal may be to count as the kill's drop, squared (1.5 tiles).
+    static let portalSpot = 2.25
     static let died = """
         (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
         AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
@@ -686,7 +688,7 @@ struct DropReport: Equatable {
         // portal that came into view during a fight is linked too. shortcut: 1.5 tiles is a guess; set it from live drops.
         store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), p.portal_type, count(DISTINCT k.id) FROM portals p JOIN kills k ON k.id = p.kill
-            JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= 2.25 GROUP BY 1, 2, 3
+            JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= \(portalSpot) GROUP BY 1, 2, 3
             """) { r.portals[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][int($0, 2)] = int($0, 3) }
         store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
         let row = { (stmt: OpaquePointer) in
