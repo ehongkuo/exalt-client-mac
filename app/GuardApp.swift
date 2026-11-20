@@ -174,7 +174,10 @@ final class LaunchController: ObservableObject {
             switch result {
             case .failure(let problem): next = .failed(problem.message)
             case .success(let launch):
-                do { try GameLauncher.start(launch); next = .launched(Date()) }
+                do {
+                    try GameLauncher.start(launch); next = .launched(Date())
+                    TrafficCapture.start(logs: GuardPaths.logs(data: dataURL), portals: Set(portals), build: expected ?? "unknown")
+                }
                 catch { next = .failed("Could not start DECA's launcher: \(error.localizedDescription)") }
             }
             DispatchQueue.main.async {

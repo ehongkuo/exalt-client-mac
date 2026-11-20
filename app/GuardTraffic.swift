@@ -249,6 +249,9 @@ final class TrafficLoot {
 
     private func emit(_ line: String) { if queue.isEmpty { sink(line) } else { queue.append(.line(line)) } }
 
+    /// A connection the decoder lost (mid_stream, lost_segment, bad_frame): the rest of its map is missing.
+    func gap(_ reason: String, time: Double) { emit("gap\t\(t(time))\t0\t\(reason)\n") }
+
     /// A packet the rules read that didn't parse: its layout changed, so say so once per map and packet id.
     func failed(type: UInt8, time: Double) {
         failures[type, default: 0] += 1
@@ -381,5 +384,35 @@ final class TrafficLoot {
     /// Tabs and newlines would break the line format.
     static func clean(_ text: String) -> String {
         String(text.map { $0 == "\t" || $0 == "\n" || $0 == "\r" ? " " : $0 })
+    }
+}
+
+/// Your projectile hits from the guard's damage hook, the one hook kept (hits-<started>-<pid>.tsv):
+/// `hit <epoch> <object id> <0 projectile, 1 alt> <damage>`. Object ids repeat across maps; the time window keeps them apart.
+struct TrafficHits {
+    private var byObject: [Int: [(time: Double, alt: Bool, damage: Int)]] = [:]
+    private var partial = ""
+
+    /// Takes the file's new text; a line cut short waits for the rest.
+    mutating func add(_ text: String) {
+        let all = partial + text
+        var lines = all.split(separator: "\n", omittingEmptySubsequences: false)
+        partial = String(lines.removeLast())
+        for line in lines {
+            let f = line.split(separator: "\t")
+            guard f.count == 5, f[0] == "hit", let t = Double(f[1]), let id = Int(f[2]), let src = Int(f[3]), let dmg = Int(f[4]) else { continue }
+            byObject[id, default: []].append((t, src == 1, dmg))
+        }
+    }
+
+    func damage(_ object: Int, from: Double, to: Double) -> (Int, Int) {
+        var main = 0, alt = 0
+        for h in byObject[object] ?? [] where h.time >= from && h.time <= to { if h.alt { alt += h.damage } else { main += h.damage } }
+        return (main, alt)
+    }
+
+    /// Forgets hits from before a map that started at `time`.
+    mutating func forget(before time: Double) {
+        byObject = byObject.compactMapValues { hits in let kept = hits.filter { $0.time >= time }; return kept.isEmpty ? nil : kept }
     }
 }

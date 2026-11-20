@@ -2,6 +2,7 @@
  * settings channel. */
 #include "../guard/live_state.h"
 #include <signal.h>
+#include <pcap/pcap.h>   /* game traffic capture, issue #61 */
 
 /* `map` is a mapping of the live file; LiveState itself stays opaque to Swift. */
 static inline int guard_live_copy(const void *map, LiveData *out) {

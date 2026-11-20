@@ -199,6 +199,53 @@ enum TrafficTests {
         check(TrafficPacket.parse(type: TrafficPacket.ID.update, payload: update([]) + [0], outgoing: false) == nil, "extra bytes fail")
         loot.failed(type: TrafficPacket.ID.update, time: 40); loot.failed(type: TrafficPacket.ID.update, time: 41)
         check(kinds("status").map { $0[2] } == ["parse_failed id=42 map=2"], "one status per packet id")
+        var hits = TrafficHits()
+        hits.add("hit\t10.5\t50\t0\t100\nhit\t11\t50\t1\t20\nhit\t9\t50\t0\t999\nhit\t12\t50\t0")
+        check(hits.damage(50, from: 10, to: 20) == (100, 20), "hits in the map's window, partial line waits")
+        hits.add("\t7\n")
+        check(hits.damage(50, from: 10, to: 20) == (107, 20), "the rest of a cut line")
+        hits.forget(before: 11)
+        check(hits.damage(50, from: 0, to: 20) == (7, 20), "older hits forgotten")
+        replay()
         print("Traffic decoder tests passed")
     }
+}
+
+/// A saved capture made here, byte by byte: Ethernet, IPv4, TCP, with the server's messages split over two segments.
+private func replay() {
+    var file = Wire()
+    func le32(_ v: UInt32) { file.bytes += [0, 8, 16, 24].map { UInt8(v >> $0 & 255) } }
+    le32(0xa1b2c3d4); file.bytes += [2, 0, 4, 0]; le32(0); le32(0); le32(65535); le32(1)   // pcap header, Ethernet
+    func packet(_ t: Double, fromServer: Bool, seq: UInt32, flags: UInt8, _ payload: [UInt8], pad: Int = 0, client: Int = 50000) {
+        var tcp = Wire()
+        tcp.u16(fromServer ? 2050 : client); tcp.u16(fromServer ? client : 2050); tcp.u32(seq); tcp.u32(0)
+        tcp.u8(5 << 4); tcp.u8(Int(flags)); tcp.u16(65535); tcp.u16(0); tcp.u16(0)
+        var ip = Wire()
+        ip.u8(0x45); ip.u8(0); ip.u16(20 + tcp.bytes.count + payload.count); ip.u16(0); ip.u16(0); ip.u8(64); ip.u8(6); ip.u16(0)
+        ip.bytes += fromServer ? [10, 0, 0, 2, 192, 168, 1, 5] : [192, 168, 1, 5, 10, 0, 0, 2]
+        let frame = [UInt8](repeating: 0, count: 12) + [8, 0] + ip.bytes + tcp.bytes + payload + [UInt8](repeating: 0xee, count: pad)
+        le32(UInt32(t)); le32(UInt32((t - t.rounded(.down)) * 1e6)); le32(UInt32(frame.count)); le32(UInt32(frame.count))
+        file.bytes += frame
+    }
+    typealias ID = TrafficPacket.ID
+    let server = frames([(ID.createSuccess, createSuccess(100)), (ID.mapInfo, mapInfo("Godlands")),
+                         (ID.update, update([(type: 782, id: 100, x: 1, y: 1, stats: [])]))])
+    packet(100, fromServer: false, seq: 4999, flags: 2, [])            // SYN
+    packet(100.01, fromServer: true, seq: 999, flags: 18, [])          // SYN-ACK
+    packet(100.02, fromServer: false, seq: 5000, flags: 16, [], pad: 6) // a bare ACK, padded to Ethernet's minimum
+    packet(100.1, fromServer: true, seq: 1000, flags: 24, Array(server[..<20]))
+    packet(100.2, fromServer: true, seq: 1020, flags: 24, Array(server[20...]))
+    packet(105, fromServer: false, seq: 7, flags: 24, [1, 2, 3], client: 50001)      // another connection, caught mid-stream
+
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("traffic-test-\(getpid())")
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let input = folder.appendingPathComponent("in.pcap"), out = folder.appendingPathComponent("out.tsv")
+    try? Data(file.bytes).write(to: input)
+    check(TrafficCapture.replay(pcap: input.path, out: out, hits: nil, portals: []) == nil, "replay opens")
+    let lines = ((try? String(contentsOf: out, encoding: .utf8)) ?? "").split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
+    check(lines.first?[0...1] == ["loot_session", "6"], "session line, format 6")
+    check(lines.contains { $0 == ["map", "100.200", "1", "Godlands"] }, "map from the reassembled stream: \(lines)")
+    check(lines.contains { $0.first == "gap" && $0.last == "mid_stream" }, "a connection without its SYN is a gap")
+    check(lines.last == ["status", lines.last?[1] ?? "", "complete"], "complete at the end")
 }
