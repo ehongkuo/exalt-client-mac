@@ -65,6 +65,9 @@ enum LootProfileTests {
         check(line.state(at: 130).potion == 30 && line.state(at: 200).potion == 0 && line.state(at: 310).potion == 110,
               "the potion counts down from its last reading")
         check(line.state(at: 130, ticking: false).potion == 60, "paused in a safe zone")
+        var clover = LootTimeline()   // a Lucky Clover sets both potions' timers (docs/loot-factors.md, factor 3)
+        clover.stats[67] = [(0, 1200)]; clover.stats[68] = [(0, 1200)]
+        check(clover.state(at: 60).potion == 1140 && clover.state(at: 60).tier == 1140, "a clover lights up both potion slots")
         check(line.state(at: 50).enchants == nil && line.state(at: 130).enchants == [[0x5B1], [], [], [0x5B1, 0x22]], "gear known from its reading")
         check(LootMath.clock(872) == "14:32" && LootMath.clock(4325) == "1:12:05" && LootMath.times(1.5) == "1.5",
               "timer and multiplier text")

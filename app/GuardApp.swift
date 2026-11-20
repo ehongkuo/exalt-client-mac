@@ -577,8 +577,6 @@ struct JoinPopupContent: View {
 }
 
 final class WindowState: ObservableObject {
-    /// Keep on top: on unless the user turned it off, remembered between launches.
-    @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
     /// Which rows of the More section are open.
@@ -586,10 +584,6 @@ final class WindowState: ObservableObject {
     @Published var partyOpen = false
     @Published var dropsOpen = false
     @Published var diagnosticsOpen = false
-    func setFloating(_ value: Bool) {
-        floating = value; window?.level = value ? .floating : .normal
-        UserDefaults.standard.set(value, forKey: "keepOnTop")
-    }
 }
 
 struct Card<Content: View>: View {
@@ -816,8 +810,6 @@ struct GuardPanel {
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             if isStaging { Pill(text: appName.dropFirst(GuardPaths.prodName.count + 1).uppercased(), color: .blue) }   // "STAGING 49"
             Spacer()
-            Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
-                .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
             Button { window.showCompact() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
                 .buttonStyle(.borderless).help("Compact view")
         }
@@ -1405,13 +1397,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
         }
     }
-    /// The stats views (issue #45) widen the main window to about 1100 pt and stop keeping it on top; back in
-    /// the guard view, the window gets its own frame and Keep on top again. Only the guard view's frame is saved.
+    /// The stats views (issue #45) widen the main window to about 1100 pt; back in the guard view, the window gets
+    /// its own frame again. Only the guard view's frame is saved.
     private func showStats(_ shown: Bool) {
         let fullScreen = window.styleMask.contains(.fullScreen)
         if shown {
             loadRates()
-            window.level = .normal
             guard !fullScreen else { return }
             let current = window.frame
             guardFrame = current
@@ -1420,7 +1411,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             let frame = statsFrame ?? NSRect(x: current.minX, y: current.maxY - height, width: 1100, height: height)
             window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
         } else {
-            state.setFloating(state.floating)
             guard !fullScreen, let guardFrame else { return }
             statsFrame = window.frame
             window.setFrame(guardFrame, display: true, animate: true)
@@ -1492,8 +1482,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops, rates: rates))
+        // A normal window, not floating: a floating one can't go full screen (issue #66). The compact strip floats.
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
-        state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
         compact = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 52),
                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
