@@ -715,10 +715,9 @@ struct DropReport: Equatable {
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
-        var listed: [String: Dungeon] = [:], realmPortal: Int?
+        var listed: [String: Dungeon] = [:]
         store.run("SELECT name, portal, texture_file, texture_index, labels FROM dungeons") {
             let name = text($0, 0), portal = sqlite3_column_type($0, 1) == SQLITE_NULL ? nil : int($0, 1)
-            if name == "Random Realm" { realmPortal = portal }
             if let portal, sqlite3_column_type($0, 2) != SQLITE_NULL { r.textures[portal] = GameTexture(file: text($0, 2), index: int($0, 3)) }
             let labels = sqlite3_column_type($0, 4) == SQLITE_NULL ? nil : Set(text($0, 4).split(separator: ",").map(String.init))
             if labels != nil || Self.dropTags[name] != nil || r.catalogMobs[name] != nil || r.kills.keys.contains(where: { $0.dungeon == name }) {
@@ -726,8 +725,12 @@ struct DropReport: Equatable {
             }
         }
         for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
-        // The Realm has no portal of its own in the game data: it shows the Realm portal (issue #66).
-        if listed[Self.realm]?.portal == nil { listed[Self.realm]?.portal = realmPortal }
+        // The Realm has no dungeon row: it shows the plain Realm Portal, the arch dungeons use (issue #66).
+        if listed[Self.realm]?.portal == nil {
+            store.run("SELECT type, texture_file, texture_index FROM objects WHERE name = 'Realm Portal' AND texture_file IS NOT NULL") {
+                r.textures[int($0, 0)] = GameTexture(file: text($0, 1), index: int($0, 2)); listed[Self.realm]?.portal = int($0, 0)
+            }
+        }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
             r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
