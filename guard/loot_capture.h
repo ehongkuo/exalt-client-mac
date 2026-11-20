@@ -46,7 +46,7 @@ static LootSeen loot_seen[LOOT_SEEN];
 static LootTicks loot_ticks;
 static LootPortals loot_portals;
 static int loot_portal_types;   /* how many EXALT_PORTALS named: 0 records no portals, so the summary shows it */
-static FILE *loot_file;
+static FILE *loot_file, *loot_hits_file;   /* hits: your projectile damage, read by the app (issue #61) */
 static const void *loot_methods[LOOT_HOOK_COUNT];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
             *loot_pos_field, *loot_stats_field, *loot_x_field, *loot_y_field,
@@ -154,7 +154,12 @@ static void loot_hit(void *self, int damage, uintptr_t caller) {
     if (source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return;
     int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
-    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, monotonic_ns());
+    uint64_t now = monotonic_ns();
+    if (source <= LOOT_PROJECTILE_ALT) {   /* the one thing traffic can't tell (issue #61): what your own shots did */
+        LootEvent hit = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_HIT, .source = (uint8_t)source, .v = {damage}};
+        loot_push(&loot_ring, &hit);
+    }
+    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, now);
     if (h && !h->max) il2cpp_field_get_value(self, max_field, &h->max);
 }
 static int loot_live(void) {
@@ -413,6 +418,11 @@ static void loot_open(const char *folder) {
     if (!loot_file) { if (fd >= 0) close(fd); loot_refuse("file"); return; }
     fprintf(loot_file, "loot_session\t%d\t%s\t%.3f\t%d\n", LOOT_FORMAT, EXALT_GAME_SHA256, start_epoch, getpid());
     fflush(loot_file);
+    /* The app's traffic capture finds this by the game's pid and joins it to its kills. */
+    n = snprintf(path, sizeof path, "%s/hits-%.0f-%d.tsv", folder, start_epoch, getpid());
+    fd = n > 0 && (size_t)n < sizeof path ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) : -1;
+    loot_hits_file = fd >= 0 ? fdopen(fd, "w") : NULL;
+    if (!loot_hits_file && fd >= 0) close(fd);
 }
 /* Writer thread. */
 static void loot_drain(int closing) {
@@ -427,7 +437,8 @@ static void loot_drain(int closing) {
     char line[512];
     while (loot_pop(&loot_ring, &e)) {
         int length = loot_format(&e, start_epoch + (double)(e.ns - start_ns) / 1e9, line, sizeof line);
-        if (length > 0) fwrite(line, 1, (size_t)length < sizeof line ? (size_t)length : sizeof line - 1, loot_file);
+        FILE *to = e.kind == LOOT_HIT ? loot_hits_file : loot_file;
+        if (length > 0 && to) fwrite(line, 1, (size_t)length < sizeof line ? (size_t)length : sizeof line - 1, to);
     }
     uint64_t lost = atomic_load(&loot_ring.lost);
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
@@ -441,6 +452,7 @@ static void loot_drain(int closing) {
                 (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],
                 (unsigned long long)loot_removals, (unsigned long long)loot_removals_hit, (unsigned long)loot_unknown_caller);
     }
+    if (loot_hits_file) { fflush(loot_hits_file); if (closing) { fclose(loot_hits_file); loot_hits_file = NULL; } }
     if (closing) { fprintf(loot_file, "status\t%.3f\tcomplete\n", epoch); fclose(loot_file); loot_file = NULL; }
     else fflush(loot_file);
 }
