@@ -868,6 +868,7 @@ struct RateCard: View {
                 let w = g.size.width
                 let x = { (v: Double) in CGFloat(axis.position(v)) * w }
                 let at = { (v: Double) in min(max(x(v), 18), w - 18) }   // labels stay inside the card
+                let (rateAt, yoursAt) = RateAxis.apart(Double(x(rate.rate)), yours.map { Double(x($0)) }, width: Double(w))
                 ZStack(alignment: .topLeading) {
                     Capsule().fill(Color.white.opacity(0.1)).frame(width: w, height: 10).position(x: w / 2, y: 28)
                     ForEach(axis.decades, id: \.self) { d in
@@ -878,25 +879,25 @@ struct RateCard: View {
                         .position(x: (x(rate.range.lowerBound) + x(rate.range.upperBound)) / 2, y: 28)
                     if rate.count > 0 {
                         tick(.primary).position(x: x(rate.rate), y: 28)
-                        Text(rate.percent).font(.callout.weight(.semibold)).foregroundStyle(.primary).position(x: at(rate.rate), y: 8)
+                        Text(rate.percent).font(.callout.weight(.semibold)).foregroundStyle(.primary).position(x: rateAt, y: 8)
                     }
                     if let yours {
                         tick(lootGold).position(x: x(yours), y: 28)
                         Text(DropRate.percent(yours)).font(.callout.weight(.semibold)).foregroundStyle(lootGold)
-                            .position(x: at(yours) + (abs(x(yours) - x(rate.rate)) < 40 ? 40 : 0), y: 8)
+                            .position(x: yoursAt, y: 8)
                     }
                 }
                 .font(.caption2).foregroundStyle(.tertiary)
             }
             .frame(height: 56)
             HStack {
-                Label(caption, systemImage: "scope")
-                Spacer()
+                Label(caption, systemImage: "scope").lineLimit(1)
+                Spacer(minLength: 8)
                 if yours != nil { Label("your boosts", systemImage: "sparkles").foregroundStyle(lootGold) }
             }
             .font(.caption).foregroundStyle(.secondary)
         }
-        .monospacedDigit().padding(14).frame(width: 260)
+        .monospacedDigit().padding(14).frame(width: 320)
     }
     private func tick(_ color: Color) -> some View { RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 20) }
 }

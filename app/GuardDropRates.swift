@@ -499,6 +499,16 @@ struct RateAxis: Equatable {
     }
     /// Where `v` sits, 0...1; at or below the start, 0.
     func position(_ v: Double) -> Double { v <= low ? 0 : min(log(v / low) / log(high / low), 1) }
+    /// Where the card puts the rate's and yours' labels: over their ticks, pushed apart when they'd overlap, inside the card.
+    static func apart(_ rate: Double, _ yours: Double?, width w: Double, half: Double = 24) -> (Double, Double) {
+        let inside = { (v: Double) in min(max(v, half), w - half) }
+        guard let yours else { return (inside(rate), 0) }
+        var (l, r) = (min(rate, yours), max(rate, yours))
+        if r - l < 2 * half { let mid = (l + r) / 2; (l, r) = (mid - half, mid + half) }
+        let shift = max(half - l, 0) - max(r - (w - half), 0)   // slide the pair back inside
+        (l, r) = (l + shift, r + shift)
+        return rate <= yours ? (l, r) : (r, l)
+    }
     /// The powers of ten inside it (0.001, 0.01, …): the card's gridlines.
     var decades: [Double] {
         stride(from: ceil(log10(low)), through: floor(log10(high)), by: 1).map { pow(10, $0) }
