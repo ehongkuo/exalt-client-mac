@@ -520,14 +520,20 @@ enum RealmHoundPaths {
 final class LootLog {
     let accounts: URL
     private var last: [String: Int64] = [:]
+    private var stamps: [String] = []
     private(set) var logs = 0
     init(accounts: URL) { self.accounts = accounts }
 
+    /// Cheap enough for every 0.1 s tick: the logs are opened only when a file of theirs changed (issue #75).
     func poll() -> [LootDrop] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: accounts, includingPropertiesForKeys: nil)) ?? []
         let paths = folders.map { $0.appendingPathComponent("databases/loot_history.db").path }
             .filter { FileManager.default.fileExists(atPath: $0) }
         logs = paths.count
+        // RealmHound commits to the WAL; a checkpoint or a recreated log changes the main file.
+        let now = paths.flatMap { [$0, $0 + "-wal"] }.map(Self.stamp)
+        guard now != stamps else { return [] }
+        stamps = now
         var found: [LootDrop] = []
         for path in paths {
             // Opened per poll and read-only: RealmHound writes in WAL mode, so reading never blocks it,
@@ -543,6 +549,12 @@ final class LootLog {
             last[path] = top
         }
         return found
+    }
+
+    private static func stamp(_ path: String) -> String {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return path }
+        return "\(path) \(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec) \(info.st_size) \(info.st_ino)"
     }
 
     private static func maxID(_ db: OpaquePointer?) -> Int64? {
@@ -578,5 +590,27 @@ final class LootLog {
             }
         }
         return drops
+    }
+}
+
+/// One line per drop read from RealmHound, so a slow popup shows up in the logs (issue #75). The delay runs from
+/// RealmHound's own timestamp, which is about 0.25 s after the bag appears in game, to when the drop was read.
+enum DropDelayLog {
+    static let header = "drop_epoch_ms\tdelay_ms\tpoll_ms\ttick_gap_ms\tpopup\tbag\tmob\n"
+    static func file(logs: URL, pid: Int32 = getpid()) -> URL { logs.appendingPathComponent("drops-\(pid).tsv") }
+    static func lines(_ drops: [LootDrop], nowMs: Int64, pollMs: Double, tickGapMs: Double, popup: String) -> String {
+        drops.map { drop in
+            let shown = drop.id == drops.last?.id ? popup : ""   // one drop per 0.1 s tick, in practice
+            return ["\(drop.epochMs)", "\(nowMs - drop.epochMs)", String(format: "%.1f", pollMs), String(format: "%.0f", tickGapMs), shown,
+                    "\(drop.bag)", drop.mob].joined(separator: "\t") + "\n"
+        }.joined()
+    }
+    static func append(_ text: String, to file: URL) {
+        if !FileManager.default.fileExists(atPath: file.path) {
+            FileManager.default.createFile(atPath: file.path, contents: Data(header.utf8), attributes: [.posixPermissions: 0o600])
+        }
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd(); try? handle.write(contentsOf: Data(text.utf8))
     }
 }

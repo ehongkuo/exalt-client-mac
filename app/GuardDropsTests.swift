@@ -198,6 +198,10 @@ enum DropTests {
               && found[0].items[0].enchantIds == [0x639, 0x107] && found[0].items[1].enchantIds.isEmpty
               && found[1].items.isEmpty && found[0].mob == "The Forgotten King", "new drops with items")
         check(log.poll().isEmpty, "each drop once")
+        exec("INSERT INTO loot_drops VALUES (4, 11, 'Shatters', 1708, 'Next')")
+        check(log.poll().map(\.id) == [4], "a drop right after a poll is seen on the next one")
+        let lines = DropDelayLog.lines(found, nowMs: 260, pollMs: 1.25, tickGapMs: 100, popup: "Item")
+        check(lines == "9\t251\t1.2\t100\t\t1708\tThe Forgotten King\n10\t250\t1.2\t100\tItem\t1292\tEmpty\n", "delay log \(lines)")
         sqlite3_close(db)
         try? FileManager.default.removeItem(at: folder)
         print("Drop alert tests passed")

@@ -295,7 +295,7 @@ final class PartyAlerts: ObservableObject {
 }
 
 /// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
-/// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Checked every 0.1 s tick; the popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
     @Published private(set) var popup: DropAlert?
@@ -306,7 +306,7 @@ final class DropAlerts: ObservableObject {
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
     private(set) var enchantNames: [String] = []
-    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
+    private var shownAt = 0.0, lastTick = 0.0, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
 
@@ -341,15 +341,20 @@ final class DropAlerts: ObservableObject {
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
     func check() {
         if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
-        guard now - lastPoll >= 1 else { return }
-        lastPoll = now
+        let tick = now, tickGap = tick - lastTick; lastTick = tick
         #if !GUARD_UI_TEST
         // The log is polled with alerts off too, so turning them on never replays old drops.
         let drops = log.poll()
+        let pollMs = (now - tick) * 1000, before = shownAt
         if log.logs != logs { logs = log.logs }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
             show(alert)
+        }
+        if !drops.isEmpty {
+            DropDelayLog.append(DropDelayLog.lines(drops, nowMs: Int64(Date().timeIntervalSince1970 * 1000), pollMs: pollMs,
+                                                   tickGapMs: tickGap * 1000, popup: shownAt != before ? popup?.item ?? "" : ""),
+                                to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
         }
         #endif
     }
