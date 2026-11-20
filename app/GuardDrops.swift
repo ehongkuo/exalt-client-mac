@@ -276,8 +276,12 @@ struct DropAlert: Equatable {
     /// The title of the item rule that matched, if any.
     var rule = ""
 
+    /// The popup's headline: the rule's title, or the item's name when no titled rule matched.
+    var title: String { rule.isEmpty ? item : rule }
+
     var detail: String {
-        var parts = [bag?.name ?? "Bag"]
+        var parts = rule.isEmpty ? [] : [item]
+        parts.append(bag?.name ?? "Bag")
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -291,22 +295,56 @@ enum DropRules {
     static let shown = 10.0
 
     /// An item alerts when its bag is chosen and it is at least the chosen rarity, when it is shiny and
-    /// shiny alerts are on, or when an item rule matches it (in any bag). The popup names the best matching
-    /// item, a rule's item first.
-    static func alert(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
-                      nowMs: Int64) -> DropAlert? {
-        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return nil }
+    /// shiny alerts are on, or when an item rule matches it (in any bag). Every matching item gets its
+    /// own alert, in bag order, each with its own rarity.
+    static func alerts(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
+                       nowMs: Int64) -> [DropAlert] {
+        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return [] }
         let bag = DropBag(id: drop.bag)
         let bagChosen = bag.map(settings.bags.contains) ?? false
-        let matches = drop.items.compactMap { item -> (ruled: Bool, alert: DropAlert)? in
+        return drop.items.compactMap { item in
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
             let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
             guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return (rule != nil, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
-                                           rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? ""))
+            return DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+                             rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? "")
         }
-        func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
-        return matches.max { rank($0) < rank($1) }?.alert
+    }
+}
+
+/// The drop popups on screen, oldest on top, and those waiting for room. A popup's time starts when it
+/// shows, so a burst past the limit waits instead of being missed.
+struct DropStack: Equatable {
+    struct Entry: Equatable {
+        var id: Int
+        var alert: DropAlert
+        /// When it showed (seconds, any clock); nil while it waits for room.
+        var shownAt: Double?
+    }
+    /// How many popups show at once: five 64 pt cards fit under the Join popup on a laptop screen.
+    static let limit = 5
+    private(set) var entries: [Entry] = []
+    private var nextId = 0
+
+    /// The popups on screen, top to bottom.
+    var visible: [Entry] { entries.filter { $0.shownAt != nil } }
+
+    mutating func push(_ alerts: [DropAlert], now: Double) {
+        for alert in alerts { entries.append(Entry(id: nextId, alert: alert)); nextId += 1 }
+        fill(now: now)
+    }
+    /// Closes popups whose time is up and shows waiting ones in their place.
+    mutating func expire(now: Double, after shown: Double = DropRules.shown) {
+        entries.removeAll { $0.shownAt.map { now - $0 >= shown } ?? false }
+        fill(now: now)
+    }
+    /// A click closes one popup; an id already gone (a popup still fading out) does nothing.
+    mutating func dismiss(_ id: Int, now: Double) {
+        entries.removeAll { $0.id == id }
+        fill(now: now)
+    }
+    private mutating func fill(now: Double) {
+        for i in entries.indices.prefix(Self.limit) where entries[i].shownAt == nil { entries[i].shownAt = now }
     }
 }
 

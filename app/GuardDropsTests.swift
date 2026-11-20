@@ -23,17 +23,17 @@ enum DropTests {
         let st = LootItem(id: 100, name: "Bulwark", enchants: 1), shiny = LootItem(id: 200, name: "Doom Bow", enchants: 0)
         let potion = LootItem(id: 300, name: "Potion of Life", enchants: 0)
         var s = DropAlertSettings(); s.bags = [.red]
-        check(DropRules.alert(for: drop(1708, [st]), settings: s, shiny: [], nowMs: now)?.item == "Bulwark", "a chosen bag alerts")
-        check(DropRules.alert(for: drop(1292, [potion]), settings: s, shiny: [], nowMs: now) == nil, "an unchosen bag stays quiet")
-        check(DropRules.alert(for: drop(1708, [st], age: 200_000), settings: s, shiny: [], nowMs: now) == nil, "old drops stay quiet")
+        check(DropRules.alerts(for: drop(1708, [st]), settings: s, shiny: [], nowMs: now).first?.item == "Bulwark", "a chosen bag alerts")
+        check(DropRules.alerts(for: drop(1292, [potion]), settings: s, shiny: [], nowMs: now).isEmpty, "an unchosen bag stays quiet")
+        check(DropRules.alerts(for: drop(1708, [st], age: 200_000), settings: s, shiny: [], nowMs: now).isEmpty, "old drops stay quiet")
         s.minRarity = .rare
-        check(DropRules.alert(for: drop(1708, [st]), settings: s, shiny: [], nowMs: now) == nil, "below the chosen rarity")
-        let shown = DropRules.alert(for: drop(1291, [potion, shiny]), settings: s, shiny: [200], nowMs: now)
+        check(DropRules.alerts(for: drop(1708, [st]), settings: s, shiny: [], nowMs: now).isEmpty, "below the chosen rarity")
+        let shown = DropRules.alerts(for: drop(1291, [potion, shiny]), settings: s, shiny: [200], nowMs: now).first
         check(shown?.item == "Doom Bow" && shown?.shiny == true && shown?.bag == .blue, "a shiny alerts in any bag")
         s.shiny = false
-        check(DropRules.alert(for: drop(1291, [shiny]), settings: s, shiny: [200], nowMs: now) == nil, "shiny alerts can be off")
+        check(DropRules.alerts(for: drop(1291, [shiny]), settings: s, shiny: [200], nowMs: now).isEmpty, "shiny alerts can be off")
         s.enabled = false
-        check(DropRules.alert(for: drop(1708, [LootItem(id: 1, name: "x", enchants: 4)]), settings: s, shiny: [], nowMs: now) == nil, "off")
+        check(DropRules.alerts(for: drop(1708, [LootItem(id: 1, name: "x", enchants: 4)]), settings: s, shiny: [], nowMs: now).isEmpty, "off")
         // Item rules (issue #47): the three examples, each with near misses.
         let catalog = RuleCatalog(items: [1: .init(slot: 4, tier: 4), 2: .init(slot: 4, tier: 3), 3: .init(slot: 4, tier: nil),
                                           4: .init(slot: 9, tier: 4), 5: .init(slot: 1, tier: nil), 6: .init(slot: 1, tier: 12)],
@@ -42,7 +42,7 @@ enum DropTests {
         var r = DropAlertSettings(); r.bags = []; r.shiny = false
         r.rules = confirmed(ItemRule(slot: 4, minTier: 4), ItemRule(slot: 9, enchants: [" lucky streak "]), ItemRule(slot: 1, minRarity: .divine))
         func fires(_ item: LootItem, bag: Int = 1280, _ settings: DropAlertSettings? = nil) -> String? {
-            DropRules.alert(for: drop(bag, [item]), settings: settings ?? r, shiny: [], catalog: catalog, nowMs: now)?.item
+            DropRules.alerts(for: drop(bag, [item]), settings: settings ?? r, shiny: [], catalog: catalog, nowMs: now).first?.item
         }
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0)) == "T4 tome", "a T4 tome, in an unchosen bag")
         check(fires(LootItem(id: 2, name: "T3 tome", enchants: 0)) == nil, "a T3 tome")
@@ -60,11 +60,39 @@ enum DropTests {
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), blank) == nil, "a blank rule matches nothing")
         var byName = r; byName.rules = confirmed(ItemRule(names: ["tome"]))
         check(fires(LootItem(id: 3, name: "UT Tome", enchants: 0), byName) == "UT Tome", "part of a name, any case")
-        var mixed = r; mixed.bags = [.red]
-        check(DropRules.alert(for: drop(1708, [LootItem(id: 6, name: "Divine T12 sword", enchants: 4), LootItem(id: 2, name: "T3 tome", enchants: 4),
-                                               LootItem(id: 1, name: "T4 tome", enchants: 0)]),
-                              settings: { var x = mixed; x.rules = [r.rules[0]]; return x }(), shiny: [], catalog: catalog, nowMs: now)?.item
-              == "T4 tome", "the popup names the rule's item over a higher rarity")
+        // Issue #76: every matching item alerts, each with its own rarity and title.
+        var mixed = r; mixed.bags = [.red]; mixed.rules = [{ var x = r.rules[0]; x.title = "Tomes"; return x }()]
+        let three = DropRules.alerts(for: drop(1708, [LootItem(id: 6, name: "Divine T12 sword", enchants: 4), LootItem(id: 2, name: "T3 tome", enchants: 4),
+                                                      LootItem(id: 1, name: "T4 tome", enchants: 0), potion]),
+                                     settings: mixed, shiny: [], catalog: catalog, nowMs: now)
+        check(three.map(\.item) == ["Divine T12 sword", "T3 tome", "T4 tome", "Potion of Life"], "one alert per matching item, in bag order")
+        check(three.map(\.rarity) == [.divine, .divine, .common, .common], "each alert has its own rarity")
+        check(three.map(\.title) == ["Divine T12 sword", "T3 tome", "Tomes", "Potion of Life"], "the title is the rule's, else the item's")
+        check(three[2].detail == "T4 tome · Red bag · The Forgotten King" && three[0].detail == "Red bag · Divine · The Forgotten King",
+              "a rule's popup names the item in its detail")
+        var orange = DropAlertSettings(); orange.bags = [.orange]; orange.minRarity = .uncommon
+        let ring = DropRules.alerts(for: drop(1295, [LootItem(id: 7, name: "T7 sword", enchants: 3), LootItem(id: 8, name: "ST ring", enchants: 1)]),
+                                    settings: orange, shiny: [], nowMs: now)
+        check(ring.map(\.rarity) == [.legendary, .uncommon] && ring[1].item == "ST ring", "an Uncommon ring next to a Legendary stays Uncommon")
+        // The stack: oldest on top, each up for its own time, a burst past the limit waits its turn.
+        func alert(_ name: String) -> DropAlert { DropAlert(item: name, bag: .red, rarity: .common, shiny: false, mob: "", dungeon: "") }
+        var stack = DropStack()
+        stack.push([alert("a"), alert("b")], now: 0)
+        stack.push([alert("c")], now: 4)
+        check(stack.visible.map(\.alert.item) == ["a", "b", "c"] && stack.visible.map(\.shownAt) == [0, 0, 4], "new popups go below, oldest on top")
+        stack.expire(now: 9.9)
+        check(stack.visible.count == 3, "each stays up for the set time")
+        stack.expire(now: 10)
+        check(stack.visible.map(\.alert.item) == ["c"], "the oldest close at their time and the rest move up")
+        stack.dismiss(stack.visible[0].id, now: 11); stack.dismiss(999, now: 11)
+        check(stack.entries.isEmpty, "a click closes one; a gone id does nothing")
+        stack.push((1...7).map { alert("\($0)") }, now: 20)
+        check(stack.visible.map(\.alert.item) == ["1", "2", "3", "4", "5"] && stack.entries.count == 7, "past the limit, the rest wait")
+        stack.dismiss(stack.visible[2].id, now: 22)
+        check(stack.visible.map(\.alert.item) == ["1", "2", "4", "5", "6"] && stack.visible.last?.shownAt == 22,
+              "a closed middle popup lets the next waiting one show, its time starting then")
+        stack.expire(now: 30)
+        check(stack.visible.map(\.alert.item) == ["6", "7"] && stack.visible.map(\.shownAt) == [22, 30], "expired ones make room for the rest")
         var both = r; both.rules = confirmed(ItemRule(slot: 9, enchants: ["Lucky Streak", "Loot Bonus IV"]))
         check(fires(LootItem(id: 4, name: "Both", enchants: 2, enchantIds: [0x639, 0x2a0]), both) == "Both", "a ring with both enchantments")
         check(fires(LootItem(id: 4, name: "One", enchants: 1, enchantIds: [0x639]), both) == nil, "all enchantments: one is not enough")
@@ -86,10 +114,10 @@ enum DropTests {
         var draft = r; draft.rules = [ItemRule(slot: 4, minTier: 4)]
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), draft) == nil, "a draft rule never alerts")
         var titled = r; titled.rules = confirmed(ItemRule(title: " Tomes ", slot: 4, minTier: 4))
-        check(DropRules.alert(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: titled, shiny: [], catalog: catalog,
-                              nowMs: now)?.rule == "Tomes", "the alert names the rule")
-        check(DropRules.alert(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: r, shiny: [], catalog: catalog,
-                              nowMs: now)?.rule == "", "an untitled rule names no rule")
+        check(DropRules.alerts(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: titled, shiny: [], catalog: catalog,
+                              nowMs: now).first?.rule == "Tomes", "the alert names the rule")
+        check(DropRules.alerts(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: r, shiny: [], catalog: catalog,
+                              nowMs: now).first?.rule == "", "an untitled rule names no rule")
         let old = try! JSONDecoder().decode([ItemRule].self, from: Data(#"[{"id":"00000000-0000-0000-0000-000000000001","name":"","slot":9,"minRarity":0,"enchant":"Lucky"}]"#.utf8))
         check(old.count == 1 && old[0].confirmed && old[0].title == "" && old[0].slot == 9 && old[0].names == [] && old[0].enchants == ["Lucky"]
               && old[0].allEnchants && old[0].playerClass == nil, "rules saved before drafts and lists load confirmed, one name and enchantment as lists")

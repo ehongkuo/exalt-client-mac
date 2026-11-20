@@ -294,11 +294,11 @@ final class PartyAlerts: ObservableObject {
     }
 }
 
-/// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
-/// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Drop alerts: a sound and a stack of popups with no buttons, one per matching item, when RealmHound
+/// logs a chosen bag or a shiny. Checked once a second; each popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
-    @Published private(set) var popup: DropAlert?
+    @Published private(set) var stack = DropStack()
     @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
@@ -306,7 +306,7 @@ final class DropAlerts: ObservableObject {
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
     private(set) var enchantNames: [String] = []
-    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
+    private var lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
     private let log = LootLog(accounts: RealmHoundPaths.accounts)
     private let defaults = UserDefaults.standard
 
@@ -340,7 +340,9 @@ final class DropAlerts: ObservableObject {
     }
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
     func check() {
-        if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
+        // Only assign on a change: this runs ten times a second, and every assignment republishes.
+        var next = stack; next.expire(now: now)
+        if next != stack { stack = next }
         guard now - lastPoll >= 1 else { return }
         lastPoll = now
         #if !GUARD_UI_TEST
@@ -348,28 +350,30 @@ final class DropAlerts: ObservableObject {
         let drops = log.poll()
         if log.logs != logs { logs = log.logs }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
-            show(alert)
-        }
+        show(drops.flatMap { DropRules.alerts(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) })
         #endif
     }
-    func show(_ alert: DropAlert) {
-        popup = alert; shownAt = now
+    func show(_ alert: DropAlert) { show([alert]) }
+    /// One sound for the whole batch, however many popups it adds.
+    func show(_ alerts: [DropAlert]) {
+        guard !alerts.isEmpty else { return }
+        stack.push(alerts, now: now)
         #if !GUARD_UI_TEST
         if settings.sound { NSSound(named: "Hero")?.play() }
         #endif
     }
-    func dismiss() { popup = nil }
+    func dismiss(_ id: Int) { stack.dismiss(id, now: now) }
 }
 
-/// The drop popup: like the Join popup, but nothing to press; a click dismisses it.
+/// One drop popup: like the Join popup, but nothing to press; a click dismisses it. It holds its own
+/// alert, so it still shows while it fades out after leaving the stack.
 struct DropPopupView: View {
     @ObservedObject var drops: DropAlerts
+    var entry: DropStack.Entry
 
     var body: some View {
-        if let drop = drops.popup {
-            DropPopupContent(drop: drop, bagSprite: drop.bag.flatMap { drops.bagSprites[$0] }).onTapGesture { drops.dismiss() }
-        }
+        DropPopupContent(drop: entry.alert, bagSprite: entry.alert.bag.flatMap { drops.bagSprites[$0] })
+            .onTapGesture { drops.dismiss(entry.id) }
     }
 }
 
@@ -388,13 +392,10 @@ struct DropPopupContent: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(drop.shiny ? "\(drop.item) (Shiny)" : drop.item).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(drop.shiny ? "\(drop.title) (Shiny)" : drop.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                     if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
                 }
                 Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                if !drop.rule.isEmpty {
-                    Text(drop.rule).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor).lineLimit(1)
-                }
             }
             Spacer(minLength: 0)
         }
@@ -403,9 +404,7 @@ struct DropPopupContent: View {
         .background(panelBackground.opacity(0.97))
         .overlay {
             if drop.shiny {
-                RoundedRectangle(cornerRadius: 14).strokeBorder(
-                    AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink], center: .center),
-                    lineWidth: 2)
+                ShinyBorder(cornerRadius: 14)
             } else {
                 RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
             }
@@ -416,6 +415,32 @@ struct DropPopupContent: View {
 }
 
 private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color(red: 1, green: 0.85, blue: 0.3)
+
+/// A shiny popup's border: the shiny colours run around the whole edge, with a bright glint riding on
+/// top. Still under Reduce Motion.
+struct ShinyBorder: View {
+    var cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if reduceMotion { ring(0) } else {
+            TimelineView(.animation) { context in
+                ring(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360)
+            }
+        }
+    }
+    private func ring(_ degrees: Double) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        return ZStack {
+            shape.strokeBorder(AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink],
+                                               center: .center, angle: .degrees(degrees)), lineWidth: 2)
+            shape.strokeBorder(AngularGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.04),
+                                                       .init(color: .clear, location: 0.12), .init(color: .clear, location: 1)],
+                                               center: .center, angle: .degrees(degrees * 2)), lineWidth: 3)
+                .blur(radius: 1.5)
+        }
+    }
+}
 
 /// The game's rarity mark: one gem per enchantment slot, in the rarity's colour (green, blue,
 /// purple, gold), clustered as on an item's slot.
@@ -1177,7 +1202,8 @@ struct GuardPanel {
                     Toggle("Play a sound", isOn: $drops.settings.sound).toggleStyle(.checkbox)
                     Spacer()
                     Button("Test alert") {
-                        drops.show(DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""))
+                        drops.show([DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""),
+                                    DropAlert(item: "Test shiny", bag: .orange, rarity: .uncommon, shiny: true, mob: "Test", dungeon: "", rule: "Test rule")])
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -1348,7 +1374,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var ratesWatch: AnyCancellable?
     private var guardFrame: NSRect?, statsFrame: NSRect?
     var joinPopups: [NSPanel] = []
-    var dropPopup: NSPanel!
+    /// One panel per drop popup on screen, by stack entry id.
+    var dropPopups: [Int: NSPanel] = [:]
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
@@ -1511,20 +1538,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 panel.orderFrontRegardless()
             }
         }
-        // Drop popup: on the game's monitor, just below that monitor's Join popup while one is up.
-        dropPopup = popupPanel(height: 64, DropPopupView(drops: drops))
-        dropWatch = drops.$popup.receive(on: DispatchQueue.main).sink { [weak self] drop in
-            guard let self, let panel = self.dropPopup else { return }
-            if drop == nil { panel.orderOut(nil); return }
-            if let screen = self.gameScreen() ?? NSScreen.main {
-                var top = self.popupTop(screen)
-                if let join = self.joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
-                    top = join.frame.minY - 8
-                }
-                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top))
-            }
-            panel.orderFrontRegardless()
-        }
+        // Drop popups: a stack on the game's monitor, just below that monitor's Join popup while one is up.
+        dropWatch = drops.$stack.map(\.visible).removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.layoutDrops($0) }
         #if GUARD_UI_TEST
         // Test hook: drive compact and full screen automatically and report what is visible.
         let env = ProcessInfo.processInfo.environment
@@ -1557,6 +1572,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     private var mode = WindowMode()
+    /// Slides the drop popups into their places: new ones drop in and fade up, closed ones fade and lift away,
+    /// and the rest slide up into the gap.
+    private func layoutDrops(_ visible: [DropStack.Entry]) {
+        let ids = Set(visible.map(\.id))
+        for (id, panel) in dropPopups where !ids.contains(id) {
+            dropPopups[id] = nil
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.35; ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+                panel.animator().setFrame(panel.frame.offsetBy(dx: 0, dy: 10), display: true)
+            }, completionHandler: { panel.orderOut(nil) })
+        }
+        guard !visible.isEmpty, let screen = gameScreen() ?? NSScreen.main else { return }
+        var top = popupTop(screen)
+        if let join = joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+            top = join.frame.minY - 8
+        }
+        for entry in visible {
+            let frame = NSRect(x: screen.frame.midX - 190, y: top - 64, width: 380, height: 64)
+            top -= 64 + 8
+            if let panel = dropPopups[entry.id] {
+                guard panel.frame != frame else { continue }
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3; ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                    panel.animator().setFrame(frame, display: true)
+                }
+            } else {
+                let panel = popupPanel(height: 64, DropPopupView(drops: drops, entry: entry))
+                dropPopups[entry.id] = panel
+                panel.setFrame(frame.offsetBy(dx: 0, dy: 12), display: false)
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3; ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                    panel.animator().alphaValue = 1
+                    panel.animator().setFrame(frame, display: true)
+                }
+            }
+        }
+    }
     /// A popup card above everything, including full-screen video, that never takes focus.
     private func popupPanel<V: View>(height: CGFloat, _ view: V) -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: height),
