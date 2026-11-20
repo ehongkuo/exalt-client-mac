@@ -75,7 +75,7 @@ for i in {1..300}; do [[ -s "$cross" ]] && break; sleep 0.01; done
 "$tests/live-cross-arm64" read "$cross"; wait; rm -f "$cross"
 xcrun swiftc -module-cache-path "$cache" -warnings-as-errors -import-objc-header "$src/app/GuardBridge.h" \
     "$src/app/GuardModel.swift" "$src/app/GuardLaunch.swift" "$src/app/GuardExport.swift" "$src/app/GuardDrops.swift" "$src/app/GuardDropRates.swift" "$src/app/GuardLootProfile.swift" "$src/app/GuardLootProfileTests.swift" "$src/app/GuardDropsTests.swift" "$src/app/GuardDropRatesTests.swift" "$src/app/GuardModelTests.swift" \
-    "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" \
+    "$src/app/GuardSettingsTests.swift" "$src/app/GuardLaunchTests.swift" "$src/app/GuardTraffic.swift" "$src/app/GuardTrafficTests.swift" \
     -o "$tests/model-tests"
 "$tests/model-tests"
 python3 "$src/tests/parallel.py" "$src/tests/test_guard.py"

@@ -238,5 +238,6 @@ private func sample() -> LiveData {
         DropTests.run()
         DropRateTests.run()
         LootProfileTests.run()
+        TrafficTests.run()
     }
 }
