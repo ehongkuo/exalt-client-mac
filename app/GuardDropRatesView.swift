@@ -3,13 +3,14 @@ import SwiftUI
 
 /// The Drop rates tab's views; `DropRatesModel` (in GuardDropRates.swift) holds what is picked.
 
-/// Guard | Drop rates, at the top of the main window in both tabs. An orange dot: capture is off.
+/// Guard | Drop rates | Drop alerts, at the top of the main window in every tab. An orange dot: capture is off.
 struct MainTabs: View {
     @ObservedObject var rates: DropRatesModel
     var body: some View {
         HStack(spacing: 2) {
-            tab("Guard", selected: !rates.shown) { rates.shown = false }
-            tab("Drop rates", selected: rates.shown, warning: rates.health.refused != nil) { rates.shown = true }
+            tab("Guard", selected: rates.tab == .guardTab) { rates.tab = .guardTab }
+            tab("Drop rates", selected: rates.tab == .rates, warning: rates.health.refused != nil) { rates.tab = .rates }
+            tab("Drop alerts", selected: rates.tab == .alerts) { rates.tab = .alerts }
         }
         .padding(2)
         .background(Color.black.opacity(0.25))
@@ -47,7 +48,11 @@ struct DropRatesView: View {
                 Divider()
             }
             HSplitView {
-                dungeonList.frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
+                leftPanel.frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
+                if model.browse == .items {
+                    ScrollView { itemGrid.padding(16) }.frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    ScrollView { itemPage.padding(16) }.frame(minWidth: 300, idealWidth: 380, maxWidth: 760)
+                } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         if model.health.kills == 0 { welcome }
@@ -57,6 +62,7 @@ struct DropRatesView: View {
                 }
                 .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 ScrollView { rightPane.padding(16) }.frame(minWidth: 300, idealWidth: 380, maxWidth: 760)
+                }
             }
         }
         .frame(minWidth: 980, minHeight: 560)
@@ -116,7 +122,107 @@ struct DropRatesView: View {
         .background(Color.accentColor.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: Dungeons and search
+    // MARK: Items, dungeons and search
+
+    /// One search box over Items | Dungeons (issue #68).
+    private var leftPanel: some View {
+        VStack(spacing: 0) {
+            TextField("Search items, dungeons or mobs", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
+            Picker("", selection: $model.browse) {
+                Text("Items").tag(DropRatesModel.Browse.items)
+                Text("Dungeons").tag(DropRatesModel.Browse.dungeons)
+            }
+            .pickerStyle(.segmented).labelsHidden().padding(8)
+            if model.browse == .items { itemTypes } else { dungeonList }
+        }
+    }
+
+    /// The item types as silhouettes, laid out like RealmEye's equipment table (issue #68): weapons, abilities, armor and
+    /// rings, then every other kind of item. Clicking one fills the middle pane with its items.
+    private var itemTypes: some View {
+        let equipment = report.itemCategories.prefix { ["Weapons", "Abilities", "Armor", "Rings"].contains($0.title) }
+        let rest = report.itemCategories.dropFirst(equipment.count)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if report.itemCategories.isEmpty { Text("No items yet: the catalog loads with the game data.").foregroundStyle(.secondary) }
+                ForEach(Array(equipment), id: \.title) { c in typeGroup(c.title, c.types.map { (c.title, $0) }) }
+                if !rest.isEmpty { typeGroup("Other items", rest.flatMap { c in c.types.map { (c.title, $0) } }) }
+            }
+            .padding(10)
+        }
+    }
+    private func typeGroup(_ title: String, _ types: [(String, DropReport.ItemSection)]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 4) {
+                ForEach(types, id: \.1.title) { category, type in
+                    let key = category + "/" + type.title, selected = model.itemType == key && model.search.isEmpty
+                    // The lowest tier stands for the type, the way the game draws an empty slot.
+                    let shown = type.items.filter { report.tiers[$0] != nil }.min { report.tiers[$0]! < report.tiers[$1]! } ?? type.items[0]
+                    Button { model.search = ""; model.itemType = key } label: {
+                        Silhouette(image: model.sprites[shown], size: 28, selected: selected).padding(6).background(tileBackground(selected))
+                    }
+                    .buttonStyle(.plain)
+                    .help(type.title == category ? category : "\(type.title) · \(category)")
+                    .accessibilityLabel(type.title)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    /// The middle pane of the Items view: the picked type's items, or the search's matches, as sprite tiles in rows.
+    @ViewBuilder private var itemGrid: some View {
+        if !model.search.trimmingCharacters(in: .whitespaces).isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                if model.shownItems.isEmpty { Text("No item matches “\(model.search)”.").foregroundStyle(.secondary) }
+                ForEach(model.shownItems, id: \.title) { section in tileRow(section.title.uppercased(), section.items) }
+            }
+        } else if let key = model.itemType, let slash = key.firstIndex(of: "/"),
+                  let type = report.itemCategories.first(where: { $0.title == key[..<slash] })?.types.first(where: { $0.title == key[key.index(after: slash)...] }) {
+            let untiered = type.items.filter { report.tiers[$0] == nil && report.kind($0) != "ST" }
+            let set = type.items.filter { report.kind($0) == "ST" }, tiered = type.items.filter { report.tiers[$0] != nil }
+            VStack(alignment: .leading, spacing: 16) {
+                Text(type.title).font(.title3.weight(.semibold))
+                if !untiered.isEmpty { tileRow(tiered.isEmpty && set.isEmpty ? "ITEMS" : "UNTIERED", untiered) }
+                if !set.isEmpty { tileRow("SET TIER", set) }
+                if !tiered.isEmpty { tileRow("TIERED", tiered) }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                if model.health.kills == 0 { welcome }
+                Text("Pick a type on the left for its items, or search for one by name.").foregroundStyle(.secondary)
+            }
+        }
+    }
+    private func tileRow(_ title: String, _ items: [Int]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 6) {
+                ForEach(items, id: \.self) { item in
+                    Button { model.mob = nil; model.group = nil; model.item = model.item == item ? nil : item } label: {
+                        SpriteIcon(image: model.sprites[item], size: 32).padding(4).background(tileBackground(model.item == item))
+                            .overlay(alignment: .bottomTrailing) {
+                                if let tier = report.tiers[item] {
+                                    Text("T\(tier)").font(.system(size: 9, weight: .bold)).padding(.horizontal, 2)
+                                        .background(Color.black.opacity(0.75)).clipShape(RoundedRectangle(cornerRadius: 3)).offset(x: 2, y: 2)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(report.name(item) + (report.kind(item).map { " · \($0)" } ?? ""))
+                    .accessibilityLabel(report.name(item))
+                }
+            }
+        }
+    }
+
+    /// The Items view's page: the picked item, or the loot profile.
+    @ViewBuilder private var itemPage: some View {
+        if model.lootDetails { LootProfileView(model: model) }
+        else if let item = model.item { itemPane(report.base(item)) }
+        else { Text("Click an item for where it drops and its rate from each mob.").font(.caption).foregroundStyle(.secondary) }
+    }
 
     private var dungeonList: some View {
         let q = model.search.trimmingCharacters(in: .whitespaces)
@@ -127,7 +233,6 @@ struct DropRatesView: View {
             .filter { report.name($0).localizedCaseInsensitiveContains(q) }.sorted { report.name($0) < report.name($1) }.prefix(30))
         let mobs = report.mobs(matching: q).prefix(30)   // the mob index is built once per report (issue #69)
         return VStack(spacing: 0) {
-            TextField("Search items, dungeons or mobs", text: $model.search).textFieldStyle(.roundedBorder).padding(8)
             List {
                 if !q.isEmpty && items.isEmpty && rows.isEmpty && mobs.isEmpty {
                     Text("Nothing matches “\(q)”.").foregroundStyle(.secondary)
@@ -414,6 +519,8 @@ struct DropRatesView: View {
                         if let tier = report.group(item)?.tier { pill("T\(tier)", EmptyView()) }
                     }
                 }
+                Spacer()
+                alertMe(item)
             }
             if sources.isEmpty {
                 Text(possible.isEmpty ? "Not dropped yet." : "Not dropped yet. The game data or RealmEye lists it in:").foregroundStyle(.secondary)
@@ -431,6 +538,18 @@ struct DropRatesView: View {
             if total > 0 {
                 section("RARITY · every copy") { RarityBars(counts: report.rarityCounts(types), total: total).padding(12) }
             }
+        }
+    }
+    /// Adds a confirmed item rule for this item and turns alerts on (issue #68). The guard names items from the item
+    /// catalog, which leaves out items with no type, so a rule could never match those.
+    @ViewBuilder private func alertMe(_ item: Int) -> some View {
+        let name = report.name(item)
+        if drops.settings.enabled && drops.settings.alerts(on: name) {
+            Label("Alerting", systemImage: "bell.fill").foregroundStyle(.green).help("A rule alerts when \(name) drops; edit it in Drop alerts")
+        } else {
+            Button { drops.settings.alert(on: name) } label: { Label("Alert me", systemImage: "bell") }
+                .disabled(!(drops.catalog.itemNames[item] != nil))
+                .help((drops.catalog.itemNames[item] != nil) ? "Add a rule that alerts when \(name) drops, in any bag" : "Alerts can't name this item yet")
         }
     }
     private func pill<Icon: View>(_ text: String, _ icon: Icon) -> some View {
@@ -835,6 +954,21 @@ struct RarityBars: View {
             }
             let none = total - counts.reduce(0, +)
             if none > 0 { Text("\(none.formatted()) with no rarity: potions and items without enchantments").font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+/// A sprite as a flat silhouette, like the game's empty equipment slots (issue #68).
+struct Silhouette: View {
+    var image: CGImage?
+    var size: CGFloat
+    var selected = false
+    var body: some View {
+        if let image {
+            Image(decorative: image, scale: 1).renderingMode(.template).interpolation(.none).resizable().aspectRatio(contentMode: .fit)
+                .foregroundStyle(selected ? Color.accentColor : Color(white: 0.62)).frame(width: size, height: size)
+        } else {
+            SpriteIcon(image: nil, size: size)
         }
     }
 }
