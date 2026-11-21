@@ -294,24 +294,25 @@ final class PartyAlerts: ObservableObject {
     }
 }
 
-/// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
-/// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Drop alerts: a sound and a popup with no buttons when the guard sees a chosen bag or a shiny land (issue #75).
+/// The guard wakes the app on each bag; the 0.1 s tick catches any wake-up missed. The popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
     @Published private(set) var popup: DropAlert?
-    @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
-    /// Dungeons with a portal, by name, and each portal's sprite (issue #74), loaded with the drop-rate catalog.
-    @Published var portalDungeons: [String] = []
+    /// Dungeons with a portal and the names portal alerts show (issue #74), loaded with the drop-rate catalog, and each
+    /// dungeon's portal sprite.
+    @Published var portalNames = PortalNames()
     @Published var portalSprites: [String: CGImage] = [:]
-    private var announcedPortals: Set<Int64> = []
+    private var portalsSeen: GuardBags.Seen?
     /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
     private(set) var enchantNames: [String] = []
-    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
-    private let log = LootLog(accounts: RealmHoundPaths.accounts)
+    /// Loaded once: the first load took 0.15 s, which held up the popup (issue #75).
+    private let sound = NSSound(named: "Hero")
+    private var shownAt = 0.0, lastTick = 0.0, tickGap = 0.0, bagsSeen: GuardBags.Seen?, loadingShinies = false, loadingBags = false
     private let defaults = UserDefaults.standard
 
     init() {
@@ -343,29 +344,46 @@ final class DropAlerts: ObservableObject {
         #endif
     }
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
-    func check() {
+    func check(_ source: LiveSource) {
         if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
-        guard now - lastPoll >= 1 else { return }
-        lastPoll = now
+        tickGap = now - lastTick; lastTick = now
+        bagsLanded(source, wakeNs: nil)
+    }
+    /// Reads the bags the guard handed over since the last look. `wakeNs`: when its wake-up arrived, nil from the timer.
+    func bagsLanded(_ source: LiveSource, wakeNs: UInt64?) {
         #if !GUARD_UI_TEST
-        // The log is polled with alerts off too, so turning them on never replays old drops.
-        let drops = log.poll()
-        if log.logs != logs { logs = log.logs }
+        let mainNs = Clock.monotonicNs()
+        portalsLanded(source)
+        // Read with alerts off too, so turning them on never replays old bags.
+        guard let pid = source.snapshot?.pid, let data = source.feed.bags() else { return }
+        let bags = GuardBags.new(data, pid: pid, seen: &bagsSeen)
+        // In the Nexus a bag is one a player dropped, not loot.
+        guard !bags.isEmpty, source.snapshot?.inNexus != true else { return }
+        let drops = bags.map { GuardBags.drop($0, catalog: catalog, dungeon: source.snapshot?.map ?? "") }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
-            show(alert)
+        let alerts = drops.map { DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }
+        if let alert = alerts.compactMap({ $0 }).last { show(alert) }
+        let shownNs = Clock.monotonicNs(), gap = tickGap
+        // Queued behind the popup panel's order-front, so this stamp is when the panel was up.
+        DispatchQueue.main.async {
+            DropDelayLog.append(DropDelayLog.lines(bags, wakeNs: wakeNs, mainNs: mainNs, shownNs: shownNs, panelNs: Clock.monotonicNs(),
+                                                   tickGapMs: gap * 1000, popups: alerts.map { $0?.item ?? "" }),
+                                to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
         }
         #endif
     }
-    /// Portals the latest loot import linked to a kill (issue #74); each alerts at most once.
-    func portalsDropped(_ found: [PortalDrop]) {
+    /// Reads the portals the guard linked to a kill since the last look (issue #74), with alerts off too.
+    private func portalsLanded(_ source: LiveSource) {
+        guard let pid = source.snapshot?.pid, let data = source.feed.portals() else { return }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = DropRules.alert(for: found, seen: &announcedPortals, settings: settings, nowMs: nowMs) { show(alert) }
+        let portals = GuardPortals.new(data, pid: pid, seen: &portalsSeen)
+        if let alert = portals.compactMap({ DropRules.alert(for: $0, names: portalNames, settings: settings, nowMs: nowMs) }).last { show(alert) }
     }
     func show(_ alert: DropAlert) {
         popup = alert; shownAt = now
         #if !GUARD_UI_TEST
-        if settings.sound { NSSound(named: "Hero")?.play() }
+        // On a later run-loop pass, once the panel is drawn: starting the sound takes 20–130 ms (issue #75).
+        if settings.sound { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { self.sound?.stop(); self.sound?.play() } }
         #endif
     }
     func dismiss() { popup = nil }
@@ -1105,6 +1123,14 @@ struct GuardPanel {
     }
 
     /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    /// A rule's terms, found by id: a term list saves typed text as it disappears, which happens after its rule was
+    /// removed, when an index binding would point past the end and crash (issue #75).
+    private func terms(_ id: UUID, _ path: WritableKeyPath<ItemRule, [String]>) -> Binding<[String]> {
+        Binding(get: { drops.settings.rules.first { $0.id == id }?[keyPath: path] ?? [] },
+                set: { value in
+                    if let i = drops.settings.rules.firstIndex(where: { $0.id == id }) { drops.settings.rules[i][keyPath: path] = value }
+                })
+    }
     @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
         let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
             .buttonStyle(.borderless).help("Remove rule")
@@ -1154,8 +1180,8 @@ struct GuardPanel {
                     .fixedSize()
                     Spacer(minLength: 0)
                 }
-                TermList(label: "Name", hint: "any of these", terms: rule.names, options: drops.catalog.names)
-                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: rule.enchants,
+                TermList(label: "Name", hint: "any of these", terms: terms(rule.wrappedValue.id, \.names), options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: terms(rule.wrappedValue.id, \.enchants),
                          options: drops.enchantNames)
                 if rule.wrappedValue.enchants.count > 1 {
                     Picker("Needs", selection: rule.allEnchants) {
@@ -1216,9 +1242,9 @@ struct GuardPanel {
                 Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
             }
             .disabled(!drops.settings.enabled)
-            Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
-                 : "Reading RealmHound's loot log" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
-                .foregroundStyle(drops.logs == 0 ? bad : Color.secondary)
+            Text(!source.link.isLive ? "Drops come from the guard: they alert only when you start the game from this app."
+                 : "Watching bags as they drop" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
+                .foregroundStyle(!source.link.isLive ? bad : Color.secondary)
             Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -1241,14 +1267,11 @@ struct GuardPanel {
                 }
             }
             Menu("Add dungeon") {
-                ForEach(drops.portalDungeons.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
+                ForEach(drops.portalNames.list.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
                     Button(name) { drops.settings.portals.insert(name) }
                 }
             }
-            .controlSize(.small).fixedSize().disabled(drops.portalDungeons.isEmpty)
-            if !drops.settings.portals.isEmpty && !source.link.isLive {
-                Text("Portals come from the guard's capture: they alert only when you start the game from this app.").foregroundStyle(bad)
-            }
+            .controlSize(.small).fixedSize().disabled(drops.portalNames.list.isEmpty)
         }
     }
 
@@ -1390,6 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var bagToken: Int32 = 0
     private var lootTimer: Timer?
     private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
@@ -1405,34 +1429,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        let noCatalog = drops.catalog.items.isEmpty, noDungeons = drops.portalDungeons.isEmpty
-        // This app's own loot files: another app sharing the database announces its own game's portals.
-        let files = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).filter { $0.hasPrefix("loot-") }
+        let noCatalog = drops.catalog.items.isEmpty, noDungeons = drops.portalNames.list.isEmpty
         // The game data changes only with a new game build, so its files are checked every 30 s, not every import.
         let checkCatalog = noCatalog || Date().timeIntervalSince1970 - catalogChecked >= 30
         if checkCatalog { catalogChecked = Date().timeIntervalSince1970 }
         lootQueue.async {
-            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?, portals: [PortalDrop] = []
-            var dungeons: (names: [String], textures: [String: GameTexture])?
+            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?, portalNames: PortalNames?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
                 // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
                 if checkCatalog, GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {   // and the bundled drop catalog
                     catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
                 }
                 if catalog != nil || noDungeons {
-                    let list = PortalDrop.dungeons(store)
-                    if !list.names.isEmpty { dungeons = list }
+                    let names = PortalNames.load(store)
+                    if !names.list.isEmpty { portalNames = names }
                 }
                 LootImport.run(logs: logs, store: store, appVersion: version)
-                portals = PortalDrop.linked(store, files: files, since: Date().timeIntervalSince1970 - Double(DropRules.freshness) / 1000)
                 health = CaptureHealth.load(store)
                 now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }
             let loot = self.catalog()
-            let portalSprites = dungeons.map { GameSprites.load(assets: RealmHoundPaths.assets, $0.textures) }
+            let portalSprites = portalNames.map { GameSprites.load(assets: RealmHoundPaths.assets, $0.textures) }
             DispatchQueue.main.async {
-                if let dungeons, let portalSprites { self.drops.portalDungeons = dungeons.names; self.drops.portalSprites = portalSprites }
-                self.drops.portalsDropped(portals)
+                if let portalNames, let portalSprites { self.drops.portalNames = portalNames; self.drops.portalSprites = portalSprites }
                 self.rates.catalog = loot
                 self.rates.update(now: now)
                 if let health { self.rates.update(health: health); self.healthLoaded = true }
@@ -1488,16 +1507,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
         // activity, App Nap slows timers while the game is in front.
-        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
+        // Latency critical too: drop popups must not wait for coalesced timers while the game is in front (issue #75).
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                         reason: "Watching party chat and drops")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.source.refresh(detailed: self.state.diagnosticsOpen)
             #if !GUARD_SYNC_CAPTURE
             self.alerts.check(self.source)
-            self.drops.check()
+            self.drops.check(self.source)
             #endif
         }
         RunLoop.main.add(alertTimer!, forMode: .common)
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        // The guard posts this as each bag appears; stamped off the main thread so the log shows a busy main thread.
+        notify_register_dispatch(LIVE_BAG_NOTIFICATION, &bagToken, DispatchQueue.global(qos: .userInteractive)) { [weak self] _ in
+            let wake = Clock.monotonicNs()
+            DispatchQueue.main.async { guard let self else { return }; self.drops.bagsLanded(self.source, wakeNs: wake) }
+        }
+        #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self

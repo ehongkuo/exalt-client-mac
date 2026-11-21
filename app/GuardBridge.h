@@ -1,6 +1,7 @@
 /* Bridging header for Exalt Client Mac: the shared live-state layout, its reader and the
  * settings channel. */
 #include "../guard/live_state.h"
+#include <notify.h>
 #include <signal.h>
 
 /* `map` is a mapping of the live file; LiveState itself stays opaque to Swift. */
@@ -15,6 +16,12 @@ static inline int guard_control_peek(void *map, LiveControlData *out) {
 }
 static inline void guard_join_send(void *map, const LiveJoinData *data) {
     join_write(live_join(map), data);
+}
+static inline int guard_bags_copy(const void *map, LiveBagsData *out) {
+    return bags_read(live_bags((void *)map), out);
+}
+static inline int guard_portals_copy(const void *map, LivePortalsData *out) {
+    return portals_read(live_portals((void *)map), out);
 }
 static inline int guard_process_alive(int32_t pid) {
     return pid > 0 && kill(pid, 0) == 0;
