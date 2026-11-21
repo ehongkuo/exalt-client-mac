@@ -364,7 +364,10 @@ enum DropRateTests {
         // mob's tier groups and named drops.
         let catalogFile = folder.appendingPathComponent("drop_catalog.json")
         try! """
-            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]}],
+            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]},
+                          {"name": "Realm of the Mad God", "mobs": ["0x0901", "0x0902", "0x090a"],
+                           "biomes": [{"name": "Beach", "mobs": ["0x0901", "0x090a"], "events": []},
+                                      {"name": "Godlands", "mobs": ["0x0902", "0x090a"], "events": ["0x0902"]}]}],
              "mobs": [{"name": "Den Rat", "types": ["0x0003"], "tiers": {"weapon": [12], "armor": [12, 13], "wand": [1]},
                        "drops": ["0x02bc"]}]}
             """.write(to: catalogFile, atomically: false, encoding: .utf8)
@@ -381,6 +384,19 @@ enum DropRateTests {
               "a cataloged mob shows with no kills")
         let den = cataloged.dungeons.first { $0.name == "New Den" }
         check(den.map(cataloged.possibleDrops) == [700, 800, 801, 803, 2560], "a dungeon never run is listed with its mobs' drops")
+        // Mob search and the Realm's biomes (issue #69), both built once per report.
+        let realmMob = { DropReport.Mob(type: $0, dungeon: DropReport.realm) }
+        check(cataloged.biomes == [
+            DropReport.Biome(name: "Beach", events: [], quests: [realmMob(0x090a)], regular: [realmMob(0x0901)]),
+            DropReport.Biome(name: "Godlands", events: [realmMob(0x0902)], quests: [realmMob(0x090a)], regular: []),
+        ], "the Realm by biome in the catalog's order: event bosses by RealmEye, quest mobs by the QUEST label, a mob in each of its biomes")
+        check(cataloged.mobs(matching: " MALPHAS ") == [realmMob(0x090a), realmMob(0x0901)] && cataloged.mobs(matching: "brute") == [realmMob(0x0902)]
+              && cataloged.mobs(matching: "  ").isEmpty && cataloged.mobs(matching: "nobody").isEmpty,
+              "the search finds mobs by any part of their name, case and spaces aside, with their dungeon, by name")
+        let found = DropRatesModel()
+        found.dungeon = "The Void"; found.item = 800; found.show(mob: realmMob(0x0901)); found.show(mob: realmMob(0x0901))
+        check(found.dungeon == DropReport.realm && found.mob == realmMob(0x0901) && found.item == nil,
+              "a found mob opens its dungeon and its page, and stays open when picked again")
         // Sprites up front: the first report holds every catalog mob and drop with a sprite, so the tab cuts them in one batch.
         var drawn: Set<Int> = []
         rates.run("""
@@ -395,6 +411,10 @@ enum DropRateTests {
               "a kill in a map the catalog lacks")
         let guild = DropReport.load(rates).uncataloged
         check(guild.dungeons == ["Guild Hall"] && guild.mobs == cataloged.uncataloged.mobs, "a map with kills the catalog lacks; a cataloged mob isn't listed")
+        check(rates.exec("INSERT INTO maps(id, session, generation, name) VALUES (91, 1, 91, 'Realm of the Mad God'); INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by) VALUES (91, 60, 2308, 10, 0, 0, 'hit')"),
+              "a Realm kill of a mob on no biome page")
+        check(DropReport.load(rates).biomes.last == DropReport.Biome(name: "Other", events: [], quests: [], regular: [realmMob(0x0904)]),
+              "a Realm mob on no biome page is listed last, under Other")
         try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
         check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
               DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")
