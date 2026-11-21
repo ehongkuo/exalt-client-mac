@@ -305,7 +305,9 @@ final class DropAlerts: ObservableObject {
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
     private(set) var enchantNames: [String] = []
-    private var shownAt = 0.0, bagsSeen: GuardBags.Seen?, loadingShinies = false, loadingBags = false
+    /// Loaded once: the first load took 0.15 s, which held up the popup (issue #75).
+    private let sound = NSSound(named: "Hero")
+    private var shownAt = 0.0, lastTick = 0.0, tickGap = 0.0, bagsSeen: GuardBags.Seen?, loadingShinies = false, loadingBags = false
     private let defaults = UserDefaults.standard
 
     init() {
@@ -339,6 +341,7 @@ final class DropAlerts: ObservableObject {
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
     func check(_ source: LiveSource) {
         if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
+        tickGap = now - lastTick; lastTick = now
         bagsLanded(source, wakeNs: nil)
     }
     /// Reads the bags the guard handed over since the last look. `wakeNs`: when its wake-up arrived, nil from the timer.
@@ -348,21 +351,26 @@ final class DropAlerts: ObservableObject {
         // Read with alerts off too, so turning them on never replays old bags.
         guard let pid = source.snapshot?.pid, let data = source.feed.bags() else { return }
         let bags = GuardBags.new(data, pid: pid, seen: &bagsSeen)
-        guard !bags.isEmpty else { return }
+        // In the Nexus a bag is one a player dropped, not loot.
+        guard !bags.isEmpty, source.snapshot?.inNexus != true else { return }
         let drops = bags.map { GuardBags.drop($0, catalog: catalog, dungeon: source.snapshot?.map ?? "") }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         let alerts = drops.map { DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }
         if let alert = alerts.compactMap({ $0 }).last { show(alert) }
-        DropDelayLog.append(DropDelayLog.lines(bags, wakeNs: wakeNs, mainNs: mainNs, shownNs: Clock.monotonicNs(),
-                                               popups: alerts.map { $0?.item ?? "" }),
-                            to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
+        let shownNs = Clock.monotonicNs(), gap = tickGap
+        // Queued behind the popup panel's order-front, so this stamp is when the panel was up.
+        DispatchQueue.main.async {
+            DropDelayLog.append(DropDelayLog.lines(bags, wakeNs: wakeNs, mainNs: mainNs, shownNs: shownNs, panelNs: Clock.monotonicNs(),
+                                                   tickGapMs: gap * 1000, popups: alerts.map { $0?.item ?? "" }),
+                                to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
+        }
         #endif
     }
     func show(_ alert: DropAlert) {
         popup = alert; shownAt = now
         #if !GUARD_UI_TEST
-        // After the panel, which goes up on the next main-queue turn: loading the sound takes up to 0.15 s (issue #75).
-        if settings.sound { DispatchQueue.main.async { NSSound(named: "Hero")?.play() } }
+        // On a later run-loop pass, once the panel is drawn: starting the sound takes 20–130 ms (issue #75).
+        if settings.sound { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { self.sound?.stop(); self.sound?.play() } }
         #endif
     }
     func dismiss() { popup = nil }

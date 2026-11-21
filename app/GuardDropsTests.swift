@@ -199,9 +199,11 @@ enum DropTests {
         check(drop.items.map(\.name) == ["Item 100", "Second"] && drop.items[1].enchantIds == [0x639] && drop.items[1].enchants == 1
               && drop.items[0].enchants == 0 && drop.bag == 1708 && drop.dungeon == "Shatters" && drop.epochMs == 2000 && drop.mob.isEmpty,
               "a bag as the rules see it")
-        let lines = DropDelayLog.lines(fresh, wakeNs: 3_500_000, mainNs: 4_000_000, shownNs: 4_300_000, popups: ["Second", ""])
-        check(lines == "2000\t1.5\t2.0\t2.3\tSecond\t1708\n3000\t0.5\t1.0\t1.3\t\t1708\n", "delay log \(lines)")
-        check(DropDelayLog.lines(fresh, wakeNs: nil, mainNs: 4_000_000, shownNs: 4_000_000, popups: []).hasPrefix("2000\t\t2.0\t2.0\t\t"),
+        let lines = DropDelayLog.lines(fresh, wakeNs: 3_500_000, mainNs: 4_000_000, shownNs: 4_300_000, panelNs: 5_000_000, tickGapMs: 100,
+                                       popups: ["Second", ""])
+        check(lines == "2000\t1.5\t2.0\t2.3\t3.0\t100\tSecond\t1708\n3000\t0.5\t1.0\t1.3\t2.0\t100\t\t1708\n", "delay log \(lines)")
+        check(DropDelayLog.lines(fresh, wakeNs: nil, mainNs: 4_000_000, shownNs: 4_000_000, panelNs: 4_000_000, tickGapMs: 1400,
+                                 popups: []).hasPrefix("2000\t\t2.0\t2.0\t2.0\t1400\t\t"),
               "a bag the timer found has no wake time")
         print("Drop alert tests passed")
     }

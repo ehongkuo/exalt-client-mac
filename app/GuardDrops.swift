@@ -552,16 +552,18 @@ enum GuardBags {
 
 /// One line per bag the guard handed over, so a slow popup shows where the time went (issue #75). Times are ms after
 /// the guard saw the bag: when the app woke (empty when the 0.1 s timer found it), when the main thread took it,
-/// and when the popup was set. `popup` names the item a bag alerted for.
+/// when the popup was set and when its panel was up. The timer's latest gap shows whether ticks are being held back.
+/// `popup` names the item a bag alerted for.
 enum DropDelayLog {
-    static let header = "drop_epoch_ms\twake_ms\tmain_ms\tshown_ms\tpopup\tbag\n"
+    static let header = "drop_epoch_ms\twake_ms\tmain_ms\tshown_ms\tpanel_ms\ttick_gap_ms\tpopup\tbag\n"
     static func file(logs: URL, pid: Int32 = getpid()) -> URL { logs.appendingPathComponent("drops-\(pid).tsv") }
-    static func lines(_ bags: [GuardBags.Bag], wakeNs: UInt64?, mainNs: UInt64, shownNs: UInt64, popups: [String]) -> String {
+    static func lines(_ bags: [GuardBags.Bag], wakeNs: UInt64?, mainNs: UInt64, shownNs: UInt64, panelNs: UInt64,
+                      tickGapMs: Double, popups: [String]) -> String {
         func ms(_ ns: UInt64, _ bag: GuardBags.Bag) -> String { String(format: "%.1f", Double(Int64(bitPattern: ns &- bag.ns)) / 1e6) }
         return bags.indices.map { i in
             let bag = bags[i]
-            return [String(Int64(bag.epoch * 1000)), wakeNs.map { ms($0, bag) } ?? "", ms(mainNs, bag), ms(shownNs, bag),
-                    i < popups.count ? popups[i] : "", String(bag.type)].joined(separator: "\t") + "\n"
+            return [String(Int64(bag.epoch * 1000)), wakeNs.map { ms($0, bag) } ?? "", ms(mainNs, bag), ms(shownNs, bag), ms(panelNs, bag),
+                    String(format: "%.0f", tickGapMs), i < popups.count ? popups[i] : "", String(bag.type)].joined(separator: "\t") + "\n"
         }.joined()
     }
     static func append(_ text: String, to file: URL) {
