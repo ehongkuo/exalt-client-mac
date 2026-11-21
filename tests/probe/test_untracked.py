@@ -72,6 +72,48 @@ class UntrackedTests(unittest.TestCase):
         c = Capture(); c.tick(0, 300); c.rows[-2]['hp'] = 340; c.rows[-2]['max'] = 300
         self.assertEqual(untracked.inspect(c.text())['max_hp_changes'], 1)
 
+    def test_drain_keeps_clean_updates_per_effect(self):
+        c = Capture(); c.tick(0, 300)
+        c.add(29, 10, flag0=7, owner=100, value=-1)  # Frostbite full, no breath meter.
+        for j, loss in enumerate([12, 13, 11, 33], 1):
+            c.tick(200 * j, c.hp - loss)
+        c.hit(900, 40); c.tick(1000, c.hp - 52)              # Report pending: not clean.
+        c.add(47, 2850, flag2=7, flag1=1, value=50); c.tick(3000, c.hp - 2)  # Heal text: not clean.
+        c.add(29, 3010, flag0=7, owner=0, value=0, projectile=0x8000); c.tick(3200, c.hp - 24)
+        c.add(29, 3210, flag0=7, owner=0, value=40); c.tick(3400, c.hp - 9)
+        result = untracked.drain(c.text())
+        frost = result['effects']['frostbite']
+        self.assertEqual((frost['updates'], frost['loss_min'], frost['loss_median'], frost['loss_max']), (4, 11, 13, 33))
+        self.assertEqual([o['loss'] for o in frost['outliers']], [33])
+        self.assertEqual(frost['hp_s_median'], 65.0)
+        self.assertEqual(result['effects']['bleeding+suffocation']['loss_max'], 24)
+        self.assertEqual([s['loss'] for s in result['unattributed']], [9])  # Breath 40: nothing detected.
+
+    def test_drain_uses_server_build_times_when_traced(self):
+        c = Capture(); c.add(29, 0, flag0=2, value=0)
+        for j, (ms, build) in enumerate([(0, 1000), (150, 1250)]):
+            entry = c.add(5, ms, update_source=1); c.add(40, ms, correlation=7 + j, server_time=build)
+            c.hp -= 25; c.add(6, ms + .1, correlation=entry, update_source=1, update_context=7 + j)
+        sample = untracked.drain(c.text())['effects']['suffocation']
+        self.assertEqual((sample['updates'], sample['hp_s_max']), (1, 100.0))  # 25 HP over 250 ms built, not 150 arrived.
+
+    def test_drain_reads_the_normal_guards_samples(self):
+        def row(tick, hp, build, conditions=0, breath=-1, frostbite=0, age=-1, max=500):
+            return (f'drain_sample\tms={tick * 200}\ttick={tick}\tserver_time={build}\thp={hp}\tmax={max}\t'
+                    f'conditions={conditions:#x}\tbreath={breath}\tfrostbite={frostbite}\thit_age_ms={age}\n')
+        text = 'status\tguard_loaded\n' + ''.join([
+            row(1, 400, 1000, breath=0), row(2, 380, 1200, breath=0), row(3, 355, 1450, breath=0),  # 20, then 25 over 250 ms
+            row(4, 300, 1650, breath=0, age=900),               # Hit 900 ms ago: not clean.
+            row(6, 280, 2050, breath=0),                        # Tick 5 missing: no pair.
+            row(7, 270, 2250, breath=50),                       # Breath back: effects changed.
+            row(8, 265, 2450, breath=50),                       # Nothing set: unattributed.
+            row(9, 261, 2650, conditions=0x8000, breath=50), row(10, 257, 2850, conditions=0x8000, breath=50)])
+        result = untracked.drain_samples(text)
+        sample = result['effects']['suffocation']
+        self.assertEqual((sample['updates'], sample['loss_max'], sample['hp_s_max']), (2, 25, 100.0))
+        self.assertEqual(result['effects']['bleeding']['loss_max'], 4)
+        self.assertEqual([s['loss'] for s in result['unattributed']], [5])
+
 
 if __name__ == '__main__':
     unittest.main()

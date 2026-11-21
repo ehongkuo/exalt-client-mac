@@ -292,8 +292,23 @@ static int fatal_local_nexusing(void *connection) {
     if(!socket || il2cpp_object_get_class(socket)!=fatal_socket_class)return 0;
     uint8_t value=0;il2cpp_field_get_value(socket,fatal_nexusing_field,&value);return value!=0;
 }
-#ifdef EXALT_HIT_PROBE
 static void *damage_conditions_field,*damage_breath_field,*damage_frostbite_field;
+/* Reads condition words 0-1, breath and frostbite (-1 when unread); returns the availability mask (1/2/4). */
+static int damage_context_read(void *player,uint64_t *bits,int *breath,int *frostbite) {
+    int mask=0;*bits=0;*breath=-1;*frostbite=-1;
+    if(damage_conditions_field){
+        void *array=read_reference(player,damage_conditions_field);
+        /* Audited Intel IL2CPP Int32[]: length API plus elements at +0x20. */
+        if(array && il2cpp_array_length(array)>=2){
+            uint32_t words[2];memcpy(words,(char*)array+0x20,sizeof words);
+            *bits=(uint64_t)words[0] | ((uint64_t)words[1]<<32);mask|=1;
+        }
+    }
+    if(damage_breath_field){il2cpp_field_get_value(player,damage_breath_field,breath);mask|=2;}
+    if(damage_frostbite_field){il2cpp_field_get_value(player,damage_frostbite_field,frostbite);mask|=4;}
+    return mask;
+}
+#ifdef EXALT_HIT_PROBE
 static uint64_t damage_context_next_ns,damage_context_generation,damage_context_bits;
 static int damage_context_breath=-1,damage_context_frostbite=-1,damage_context_nexusing=-1,damage_context_mask=-1;
 /* Phase 29: projectile is an opaque condition bitset, value/owner are raw breath/frostbite
@@ -303,17 +318,7 @@ static void damage_context_emit(void *player,uint64_t correlation) {
     uint64_t now=monotonic_ns();
     if(!correlation && now<damage_context_next_ns)return;
     damage_context_next_ns=now+20000000ULL;
-    uint64_t bits=0;int breath=-1,frostbite=-1,nexusing=-1,mask=0;
-    if(damage_conditions_field){
-        void *array=read_reference(player,damage_conditions_field);
-        /* Audited Intel IL2CPP Int32[]: length API plus elements at +0x20. */
-        if(array && il2cpp_array_length(array)>=2){
-            uint32_t words[2];memcpy(words,(char*)array+0x20,sizeof words);
-            bits=(uint64_t)words[0] | ((uint64_t)words[1]<<32);mask|=1;
-        }
-    }
-    if(damage_breath_field){il2cpp_field_get_value(player,damage_breath_field,&breath);mask|=2;}
-    if(damage_frostbite_field){il2cpp_field_get_value(player,damage_frostbite_field,&frostbite);mask|=4;}
+    uint64_t bits;int breath,frostbite,nexusing=-1,mask=damage_context_read(player,&bits,&breath,&frostbite);
     void *connection=read_reference(player,connection_field);
     if(connection && fatal_socket_field && fatal_socket_class && fatal_nexusing_field){
         void *socket=read_reference(connection,fatal_socket_field);
@@ -338,18 +343,39 @@ static void fatal_record(void *player,int hp,int result) {
     Record r={.epoch=start_epoch+(double)(now-start_ns)/1e9,.action=GUARD_NEXUS_DEATH,
               .result=result,.slot=-1,.player_hp=hp,.player_max=max};
     record_event(&r);
-    note("guard_death_nexus\thp=%d\tpending=%lld\tpredicted=%lld\tresult=%d\treason=%d\thits=%u\tproved_replies=%llu\treplies=%llu\n",
-         hp,(long long)fatal_policy.pending,(long long)fatal_policy.projected,result,fatal_policy.reason,
+    note("guard_death_nexus\thp=%d\tpending=%lld\tdrain=%d\tpredicted=%lld\tresult=%d\treason=%d\thits=%u\tproved_replies=%llu\treplies=%llu\n",
+         hp,(long long)fatal_policy.pending,fatal_policy.drain,(long long)fatal_policy.projected,result,fatal_policy.reason,
          fatal_policy.count,(unsigned long long)fatal_policy.proved,(unsigned long long)fatal_policy.replies);
+}
+/* Phase 3 G measurement in normal play: one line per server update while bleeding, on a map with a
+ * breath meter or with frostbite above 0, plus the update after, for analyze_untracked.py --drain.
+ * The note queue is fixed-size; the background writer does the file I/O. */
+static uint64_t drain_hit_ns;
+static int drain_sampling;
+static void drain_sample(void *player,int hp,int tick,uint32_t server_time) {
+    uint64_t bits;int breath,frostbite;damage_context_read(player,&bits,&breath,&frostbite);
+    int active=(bits&FATAL_BLEEDING) || breath>=0 || frostbite>0;
+    if(!active && !drain_sampling)return;
+    drain_sampling=active;
+    int max=0;il2cpp_field_get_value(player,max_field,&max);
+    uint64_t now=monotonic_ns();
+    long long age=drain_hit_ns?(long long)((now-drain_hit_ns)/1000000ULL):-1;
+    note("drain_sample\tms=%llu\ttick=%d\tserver_time=%u\thp=%d\tmax=%d\tconditions=%#llx\tbreath=%d\tfrostbite=%d\thit_age_ms=%lld\n",
+         (unsigned long long)((now-start_ns)/1000000ULL),tick,server_time,hp,max,(unsigned long long)bits,breath,frostbite,age);
 }
 #endif
 static int fatal_intervene(void *player,int damage,uint64_t calculation) {
+#ifdef EXALT_CLIENT_FATAL
+    if(damage>0)drain_hit_ns=monotonic_ns();
+#endif
     if(!fatal_sync(player))return damage;
     int hp=0;il2cpp_field_get_value(player,player_hp_field,&hp);
     int prediction_hp=hp;
 #ifdef EXALT_HIT_PROBE
     if(fatal_verify_hp && hp>0)prediction_hp=1;
 #endif
+    uint64_t bits;int breath,frostbite;damage_context_read(player,&bits,&breath,&frostbite);
+    fatal_drain(&fatal_policy,(uint32_t)bits,breath,frostbite);
     int decision=fatal_damage(&fatal_policy,prediction_hp,damage,monotonic_ns());
     if(decision==FATAL_REQUEST) {
         fatal_emit(20,player,calculation,damage,decision,0);
@@ -623,6 +649,9 @@ static void update_observed(void *self,void *opaque_message,const void *info) {
         il2cpp_field_get_value(self,probe_tick_field,&sequence);
         il2cpp_field_get_value(self,probe_time_field,&server_time);
         int cleared=fatal_server_tick(&fatal_policy,tick_entry_ns,(uint32_t)sequence,server_time,rtt);
+#ifdef EXALT_CLIENT_FATAL
+        drain_sample(player,hp,sequence,server_time);
+#endif
         if(cleared){
             note("guard_proof_clear\thp=%d\tcleared=%d\tpending=%lld\tprojected=%lld\ttick=%d\tserver_value=%u\trtt=%u\tproved_replies=%llu\n",
                  hp,cleared,(long long)fatal_policy.pending,(long long)fatal_policy.projected,sequence,server_time,rtt,
@@ -684,7 +713,7 @@ static int probe_setup(int install) {
     fatal_socket_field=(void*)992;fatal_nexusing_field=(void*)993;fatal_socket_class=(void*)50;
     /* Fixture objects: tick messages 33 (class 3), replies 55 (class 5). */
     fatal_tick_class=(void*)3;fatal_rtt_field=(void*)994;fatal_reply_class=(void*)5;fatal_reply_time_field=(void*)995;
-#if defined(EXALT_HIT_PROBE) && !defined(HIT_PROBE_NO_CONTEXT_TEST)
+#ifndef HIT_PROBE_NO_CONTEXT_TEST
     damage_breath_field=(void*)1002;damage_frostbite_field=(void*)1003;
     damage_conditions_field=(void*)1001;
 #endif
@@ -707,12 +736,10 @@ static int probe_setup(int install) {
         if(!fatal_rtt_field || !fatal_reply_time_field){fatal_tick_class=fatal_reply_class=NULL;
             if(fatal_enabled)return probe_fail("fatal_proof_fields");}
     }
-#ifdef EXALT_HIT_PROBE
-    void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
+    {void *entity=ancestor_named(player_class,"LKHPPBEGNOM");
     damage_conditions_field=entity?typed_field(entity,"COHCKAPOLCA","System.Int32[]"):NULL;
     damage_breath_field=typed_field(player_class,"NMLPJEBCBAE","System.Int32");
-    damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");
-#endif
+    damage_frostbite_field=typed_field(player_class,"DLNIODKGIKA","System.Int32");}
     if(!probe_projectile_class)return probe_fail("projectile_class");
     probe_tick_field=typed_field(connection_class,"PNIHHODGAEE","System.Int32");
     probe_time_field=typed_field(connection_class,"FIAJOKGHGGK","System.UInt32");
@@ -773,8 +800,9 @@ static int probe_setup(int install) {
 #ifdef EXALT_CLIENT_FATAL
     note("incident_history\tversion=2\tcapacity=%d\tbytes=%zu\tmanual_nexus=1\tautomatic_nexus=1\n",INCIDENT_CAPACITY,sizeof incident_history);
 #endif
-#ifdef EXALT_HIT_PROBE
+    /* A missing field only drops that drain (Phase 3 G), the behavior before it was added. */
     note("damage_context_ready\tconditions=%d\tbreath=%d\tfrostbite=%d\n",damage_conditions_field!=NULL,damage_breath_field!=NULL,damage_frostbite_field!=NULL);
+#ifdef EXALT_HIT_PROBE
     note("damage_build\tsha256=%s\n",EXALT_GAME_SHA256);
 #endif
     return 1;

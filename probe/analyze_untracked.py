@@ -155,6 +155,122 @@ def run(paths, window_ms=2000, max_age_ms=1500):
                         'above the local calculation); report_larger_than_loss marks findings healing may explain.')
 
 
+def effects_of(ctx):
+    """Damage-over-time effects the guard's drain allowance detects (Phase 3 G), from a phase 29 context."""
+    if ctx is None:
+        return ()
+    found = [name for bit, name in DOT_CONDITIONS.items() if ctx['flag0'] & 1 and ctx['projectile'] & bit]
+    if ctx['flag0'] & 4 and ctx['owner'] >= 100:
+        found.append('frostbite')
+    if ctx['flag0'] & 2 and ctx['value'] == 0:
+        found.append('suffocation')
+    return tuple(found)
+
+
+def drain(text, max_age_ms=1500):
+    """Per-update HP loss while a damage-over-time effect is set, in clean updates only.
+
+    Clean: HP fell, max HP unchanged, no client damage report in the max_age_ms before and no heal
+    text since the previous update. The gap is the server build-time difference when the sync
+    trace recorded it, else the client arrival gap. Clean losses with no effect set are listed as
+    unattributed: a drain the detection misses (for example breath not reading 0) shows up there."""
+    events = read_events(text)
+    by_id = {e['id']: e for e in events}
+    build = {e['correlation']: e['server_time'] for e in events if e['phase'] == 40}
+    out, ctx, generation, last_report, last_heal, previous = {}, None, None, None, None, None
+    regen_hp, regen_ms, unattributed = 0, 0, []
+    for e in events:
+        if e['generation'] != generation:
+            ctx, generation, last_report, last_heal, previous = None, e['generation'], None, None, None
+        if e['phase'] == 29:
+            ctx = e
+        elif e['phase'] == 3 and e['value'] > 0:
+            last_report = e['ns']
+        elif e['phase'] == 47 and e['flag2'] == 7 and e['flag1'] and e['value'] > 0:
+            last_heal = e['ns']
+        if e['phase'] != 6 or e['update_source'] != 1:
+            continue
+        before, point = by_id.get(e['correlation']), (e['ns'], build.get(e['update_context']))
+        if previous is None or not before or before['max'] != e['max'] or before['hp'] > e['max']:
+            previous = point
+            continue
+        gap = (point[1] - previous[1]) if point[1] is not None and previous[1] is not None else (point[0] - previous[0]) / 1e6
+        clean = (last_report is None or e['ns'] - last_report > max_age_ms * 1e6) and \
+            (last_heal is None or last_heal <= previous[0])
+        previous, change, active = point, e['hp'] - before['hp'], effects_of(ctx)
+        if not clean or gap <= 0:
+            continue
+        if change > 0 and not active and e['hp'] < e['max'] and change <= 10:
+            regen_hp += change; regen_ms += gap  # Small rises with nothing active: regeneration.
+        if change >= 0:
+            continue
+        sample = dict(seconds=(e['ns'] - events[0]['ns']) / 1e9, loss=-change, gap_ms=gap, hp_s=-change * 1000 / gap)
+        if active:
+            out.setdefault('+'.join(active), []).append(sample)
+        else:
+            unattributed.append(sample)
+    return summarize_drain(out, unattributed, regen_hp, regen_ms)
+
+
+def drain_samples(text, max_age_ms=1500):
+    """The same report from the normal guard's drain_sample lines (one per server update while an
+    effect or its meter is present). Consecutive ticks only, the same effects at both ends, and no hit
+    reported in the max_age_ms before. The normal guard records no heal text, so a heal in the same
+    update hides part of the drain: use the highest clean rate, not the median."""
+    out, unattributed, regen_hp, regen_ms, previous = {}, [], 0, 0, None
+    lines = [dict(field.split('=', 1) for field in line.split('\t')[1:])
+             for line in text.splitlines() if line.startswith('drain_sample\t')]
+    for row in lines:
+        s = {k: int(v, 0) for k, v in row.items()}
+        s['effects'] = effects_of(dict(flag0=7, projectile=s['conditions'], owner=s['frostbite'], value=s['breath']))
+        prev, previous = previous, s
+        if not prev or s['tick'] != prev['tick'] + 1 or s['max'] != prev['max'] or s['effects'] != prev['effects']:
+            continue
+        gap = (s['server_time'] - prev['server_time']) & 0xffffffff
+        if not 0 < gap <= 1000 or 0 <= s['hit_age_ms'] <= max_age_ms:
+            continue
+        change, active = s['hp'] - prev['hp'], s['effects']
+        if change > 0 and not active and s['hp'] < s['max'] and change <= 10:
+            regen_hp += change; regen_ms += gap
+        if change >= 0:
+            continue
+        sample = dict(seconds=s['ms'] / 1000, loss=-change, gap_ms=gap, hp_s=-change * 1000 / gap)
+        (out.setdefault('+'.join(active), []) if active else unattributed).append(sample)
+    return summarize_drain(out, unattributed, regen_hp, regen_ms)
+
+
+def summarize_drain(out, unattributed, regen_hp, regen_ms):
+    effects = {}
+    for name, samples in out.items():
+        losses, rates = sorted(s['loss'] for s in samples), sorted(s['hp_s'] for s in samples)
+        median = losses[len(losses) // 2]
+        effects[name] = dict(updates=len(samples), loss_min=losses[0], loss_median=median, loss_max=losses[-1],
+                             hp_s_median=round(rates[len(rates) // 2], 1), hp_s_max=round(rates[-1], 1),
+                             outliers=[s for s in samples if s['loss'] > 1.5 * median])
+    return dict(effects=effects, unattributed=unattributed,
+                regen_hp_s=round(regen_hp * 1000 / regen_ms, 2) if regen_ms else None)
+
+
+def drain_markdown(paths, max_age_ms=1500):
+    lines = ['# Damage-over-time drain', '',
+             'Clean updates only (no damage report or heal text). Small rises: HP/s of rises of 10 or less with no effect set; '
+             'that is regeneration only if nothing else healed, so read it from a capture without healers or pets.', '',
+             '| Capture | Effect | Updates | Loss min / median / max | HP/s median / max | Outliers | Small rises HP/s |',
+             '|---|---|---:|---|---|---|---:|']
+    for file, text in latest_copies(paths):
+        result = (drain_samples if '\ndrain_sample\t' in text else drain)(text, max_age_ms)
+        rows = list(result['effects'].items())
+        if result['unattributed']:
+            losses = sorted(s['loss'] for s in result['unattributed'])
+            rows.append(('unattributed', dict(updates=len(losses), loss_min=losses[0], loss_median=losses[len(losses) // 2],
+                         loss_max=losses[-1], hp_s_median='', hp_s_max='', outliers=[])))
+        for name, x in rows:
+            outliers = ', '.join(f"{o['loss']} at {o['seconds']:.1f} s" for o in x['outliers'][:6])
+            lines.append(f"| {Path(file).name} | {name} | {x['updates']} | {x['loss_min']} / {x['loss_median']} / "
+                         f"{x['loss_max']} | {x['hp_s_median']} / {x['hp_s_max']} | {outliers} | {result['regen_hp_s'] or ''} |")
+    return '\n'.join(lines)
+
+
 def markdown(result):
     t = result['totals']
     lines = ['# Untracked HP loss', '',
@@ -179,7 +295,11 @@ def main():
     parser.add_argument('--window-ms', type=float, default=2000)
     parser.add_argument('--max-age-ms', type=float, default=1500, help='Oldest report a decrease may be attributed to')
     parser.add_argument('--json')
+    parser.add_argument('--drain', action='store_true', help='Report per-update drain for each damage-over-time effect')
     args = parser.parse_args()
+    if args.drain:
+        print(drain_markdown(args.paths, args.max_age_ms))
+        return
     result = run(args.paths, args.window_ms, args.max_age_ms)
     if args.json:
         Path(args.json).write_text(json.dumps(result, indent=2) + '\n')
