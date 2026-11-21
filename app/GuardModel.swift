@@ -4,7 +4,7 @@ import Foundation
 /// Where things live. The guard and the build check ship inside the app, so the app can be
 /// moved anywhere; settings and logs go to ~/Library/Application Support/<app name>, so a staging
 /// build ("Exalt Client Mac Staging <issue>", from ./build.sh --stage) never touches the installed app's or another's.
-/// The one exception is drop_rates.db, which both apps share in the installed app's folder (issue #49).
+/// The one exception is the drop database (drop_rates_v2.db), which both apps share in the installed app's folder (issue #49).
 enum GuardPaths {
     static let prodName = "Exalt Client Mac"
     static func dataFolder(home: URL, name: String = prodName) -> URL { home.appendingPathComponent("Library/Application Support/\(name)") }
@@ -435,6 +435,22 @@ final class LiveFeed {
         let snapshot = GuardSnapshot(data)
         cachedSnapshot = snapshot
         return snapshot
+    }
+
+    /// The bags the guard handed over (issue #75), or nil without a live file.
+    func bags() -> LiveBagsData? {
+        remapIfNeeded()
+        guard let map else { return nil }
+        var data = LiveBagsData()
+        return guard_bags_copy(map, &data) != 0 ? data : nil
+    }
+
+    /// The portals the guard linked to a kill (issue #74), or nil without a live file.
+    func portals() -> LivePortalsData? {
+        remapIfNeeded()
+        guard let map else { return nil }
+        var data = LivePortalsData()
+        return guard_portals_copy(map, &data) != 0 ? data : nil
     }
 
     /// Writes a settings change for the guard to pick up on its next check.

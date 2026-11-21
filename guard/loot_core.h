@@ -6,10 +6,11 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define LOOT_FORMAT 3
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP };
+#define LOOT_FORMAT 5   /* 4: player_stat lines may carry text (stat 80); 5: portal lines (issue #64) */
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP, LOOT_PORTAL };
 /* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
  * is the server removing a mob someone hit, so every kill is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
@@ -32,7 +33,7 @@ typedef struct {
     uint8_t kind, source;
     float pos[3];
     int32_t v[8];           /* kill: your damage by source, max HP, ms since the last hit, others' damage; bag: items;
-                               stat: type, value; drop: the bag's kill (object id, 0 for none);
+                               stat: type, value; drop: the bag's or portal's kill (object id, 0 for none);
                                map info: your class, then raw ints; the text holds its strings, tab-separated */
     char text[256];         /* stat 80 (enchants per slot) runs past 100 characters */
 } LootEvent;
@@ -150,6 +151,20 @@ static inline int loot_tick_end(LootTicks *t, LootSpot *bags, int32_t *killers) 
     return n;
 }
 
+/* The latest kills' facts, so a portal linked to one a tick later can carry them to the app (issue #74). Killers come
+ * from the last tick only, so the newest match is the one. */
+#define LOOT_RECENT 64
+typedef struct { int32_t id, type; float pos[2]; int32_t damage, since_hit_ms; } LootKillFacts;
+typedef struct { LootKillFacts kills[LOOT_RECENT]; uint32_t next; } LootRecent;
+static inline void loot_recent_add(LootRecent *r, LootKillFacts f) { r->kills[r->next++ % LOOT_RECENT] = f; }
+static inline const LootKillFacts *loot_recent_find(const LootRecent *r, int32_t id) {
+    for (uint32_t i = 0; i < LOOT_RECENT && i < r->next; ++i) {
+        const LootKillFacts *k = &r->kills[(r->next - 1 - i) % LOOT_RECENT];
+        if (k->id == id) return k;
+    }
+    return 0;
+}
+
 /* Loot bag object types, as in the app's DropBag (RealmHound's ids; 17xx are boosted bags). */
 static inline int loot_is_bag(uint16_t type) {
     switch (type) {
@@ -159,11 +174,33 @@ static inline int loot_is_bag(uint16_t type) {
     default: return 0;
     }
 }
+/* Portal object types (issue #64): every Portal-class type in the app's catalog, sent at launch as
+ * EXALT_PORTALS="type,type,...". One bit per type. Returns how many types it set. */
+typedef struct { uint8_t bits[65536 / 8]; } LootPortals;
+static inline int loot_portals_parse(LootPortals *p, const char *text) {
+    memset(p, 0, sizeof *p);
+    int count = 0;
+    for (const char *c = text; c && *c;) {
+        char *end;
+        long type = strtol(c, &end, 10);
+        if (end == c) { ++c; continue; }
+        if (type > 0 && type < 65536 && !(p->bits[type >> 3] & 1 << (type & 7))) { p->bits[type >> 3] |= 1 << (type & 7); ++count; }
+        c = end;
+    }
+    return count;
+}
+static inline int loot_is_portal(const LootPortals *p, uint16_t type) { return type && p->bits[type >> 3] & 1 << (type & 7); }
 /* Your own stats are kept when they change, for the loot factors among them. Not HP, MP or
  * experience (1, 4, 6), which change all fight long, and never text stats (your name). */
 static inline int loot_player_stat_kept(int stat) { return stat >= 0 && stat < 256 && stat != 1 && stat != 4 && stat != 6; }
 /* Container slots 0-7 are stat types 8-15; anything else on a bag is kept raw. */
 static inline int loot_item_slot(int stat) { return stat >= 8 && stat <= 15 ? stat - 8 : -1; }
+/* Your stat 80 has one comma-separated part per inventory slot; the first four are your equipment, the
+ * only slots whose enchantments count (issue #58). Cuts the text after them. */
+static inline void loot_gear_parts(char *text) {
+    int parts = 0;
+    for (char *c = text; *c; ++c) if (*c == ',' && ++parts == 4) { *c = 0; return; }
+}
 
 /* One TSV line per event; the app's importer parses these columns. */
 static inline int loot_format(const LootEvent *e, double epoch, char *out, size_t size) {
@@ -184,7 +221,10 @@ static inline int loot_format(const LootEvent *e, double epoch, char *out, size_
         return snprintf(out, size, "map_info\t%.3f\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
                         epoch, e->map, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], e->text);
     case LOOT_PLAYER_STAT:
+        if (e->text[0]) return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\t%s\n", epoch, e->map, v[0], v[1], e->text);
         return snprintf(out, size, "player_stat\t%.3f\t%u\t%d\t%d\n", epoch, e->map, v[0], v[1]);
+    case LOOT_PORTAL:
+        return snprintf(out, size, "portal\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\n", epoch, e->map, e->id, e->type, e->pos[0], e->pos[1]);
     case LOOT_DROP:
         return snprintf(out, size, "drop\t%.3f\t%u\t%d\t%d\n", epoch, e->map, e->id, v[0]);
     default: return 0;

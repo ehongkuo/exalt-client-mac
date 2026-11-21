@@ -28,7 +28,7 @@ private let dataURL: URL = {
     }
     return staging
 }()
-/// One drop_rates.db for the installed and staging apps (issue #49): it lives in the installed app's data folder.
+/// One drop database for the installed and staging apps (issue #49): it lives in the installed app's data folder.
 private let dropsURL: URL = {
     let prod = GuardPaths.dataFolder(home: FileManager.default.homeDirectoryForCurrentUser)
     try? FileManager.default.createDirectory(at: prod, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -160,9 +160,10 @@ final class LaunchController: ObservableObject {
             let dylib = GuardPaths.dylib(forApp: bundle)
             let expected = (try? String(contentsOf: GuardPaths.buildHashFile(forApp: bundle), encoding: .utf8)).flatMap(FileHash.expected)
             let exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+            let portals = DropRateStore(path: LootImport.dbPath(data: dropsURL))?.portalTypes() ?? []
             func plan(_ actual: String?) -> Result<LaunchPlan, LaunchProblem> {
                 LaunchPlan.make(install: install, dylib: dylib, data: dataURL, settings: settings, expectedHash: expected,
-                                actualHash: actual, running: running, observationOnly: observationOnly, exists: exists)
+                                actualHash: actual, running: running, observationOnly: observationOnly, portals: portals, exists: exists)
             }
             try? FileManager.default.createDirectory(at: GuardPaths.logs(data: dataURL), withIntermediateDirectories: true,
                                                      attributes: [.posixPermissions: 0o700])
@@ -293,36 +294,33 @@ final class PartyAlerts: ObservableObject {
     }
 }
 
-/// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
-/// Checked once a second; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Drop alerts: a sound and a stack of popups with no buttons, one per matching item, when the guard sees a chosen bag or a shiny land (issue #75).
+/// The guard wakes the app on each bag; the 0.1 s tick catches any wake-up missed. Each popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
-    @Published private(set) var popup: DropAlert?
-    @Published private(set) var logs = 0
+    @Published private(set) var stack = DropStack()
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
-    private var shownAt = 0.0, lastPoll = -Double.infinity, loadingShinies = false, loadingBags = false
-    private let log = LootLog(accounts: RealmHoundPaths.accounts)
+    /// Dungeons with a portal and the names portal alerts show (issue #74), loaded with the drop-rate catalog, and each
+    /// dungeon's portal sprite.
+    @Published var portalNames = PortalNames()
+    @Published var portalSprites: [String: CGImage] = [:]
+    private var portalsSeen: GuardBags.Seen?
+    /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
+    var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
+    /// Enchantment names to suggest while typing a rule.
+    private(set) var enchantNames: [String] = []
+    /// Loaded once: the first load took 0.15 s, which held up the popup (issue #75).
+    private let sound = NSSound(named: "Hero")
+    private var lastTick = 0.0, tickGap = 0.0, bagsSeen: GuardBags.Seen?, loadingShinies = false, loadingBags = false
     private let defaults = UserDefaults.standard
 
     init() {
-        var s = DropAlertSettings()
-        if let v = defaults.object(forKey: "dropAlerts") as? Bool { s.enabled = v }
-        if let v = defaults.object(forKey: "dropAlertSound") as? Bool { s.sound = v }
-        if let v = defaults.stringArray(forKey: "dropAlertBags") { s.bags = Set(v.compactMap(DropBag.init(rawValue:))) }
-        if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { s.minRarity = r }
-        if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { s.shiny = v }
-        settings = s
+        settings = DropAlertSettings(defaults: defaults)
         loadShiniesIfNeeded()
         loadBagsIfNeeded()
     }
-    private func save() {
-        defaults.set(settings.enabled, forKey: "dropAlerts")
-        defaults.set(settings.sound, forKey: "dropAlertSound")
-        defaults.set(settings.bags.map(\.rawValue).sorted(), forKey: "dropAlertBags")
-        defaults.set(settings.minRarity.rawValue, forKey: "dropAlertRarity")
-        defaults.set(settings.shiny, forKey: "dropAlertShiny")
-    }
+    private func save() { settings.save(to: defaults) }
     /// The shiny list comes from about 60 MB of XML, so it is read once, off the main thread.
     private func loadShiniesIfNeeded() {
         #if !GUARD_UI_TEST
@@ -346,59 +344,86 @@ final class DropAlerts: ObservableObject {
         #endif
     }
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
-    func check() {
-        if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
-        guard now - lastPoll >= 1 else { return }
-        lastPoll = now
+    func check(_ source: LiveSource) {
+        // Only assign on a change: this runs ten times a second, and every assignment republishes.
+        var next = stack; next.expire(now: now)
+        if next != stack { stack = next }
+        tickGap = now - lastTick; lastTick = now
+        bagsLanded(source, wakeNs: nil)
+    }
+    /// Reads the bags the guard handed over since the last look. `wakeNs`: when its wake-up arrived, nil from the timer.
+    func bagsLanded(_ source: LiveSource, wakeNs: UInt64?) {
         #if !GUARD_UI_TEST
-        // The log is polled with alerts off too, so turning them on never replays old drops.
-        let drops = log.poll()
-        if log.logs != logs { logs = log.logs }
+        let mainNs = Clock.monotonicNs()
+        portalsLanded(source)
+        // Read with alerts off too, so turning them on never replays old bags.
+        guard let pid = source.snapshot?.pid, let data = source.feed.bags() else { return }
+        let bags = GuardBags.new(data, pid: pid, seen: &bagsSeen)
+        // In the Nexus a bag is one a player dropped, not loot.
+        guard !bags.isEmpty, source.snapshot?.inNexus != true else { return }
+        let drops = bags.map { GuardBags.drop($0, catalog: catalog, dungeon: source.snapshot?.map ?? "") }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, nowMs: nowMs) }).last {
-            show(alert)
+        // One list per bag: a bag can raise several popups, one per matching item (issue #76).
+        let alerts = drops.map { DropRules.alerts(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }
+        show(alerts.flatMap { $0 })
+        let shownNs = Clock.monotonicNs(), gap = tickGap
+        // Queued behind the popup panel's order-front, so this stamp is when the panel was up.
+        DispatchQueue.main.async {
+            DropDelayLog.append(DropDelayLog.lines(bags, wakeNs: wakeNs, mainNs: mainNs, shownNs: shownNs, panelNs: Clock.monotonicNs(),
+                                                   tickGapMs: gap * 1000, popups: alerts.map { $0.map(\.title).joined(separator: ", ") }),
+                                to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
         }
         #endif
     }
-    func show(_ alert: DropAlert) {
-        popup = alert; shownAt = now
+    /// Reads the portals the guard linked to a kill since the last look (issue #74), with alerts off too.
+    private func portalsLanded(_ source: LiveSource) {
+        guard let pid = source.snapshot?.pid, let data = source.feed.portals() else { return }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let portals = GuardPortals.new(data, pid: pid, seen: &portalsSeen)
+        show(portals.compactMap { DropRules.alert(for: $0, names: portalNames, settings: settings, nowMs: nowMs) })
+    }
+    func show(_ alert: DropAlert) { show([alert]) }
+    /// One sound for the whole batch, however many popups it adds.
+    func show(_ alerts: [DropAlert]) {
+        guard !alerts.isEmpty else { return }
+        stack.push(alerts, now: now)
         #if !GUARD_UI_TEST
-        if settings.sound { NSSound(named: "Hero")?.play() }
+        // On a later run-loop pass, once the panel is drawn: starting the sound takes 20–130 ms (issue #75).
+        if settings.sound { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { self.sound?.stop(); self.sound?.play() } }
         #endif
     }
-    func dismiss() { popup = nil }
+    func dismiss(_ id: Int) { stack.dismiss(id, now: now) }
 }
 
-/// The drop popup: like the Join popup, but nothing to press; a click dismisses it.
+/// One drop popup: like the Join popup, but nothing to press; a click dismisses it. It holds its own
+/// alert, so it still shows while it fades out after leaving the stack.
 struct DropPopupView: View {
     @ObservedObject var drops: DropAlerts
+    var entry: DropStack.Entry
 
     var body: some View {
-        if let drop = drops.popup {
-            DropPopupContent(drop: drop, bagSprite: drop.bag.flatMap { drops.bagSprites[$0] }).onTapGesture { drops.dismiss() }
-        }
+        DropPopupContent(drop: entry.alert,
+                         bagSprite: entry.alert.portal ? drops.portalSprites[entry.alert.dungeon] : entry.alert.bag.flatMap { drops.bagSprites[$0] })
+            .onTapGesture { drops.dismiss(entry.id) }
     }
 }
 
 struct DropPopupContent: View {
     var drop: DropAlert
-    /// The bag's game sprite; the SF Symbol stands in when RealmHound's assets are missing.
+    /// The bag's (or portal's) game sprite; the SF Symbol stands in when RealmHound's assets are missing.
     var bagSprite: CGImage? = nil
 
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
                 BagIcon(bag: drop.bag, sprite: bagSprite, size: 32).frame(width: 40, height: 40)
-                if drop.shiny {
-                    Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(shinyPink, shinyGold).padding(2)
-                }
+                if drop.shiny { ShinyMark(size: 16).padding(1) }
             }
             .background(Color.white.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(drop.shiny ? "\(drop.item) (Shiny)" : drop.item).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(drop.shiny ? "\(drop.title) (Shiny)" : drop.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                     if drop.rarity != .common { RarityGems(rarity: drop.rarity) }
                 }
                 Text(drop.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
@@ -410,9 +435,7 @@ struct DropPopupContent: View {
         .background(panelBackground.opacity(0.97))
         .overlay {
             if drop.shiny {
-                RoundedRectangle(cornerRadius: 14).strokeBorder(
-                    AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink], center: .center),
-                    lineWidth: 2)
+                ShinyBorder(cornerRadius: 14)
             } else {
                 RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
             }
@@ -424,6 +447,32 @@ struct DropPopupContent: View {
 
 private let shinyPink = Color(red: 1, green: 0.55, blue: 0.9), shinyGold = Color(red: 1, green: 0.85, blue: 0.3)
 
+/// A shiny popup's border: the shiny colours run around the whole edge, with a bright glint riding on
+/// top. Still under Reduce Motion.
+struct ShinyBorder: View {
+    var cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if reduceMotion { ring(0) } else {
+            TimelineView(.animation) { context in
+                ring(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360)
+            }
+        }
+    }
+    private func ring(_ degrees: Double) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        return ZStack {
+            shape.strokeBorder(AngularGradient(colors: [shinyPink, shinyGold, .white, shinyPink, shinyGold, .white, shinyPink],
+                                               center: .center, angle: .degrees(degrees)), lineWidth: 2)
+            shape.strokeBorder(AngularGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.04),
+                                                       .init(color: .clear, location: 0.12), .init(color: .clear, location: 1)],
+                                               center: .center, angle: .degrees(degrees * 2)), lineWidth: 3)
+                .blur(radius: 1.5)
+        }
+    }
+}
+
 /// The game's rarity mark: one gem per enchantment slot, in the rarity's colour (green, blue,
 /// purple, gold), clustered as on an item's slot.
 struct RarityGems: View {
@@ -434,6 +483,16 @@ struct RarityGems: View {
                          Color(red: 0.76, green: 0.55, blue: 1), Color(red: 1, green: 0.8, blue: 0.15)]
 
     var body: some View {
+        if let mark = GameIcons.rarity(rarity) {
+            // The game's own mark: one 16 px gem cluster, drawn at twice the gem size.
+            Image(decorative: mark, scale: 1).interpolation(.none).resizable().frame(width: gem * 2, height: gem * 2)
+                .accessibilityLabel(rarity.name)
+        } else {
+            drawn
+        }
+    }
+
+    @ViewBuilder private var drawn: some View {
         let color = Self.colors[rarity.rawValue]
         // Gem centres in gem widths: a pair, a triangle, then a diamond of four.
         let spots: [(CGFloat, CGFloat)] = [[], [(0, 0)], [(0, 0), (1, 0)], [(0, 0), (1, 0), (0.5, 0.5)],
@@ -450,6 +509,18 @@ struct RarityGems: View {
         }
         .frame(width: gem * (spots.map(\.0).max()! + 1), height: gem * (spots.map(\.1).max()! + 1), alignment: .topLeading)
         .accessibilityLabel(rarity.name)
+    }
+}
+
+/// The game's shiny sparkle, or a sparkles symbol when the file is missing.
+struct ShinyMark: View {
+    var size: CGFloat
+    var body: some View {
+        if let mark = GameIcons.shiny {
+            Image(decorative: mark, scale: 1).interpolation(.none).resizable().frame(width: size, height: size)
+        } else {
+            Image(systemName: "sparkles").font(.system(size: size * 0.7, weight: .bold)).foregroundStyle(shinyPink, shinyGold)
+        }
     }
 }
 
@@ -559,8 +630,6 @@ struct JoinPopupContent: View {
 }
 
 final class WindowState: ObservableObject {
-    /// Keep on top: on unless the user turned it off, remembered between launches.
-    @Published var floating = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true
     var window: NSWindow?
     var showCompact: () -> Void = {}
     /// Which rows of the More section are open.
@@ -568,10 +637,6 @@ final class WindowState: ObservableObject {
     @Published var partyOpen = false
     @Published var dropsOpen = false
     @Published var diagnosticsOpen = false
-    func setFloating(_ value: Bool) {
-        floating = value; window?.level = value ? .floating : .normal
-        UserDefaults.standard.set(value, forKey: "keepOnTop")
-    }
 }
 
 struct Card<Content: View>: View {
@@ -798,8 +863,6 @@ struct GuardPanel {
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             if isStaging { Pill(text: appName.dropFirst(GuardPaths.prodName.count + 1).uppercased(), color: .blue) }   // "STAGING 49"
             Spacer()
-            Button { window.setFloating(!window.floating) } label: { Image(systemName: window.floating ? "pin.fill" : "pin") }
-                .buttonStyle(.borderless).help(window.floating ? "Keep on top is on" : "Keep on top is off")
             Button { window.showCompact() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
                 .buttonStyle(.borderless).help("Compact view")
         }
@@ -1087,6 +1150,89 @@ struct GuardPanel {
         .font(.system(size: 11))
     }
 
+    /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    /// A rule's terms, found by id: a term list saves typed text as it disappears, which happens after its rule was
+    /// removed, when an index binding would point past the end and crash (issue #75).
+    private func terms(_ id: UUID, _ path: WritableKeyPath<ItemRule, [String]>) -> Binding<[String]> {
+        Binding(get: { drops.settings.rules.first { $0.id == id }?[keyPath: path] ?? [] },
+                set: { value in
+                    if let i = drops.settings.rules.firstIndex(where: { $0.id == id }) { drops.settings.rules[i][keyPath: path] = value }
+                })
+    }
+    @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
+        let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
+            .buttonStyle(.borderless).help("Remove rule")
+        if rule.wrappedValue.confirmed {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 16)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    let title = rule.wrappedValue.title.trimmingCharacters(in: .whitespaces)
+                    Text(title.isEmpty ? "Untitled rule" : title).fontWeight(.semibold)
+                    Text(rule.wrappedValue.summary).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Edit") { rule.wrappedValue.confirmed = false }.controlSize(.small)
+                remove
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.green.opacity(0.45)))
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    TextField("Rule name, shown in the alert", text: rule.title)
+                    remove
+                }
+                HStack(spacing: 6) {
+                    Picker("Type", selection: rule.slot) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+                    }
+                    .fixedSize()
+                    Picker("Class", selection: rule.playerClass) {
+                        Text("Any").tag(String?.none)
+                        ForEach(ItemRule.classes.keys.sorted(), id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 6) {
+                    Picker("Tier", selection: rule.minTier) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
+                    }
+                    .fixedSize()
+                    Picker("Rarity", selection: rule.minRarity) {
+                        ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                TermList(label: "Name", hint: "any of these", terms: terms(rule.wrappedValue.id, \.names), options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: terms(rule.wrappedValue.id, \.enchants),
+                         options: drops.enchantNames)
+                if rule.wrappedValue.enchants.count > 1 {
+                    Picker("Needs", selection: rule.allEnchants) {
+                        Text("All enchantments").tag(true)
+                        Text("Any one").tag(false)
+                    }
+                    .pickerStyle(.segmented).fixedSize()
+                }
+                HStack {
+                    Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Confirm") { rule.wrappedValue.confirmed = true }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(rule.wrappedValue.isBlank).help(rule.wrappedValue.isBlank ? "Set at least one part first" : "Start alerting on this rule")
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        }
+    }
+
     private func dropDetail() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch).controlSize(.small)
@@ -1095,7 +1241,8 @@ struct GuardPanel {
                     Toggle("Play a sound", isOn: $drops.settings.sound).toggleStyle(.checkbox)
                     Spacer()
                     Button("Test alert") {
-                        drops.show(DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""))
+                        drops.show([DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""),
+                                    DropAlert(item: "Test shiny", bag: .orange, rarity: .uncommon, shiny: true, mob: "Test", dungeon: "", rule: "Test rule")])
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -1116,15 +1263,45 @@ struct GuardPanel {
                 }
                 .fixedSize()
                 Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+                portalAlerts()
+                Divider().padding(.vertical, 2)
+                Text("Item rules").fontWeight(.semibold)
+                Text("Also alert when any item matches a rule, in any bag.").foregroundStyle(.secondary)
+                ForEach($drops.settings.rules) { $rule in itemRule($rule) }
+                Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
             }
             .disabled(!drops.settings.enabled)
-            Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
-                 : "Reading RealmHound's loot log" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
-                .foregroundStyle(drops.logs == 0 ? bad : Color.secondary)
+            Text(!source.link.isLive ? "Drops come from the guard: they alert only when you start the game from this app."
+                 : "Watching bags as they drop" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
+                .foregroundStyle(!source.link.isLive ? bad : Color.secondary)
             Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))
+    }
+
+    /// Dungeon portals (issue #74): chosen dungeons, each with its portal's sprite.
+    private func portalAlerts() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.vertical, 2)
+            Text("Dungeon portals").fontWeight(.semibold)
+            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary)
+            ForEach(drops.settings.portals.sorted(), id: \.self) { name in
+                HStack(spacing: 6) {
+                    SpriteIcon(image: drops.portalSprites[name], size: 16)
+                    Text(name)
+                    Spacer()
+                    Button { drops.settings.portals.remove(name) } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless).help("Stop alerting for \(name)")
+                }
+            }
+            Menu("Add dungeon") {
+                ForEach(drops.portalNames.list.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
+                    Button(name) { drops.settings.portals.insert(name) }
+                }
+            }
+            .controlSize(.small).fixedSize().disabled(drops.portalNames.list.isEmpty)
+        }
     }
 
     private func diagnostics(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -1261,16 +1438,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var ratesWatch: AnyCancellable?
     private var guardFrame: NSRect?, statsFrame: NSRect?
     var joinPopups: [NSPanel] = []
-    var dropPopup: NSPanel!
+    /// One panel per drop popup on screen, by stack entry id.
+    var dropPopups: [Int: NSPanel] = [:]
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var bagToken: Int32 = 0
     private var lootTimer: Timer?
+    private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
+    private var catalogChecked = -Double.infinity
     private var healthLoaded = false
     private let lootQueue = DispatchQueue(label: "local.exalt.clientmac.loot", qos: .utility)
     private var activity: NSObjectProtocol?
-    /// Moves the guard's drop-rate capture into drop_rates.db, off the main thread (issue #38).
+    /// Moves the guard's drop-rate capture into the drop database, off the main thread (issue #38).
     private func importLoot() {
         let logs = GuardPaths.logs(data: dataURL)
         // With no loot file and the health already shown, there is nothing to do.
@@ -1278,28 +1459,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        let noCatalog = drops.catalog.items.isEmpty, noDungeons = drops.portalNames.list.isEmpty
+        // The game data changes only with a new game build, so its files are checked every 30 s, not every import.
+        let checkCatalog = noCatalog || Date().timeIntervalSince1970 - catalogChecked >= 30
+        if checkCatalog { catalogChecked = Date().timeIntervalSince1970 }
         lootQueue.async {
-            var health: CaptureHealth?
+            var health: CaptureHealth?, catalog: RuleCatalog?, now: LootNow?, portalNames: PortalNames?
             if let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) {
-                GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml)
+                // Item rules read the catalog once it exists, and again when a new game build rebuilds it.
+                if checkCatalog, GameNames.refreshCatalog(store, folder: RealmHoundPaths.xml) || noCatalog {   // and the bundled drop catalog
+                    catalog = RuleCatalog.load(store, xml: RealmHoundPaths.xml)
+                }
+                if catalog != nil || noDungeons {
+                    let names = PortalNames.load(store)
+                    if !names.list.isEmpty { portalNames = names }
+                }
                 LootImport.run(logs: logs, store: store, appVersion: version)
                 health = CaptureHealth.load(store)
+                now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }
+            let loot = self.catalog()
+            let portalSprites = portalNames.map { GameSprites.load(assets: RealmHoundPaths.assets, $0.textures) }
             DispatchQueue.main.async {
+                if let portalNames, let portalSprites { self.drops.portalNames = portalNames; self.drops.portalSprites = portalSprites }
+                self.rates.catalog = loot
+                self.rates.update(now: now)
                 if let health { self.rates.update(health: health); self.healthLoaded = true }
+                if let catalog { self.drops.catalog = catalog }
                 self.lootBusy = false
                 // All-time queries are heavier, so the shown stats views refresh at most every 30 s.
                 if self.rates.shown, Date().timeIntervalSince1970 - self.ratesLoaded >= 30 { self.loadRates() }
             }
         }
     }
-    /// The stats views (issue #45) widen the main window to about 1100 pt and stop keeping it on top; back in
-    /// the guard view, the window gets its own frame and Keep on top again. Only the guard view's frame is saved.
+    /// The stats views (issue #45) widen the main window to about 1100 pt; back in the guard view, the window gets
+    /// its own frame again. Only the guard view's frame is saved.
     private func showStats(_ shown: Bool) {
         let fullScreen = window.styleMask.contains(.fullScreen)
         if shown {
             loadRates()
-            window.level = .normal
             guard !fullScreen else { return }
             let current = window.frame
             guardFrame = current
@@ -1308,7 +1506,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             let frame = statsFrame ?? NSRect(x: current.minX, y: current.maxY - height, width: 1100, height: height)
             window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
         } else {
-            state.setFloating(state.floating)
             guard !fullScreen, let guardFrame else { return }
             statsFrame = window.frame
             window.setFrame(guardFrame, display: true, animate: true)
@@ -1319,30 +1516,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         ratesLoaded = Date().timeIntervalSince1970
         lootQueue.async {
             guard let store = DropRateStore(path: LootImport.dbPath(data: dropsURL)) else {
-                DispatchQueue.main.async { self.rates.problem = "The drop database (drop_rates.db in the Exalt Client Mac data folder) can't be opened." }
+                DispatchQueue.main.async { self.rates.problem = "The drop database (\(LootImport.dbName) in the Exalt Client Mac data folder) can't be opened." }
                 return
             }
-            let report = DropReport.load(store)
+            let report = DropReport.load(store, catalog: self.catalog())
             let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
             let problem = report.dungeons.isEmpty && xml.isEmpty
                 ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
             DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
         }
     }
+    /// The loot numbers from the game's XML, read once (issue #58). On lootQueue.
+    private func catalog() -> LootCatalog {
+        if let lootCatalog { return lootCatalog }
+        let catalog = LootCatalog.load(folder: RealmHoundPaths.xml)
+        if !catalog.modifiers.isEmpty { lootCatalog = catalog }   // RealmHound may extract the XML later
+        return catalog
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
         // activity, App Nap slows timers while the game is in front.
-        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
+        // Latency critical too: drop popups must not wait for coalesced timers while the game is in front (issue #75).
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                         reason: "Watching party chat and drops")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.source.refresh(detailed: self.state.diagnosticsOpen)
             #if !GUARD_SYNC_CAPTURE
             self.alerts.check(self.source)
-            self.drops.check()
+            self.drops.check(self.source)
             #endif
         }
         RunLoop.main.add(alertTimer!, forMode: .common)
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        // The guard posts this as each bag appears; stamped off the main thread so the log shows a busy main thread.
+        notify_register_dispatch(LIVE_BAG_NOTIFICATION, &bagToken, DispatchQueue.global(qos: .userInteractive)) { [weak self] _ in
+            let wake = Clock.monotonicNs()
+            DispatchQueue.main.async { guard let self else { return }; self.drops.bagsLanded(self.source, wakeNs: wake) }
+        }
+        #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
@@ -1357,7 +1570,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         importLoot()
-        lootTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.importLoot() }
+        // Each second, so the loot bar follows gear swaps and potions (the guard writes every 0.1 s); an import reads
+        // only the lines added since the last one.
+        lootTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.importLoot() }
         #endif
         let menu = NSMenu()
         let appItem = NSMenuItem(); menu.addItem(appItem)
@@ -1371,8 +1586,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         #endif
         window.delegate = self
         window.contentView = NSHostingView(rootView: GuardView(source: source, window: state, settings: settings, launch: launch, alerts: alerts, drops: drops, rates: rates))
+        // A normal window, not floating: a floating one can't go full screen (issue #66). The compact strip floats.
         window.center(); window.setFrameAutosaveName("ExaltClientMacMain"); state.window = window
-        state.setFloating(state.floating)
         // Compact strip: floats over the game (also in full screen) and never takes focus.
         compact = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 52),
                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -1403,20 +1618,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 panel.orderFrontRegardless()
             }
         }
-        // Drop popup: on the game's monitor, just below that monitor's Join popup while one is up.
-        dropPopup = popupPanel(height: 64, DropPopupView(drops: drops))
-        dropWatch = drops.$popup.receive(on: DispatchQueue.main).sink { [weak self] drop in
-            guard let self, let panel = self.dropPopup else { return }
-            if drop == nil { panel.orderOut(nil); return }
-            if let screen = self.gameScreen() ?? NSScreen.main {
-                var top = self.popupTop(screen)
-                if let join = self.joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
-                    top = join.frame.minY - 8
-                }
-                panel.setFrameTopLeftPoint(NSPoint(x: screen.frame.midX - 190, y: top))
-            }
-            panel.orderFrontRegardless()
-        }
+        // Drop popups: a stack on the game's monitor, just below that monitor's Join popup while one is up.
+        dropWatch = drops.$stack.map(\.visible).removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.layoutDrops($0) }
         #if GUARD_UI_TEST
         // Test hook: drive compact and full screen automatically and report what is visible.
         let env = ProcessInfo.processInfo.environment
@@ -1449,6 +1652,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     private var mode = WindowMode()
+    /// Slides the drop popups into their places: new ones drop in and fade up, closed ones fade and lift away,
+    /// and the rest slide up into the gap.
+    private func layoutDrops(_ visible: [DropStack.Entry]) {
+        let ids = Set(visible.map(\.id))
+        for (id, panel) in dropPopups where !ids.contains(id) {
+            dropPopups[id] = nil
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.35; ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+                panel.animator().setFrame(panel.frame.offsetBy(dx: 0, dy: 10), display: true)
+            }, completionHandler: { panel.orderOut(nil) })
+        }
+        guard !visible.isEmpty, let screen = gameScreen() ?? NSScreen.main else { return }
+        var top = popupTop(screen)
+        if let join = joinPopups.first(where: { $0.isVisible && screen.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+            top = join.frame.minY - 8
+        }
+        for entry in visible {
+            let frame = NSRect(x: screen.frame.midX - 190, y: top - 64, width: 380, height: 64)
+            top -= 64 + 8
+            if let panel = dropPopups[entry.id] {
+                guard panel.frame != frame else { continue }
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3; ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                    panel.animator().setFrame(frame, display: true)
+                }
+            } else {
+                let panel = popupPanel(height: 64, DropPopupView(drops: drops, entry: entry))
+                dropPopups[entry.id] = panel
+                panel.setFrame(frame.offsetBy(dx: 0, dy: 12), display: false)
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3; ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                    panel.animator().alphaValue = 1
+                    panel.animator().setFrame(frame, display: true)
+                }
+            }
+        }
+    }
     /// A popup card above everything, including full-screen video, that never takes focus.
     private func popupPanel<V: View>(height: CGFloat, _ view: V) -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: height),
@@ -1515,6 +1758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showFull(); return true }
 }
 
+#if !GUARD_RENDER   // render_page.swift has its own main
 @main struct Main {
     static func main() {
         let app = NSApplication.shared
@@ -1522,5 +1766,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let delegate = AppDelegate()
         app.delegate = delegate; app.setActivationPolicy(.regular); app.run()
         withExtendedLifetime(delegate) {}
+    }
+}
+#endif
+
+/// Suggestions under a rule's text field as you type (issue #47). SwiftUI has them from macOS 15; older systems go without.
+private struct Suggestions: ViewModifier {
+    let options: [String]
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.textInputSuggestions { ForEach(options, id: \.self) { Text($0).textInputCompletion($0) } }
+        } else {
+            content
+        }
+    }
+}
+
+/// A rule's names or enchantments (issue #47): chips you can remove, and a field that adds what you type on Return.
+private struct TermList: View {
+    let label: String
+    let hint: String
+    @Binding var terms: [String]
+    let options: [String]
+    @StateObject private var typed = Typed()
+    /// What is typed but not yet added. (@State needs a compiler plugin this build doesn't load.)
+    final class Typed: ObservableObject { @Published var text = "" }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label).foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
+            Flow(spacing: 4) {
+                ForEach(terms, id: \.self) { term in
+                    HStack(spacing: 3) {
+                        Text(term)
+                        Button { terms.removeAll { $0 == term } } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Remove \(term)")
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                }
+                TextField(terms.isEmpty ? "contains…" : "add another…", text: $typed.text)
+                    .frame(width: 170)
+                    .onSubmit(add)
+                    .modifier(Suggestions(options: RuleCatalog.suggest(typed.text, from: options)))
+            }
+            if !hint.isEmpty, !terms.isEmpty { Text(hint).foregroundStyle(.tertiary) }
+        }
+        .onDisappear(perform: add)   // Confirm keeps a term typed but not yet added
+    }
+
+    private func add() {
+        let t = typed.text.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty, !terms.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) { terms.append(t) }
+        typed.text = ""
+    }
+}
+
+/// Lays views out left to right, wrapping to a new row when the width runs out.
+private struct Flow: Layout {
+    var spacing: CGFloat = 4
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, p) in zip(subviews, arrange(bounds.width, subviews).points) {
+            view.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
+        }
+    }
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (points: [CGPoint], size: CGSize) {
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing; rowHeight = max(rowHeight, size.height); widest = max(widest, x - spacing)
+        }
+        return (points, CGSize(width: widest, height: y + rowHeight))
     }
 }

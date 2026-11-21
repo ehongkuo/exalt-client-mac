@@ -211,12 +211,13 @@ mode, opened only by the app.
 | `kills` | id, map, time, object id, mob type, your damage, max HP, landed by you, factors | One row per death of a mob you damaged |
 | `announcements` | session, time, text | Server-wide loot events |
 | `bags` | id, map, time, object id, bag type, kill (nullable), x, y | Every bag, every colour |
+| `portals` | id, map, time, object id, portal type, x, y, kill (nullable) | Every portal once per map (issue #64); no kill for one that opened on its own |
 | `bag_items` | bag, slot, item type | Contents when the bag appeared |
 | `bag_stats` | bag, stat type, value, text | Every other stat the bag arrived with, raw (enchants are decoded later) |
 | `capture_gaps` | session, from, to, lost events, reason | Ring overflow, app not running, map unknown |
 
 Built so far: `sessions`, `maps` (no character yet), `kills` (your damage split into projectile,
-second projectile path and ability), `bags`, `bag_items`, `bag_stats`, `capture_gaps`.
+second projectile path and ability), `bags`, `bag_items`, `bag_stats`, `portals`, `capture_gaps`.
 `factor_states` and `announcements` come with the loot-factor work.
 
 Indexes: `kills(mob_type)`, `kills(map, time)`, `bags(kill)`, `bag_items(item_type)`. No pre-aggregated counters: a
@@ -341,8 +342,8 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
    range. Layout: [drop-rates-mockup.html](drop-rates-mockup.html) (sample numbers).
    Built (#41): `DropReport` in `app/GuardDropRates.swift` holds every query, `app/GuardDropRatesView.swift`
    the views. Rules as built:
-   - **Best bag per kill** counts kills whose highest bag colour was that colour (the bag objects' colour,
-     not each item's `<BagType>`), so it is a chance per kill. Item rates count copies.
+   - **Best bag** counts runs whose highest bag colour from the bosses was that colour (the bag objects' colour,
+     not each item's `<BagType>`). Item rates count copies.
    - **A run** is a map visit in which a catalog boss (`<Quest/>` or `BOSSFIGHT`) died; per-run rates count
      runs with at least one. Realm quests count as bosses, so a realm visit with a quest kill is a run.
    - **Range:** exact Poisson below 50 drops, Byar's approximation above (within 0.01 %).
@@ -358,13 +359,14 @@ rate, "1 in N" and a 95 % range, so a rate from 3 drops reads as rough.
      `DropReport.dropTags`) and every map with kills, with its portal sprite; played ones first. Search shows
      two groups, Items (opens the item page) and Dungeons.
    - **Bags and drops:** a breadcrumb (dungeon › mob › group › item, each a step back; Esc steps back too),
-     BOSSES and MINIONS rows of mob chips (a mob shows only its drops; Esc or the breadcrumb shows all), then one row of tiles per bag,
+     BOSSES and MINIONS rows of mob chips (a mob opens its page on the right; the grid stays dungeon-wide), then one row of tiles per bag,
      by the catalog's `<BagType>` (`DropBag(bagType:)`). Shinies ("X Shiny" by id) fold into their base item.
      Items of one `<Tier>` and slot family (weapons, armors, abilities, rings by `<SlotType>`) share a tile,
      which cycles its sprites only on hover. Possible drops are the items whose `ORG_*` tag is one of the
      dungeon's drop tags, plus every item that dropped there; not yet dropped ones are faded. Drop tags are the
      template labels that some item carries as its origin, except where `DropReport.dropTags` names them.
-   - **Right pane:** the dungeon's best bag per run, a mob's best bag per kill, a tier group (the chance of any
+   - **Right pane:** the dungeon's best bag per run, a **mob page** (#50: kills, runs it died in, and every item it
+     dropped, by bag, per kill, surest first; an item opens its page, Esc steps back to the mob), a tier group (the chance of any
      of it per run, then each item), or the **item page**. The item page is global: every dungeon it dropped
      in, surest first (by the low end of the per-run 95% range; places with no runs follow by their best mob
      per kill), each opening to its mobs' per-kill rates; the shiny's own rate; rarity of every copy as five

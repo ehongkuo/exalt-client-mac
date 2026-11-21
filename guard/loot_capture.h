@@ -4,14 +4,15 @@
  * it never stops the game.
  *
  *   A  damage method (base, enemies only): your hits, and each Damage message's hit on a mob
- *   B  new object: each object's type and position; each bag once per map, with its contents
+ *   B  new object: each object's type and position; each bag once per map, with its contents; each
+ *      portal once per map (issue #64: types from EXALT_PORTALS), linked to its kill as bags are
  *   C  Damage message: who the server says shot (your abilities)
  *   D  remove object, from the server's Update: a mob someone hit is gone, which is a kill. The
  *      game's kill flag misses most kills (staging run 1: none over 32 kills RealmHound saw), and
  *      RealmHound counts this removal too. A mob that only left view is also a kill here.
  *   E  status apply (every object, on arrival and each tick): server positions, and your own stats
  *      when they change, for the loot factors among them
- *   F  NewTick: each bag of the tick before goes to the nearest kill since then
+ *   F  NewTick: each bag (and portal) of the tick before goes to the nearest kill since then
  * Once per map it also writes the map's info message raw (seed, strings such as modifiers).
  */
 #include "loot_core.h"
@@ -43,6 +44,8 @@ static LootHits loot_hits;
 static LootType loot_types[LOOT_TYPES];
 static LootSeen loot_seen[LOOT_SEEN];
 static LootTicks loot_ticks;
+static LootPortals loot_portals;
+static int loot_portal_types;   /* how many EXALT_PORTALS named: 0 records no portals, so the summary shows it */
 static FILE *loot_file;
 static const void *loot_methods[LOOT_HOOK_COUNT];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
@@ -57,7 +60,7 @@ static int loot_prepared, loot_attempted, loot_installed;
 static int32_t loot_self_id, loot_shooter;   /* your object id, from the connection */
 static void *loot_connection;
 static uint32_t loot_map, loot_named_map = UINT32_MAX;
-static _Atomic uint64_t loot_kills, loot_bags, loot_off_main;
+static _Atomic uint64_t loot_kills, loot_bags, loot_portal_count, loot_off_main;
 /* Where a kill can drop out, for the summary: damage calls by source, Update removals, those with hits. */
 static _Atomic uint64_t loot_hit_calls[LOOT_UNKNOWN + 1], loot_removals, loot_removals_hit;
 static _Atomic uintptr_t loot_unknown_caller;
@@ -125,12 +128,16 @@ static void loot_prepare(const void *game) {
     Dl_info info;
     if (!dladdr((const void *)il2cpp_domain_get, &info) || !info.dli_fbase) { loot_refuse("game_base"); return; }
     loot_base = (uintptr_t)info.dli_fbase;
+    loot_portal_types = loot_portals_parse(&loot_portals, getenv("EXALT_PORTALS"));
     loot_prepared = 1;
 }
 
 /* Your stats as last written, so only changes are written (and all of them again on each map). */
 static int32_t loot_player_values[256];
 static uint8_t loot_player_known[256];
+/* Your text stats as last written; loot_player_known says which are set. Stat 80 is your gear's enchantments, stat 128
+ * your Crucible (non-empty when it's on, as RealmHound reads it); the rest are kept raw (issue #58). */
+static char loot_player_texts[256][sizeof ((LootEvent *)0)->text];
 /* Ids restart with each map, so hits, waiting bags and kills are forgotten when the server gives
  * you a new object id. The seen bags are per map already. */
 static void loot_new_map(void) {
@@ -176,6 +183,30 @@ static void loot_status_pos(void *status, float pos[2]) {
     void *p = read_reference(status, loot_pos_field);
     if (p) { il2cpp_field_get_value(p, loot_x_field, &pos[0]); il2cpp_field_get_value(p, loot_y_field, &pos[1]); }
 }
+/* Hands the bag to the app through the live file and wakes it, for drop alerts with no lag (issue #75). */
+static LootRecent loot_recent;
+/* Hands a portal linked to a kill to the app, with the kill's facts (issue #74). The caller posts the wake-up. */
+static void loot_announce_portal(uint64_t now, const LootType *portal, const LootKillFacts *kill) {
+    static LivePortalsData portals;
+    if (!live) return;
+    portals.portals[portals.count % LIVE_PORTALS] = (LivePortal){
+        .ns = now, .epoch = start_epoch + (double)(now - start_ns) / 1e9, .id = portal->id, .type = portal->type,
+        .pos = {portal->pos[0], portal->pos[1]}, .mob = kill->type, .mob_pos = {kill->pos[0], kill->pos[1]},
+        .damage = kill->damage, .since_hit_ms = kill->since_hit_ms};
+    ++portals.count;
+    portals_write(live_portals(live), &portals);
+}
+static void loot_announce(const LootEvent *bag, const char *enchants) {
+    static LiveBagsData bags;
+    if (!live) return;
+    LiveBag *b = &bags.bags[bags.count % LIVE_BAGS];
+    *b = (LiveBag){.ns = bag->ns, .epoch = start_epoch + (double)(bag->ns - start_ns) / 1e9, .id = bag->id, .type = bag->type};
+    for (int i = 0; i < 8; ++i) b->items[i] = bag->v[i];
+    snprintf(b->enchants, sizeof b->enchants, "%s", enchants);
+    ++bags.count;
+    bags_write(live_bags(live), &bags);
+    notify_post(LIVE_BAG_NOTIFICATION);
+}
 /* Reads the message, not the game object: a bag's first status (its contents) is in it. */
 static void loot_object(void *connection, void *data) {
     /* A new map starts when the server gives you a new id, which it does before it sends the map's
@@ -193,13 +224,21 @@ static void loot_object(void *connection, void *data) {
     float pos[2] = {0, 0};
     loot_status_pos(status, pos);
     loot_type_set(loot_types, id, type, pos);
-    if (!loot_is_bag(type) || !loot_bag_first(loot_seen, id, loot_map)) return;
     uint64_t now = monotonic_ns();
+    if (loot_is_portal(&loot_portals, type)) {
+        if (!loot_bag_first(loot_seen, id, loot_map)) return;   /* ids are unique per map, so bags and portals share it */
+        LootEvent portal = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_PORTAL, .pos = {pos[0], pos[1]}};
+        loot_tick_bag(&loot_ticks, id, pos);
+        if (loot_push(&loot_ring, &portal)) atomic_fetch_add_explicit(&loot_portal_count, 1, memory_order_relaxed);
+        return;
+    }
+    if (!loot_is_bag(type) || !loot_bag_first(loot_seen, id, loot_map)) return;
     LootEvent bag = {.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG, .pos = {pos[0], pos[1]},
                      .v = {-1, -1, -1, -1, -1, -1, -1, -1}};
     loot_tick_bag(&loot_ticks, id, pos);
     LootEvent extra[16];
     int extras = 0;
+    const char *enchants = "";
     void *const *stats = NULL;
     int32_t n = list_items(read_reference(status, loot_stats_field), "CGOECEPGBBG[]", &loot_stat_list, &stats);
     for (int32_t i = 0; i < n; ++i) {
@@ -213,7 +252,9 @@ static void loot_object(void *connection, void *data) {
         LootEvent *e = &extra[extras++];
         *e = (LootEvent){.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG_STAT, .v = {stat, value}};
         read_text(read_reference(stats[i], loot_stat_text_field), e->text, sizeof e->text);
+        if (stat == 80) enchants = e->text;
     }
+    loot_announce(&bag, enchants);
     if (loot_push(&loot_ring, &bag)) atomic_fetch_add_explicit(&loot_bags, 1, memory_order_relaxed);
     for (int i = 0; i < extras; ++i) loot_push(&loot_ring, &extra[i]);
 }
@@ -236,8 +277,19 @@ static void loot_status(void *connection, void *status) {
         uint8_t stat = 0; int32_t value = 0;
         il2cpp_field_get_value(stats[i], loot_stat_type_field, &stat);
         void *text = read_reference(stats[i], loot_stat_text_field);
-        if (!loot_player_stat_kept(stat) || (text && il2cpp_string_length(text) > 0)) continue;
+        if (!loot_player_stat_kept(stat)) continue;
+        if (text && il2cpp_string_length(text) > 0) {
+            LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, 0}};
+            read_text(text, e.text, sizeof e.text);
+            if (stat == 80) loot_gear_parts(e.text);
+            if (loot_player_known[stat] && !strcmp(loot_player_texts[stat], e.text)) continue;
+            loot_player_known[stat] = 1;
+            memcpy(loot_player_texts[stat], e.text, sizeof e.text);
+            loot_push(&loot_ring, &e);
+            continue;
+        }
         il2cpp_field_get_value(stats[i], loot_stat_int_field, &value);
+        if (loot_player_texts[stat][0]) { loot_player_texts[stat][0] = 0; loot_player_known[stat] = 0; }   /* text went empty: write it */
         if (loot_player_known[stat] && loot_player_values[stat] == value) continue;
         loot_player_known[stat] = 1; loot_player_values[stat] = value;
         LootEvent e = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_PLAYER_STAT, .v = {stat, value}};
@@ -262,6 +314,8 @@ static void loot_remove_observed(void *self, int32_t id, const void *info) {
                            .pos = {known->pos[0], known->pos[1]},
                            .v = {h.damage[0], h.damage[1], h.damage[2], h.max, (int32_t)((now - h.last_ns) / 1000000), h.others}};
             loot_tick_killed(&loot_ticks, id, known->pos);
+            loot_recent_add(&loot_recent, (LootKillFacts){id, known->type, {known->pos[0], known->pos[1]},
+                                                          h.damage[0] + h.damage[1] + h.damage[2], e.v[4]});
             if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
         }
     }
@@ -274,10 +328,15 @@ static void loot_newtick_observed(void *self, void *message, const void *info) {
     static LootSpot bags[LOOT_PENDING];
     static int32_t killers[LOOT_PENDING];
     uint64_t now = monotonic_ns();
+    int portals = 0;
     for (int i = 0, n = loot_tick_end(&loot_ticks, bags, killers); i < n; ++i) {
         LootEvent e = {.ns = now, .id = bags[i].id, .map = loot_map, .kind = LOOT_DROP, .v = {killers[i]}};
         loot_push(&loot_ring, &e);
+        const LootType *portal = killers[i] ? loot_type_find(loot_types, bags[i].id) : 0;
+        const LootKillFacts *kill = portal && loot_is_portal(&loot_portals, portal->type) ? loot_recent_find(&loot_recent, killers[i]) : 0;
+        if (kill) { loot_announce_portal(now, portal, kill); ++portals; }
     }
+    if (portals && live) notify_post(LIVE_BAG_NOTIFICATION);
 }
 
 /* Same rule as the death guard's hooks: install once, in the Nexus, on the main thread. */
@@ -336,7 +395,7 @@ static void loot_install(void *player) {
     }
 #endif
     loot_installed = 1;
-    note("loot_ready\tformat=%d\tnewtick=%s\n", LOOT_FORMAT, chain ? "chained" : "native");
+    note("loot_ready\tformat=%d\tnewtick=%s\tportal_types=%d\n", LOOT_FORMAT, chain ? "chained" : "native", loot_portal_types);
 }
 
 static void loot_tick(void *player) {
@@ -348,8 +407,15 @@ static void loot_tick(void *player) {
     int32_t id = 0;
     il2cpp_field_get_value(player, loot_id_field, &id);
     if (loot_map == loot_named_map || !last_map_info || !id || id != loot_self_id) return;
-    loot_named_map = loot_map;
+    /* Your class is your object's type, which can come a few ticks after your id: wait for it, up to 3 s. */
+    static uint64_t waiting_since;
     uint64_t now = monotonic_ns();
+    if (!loot_type_get(loot_types, id)) {
+        if (!waiting_since) waiting_since = now;
+        if (now - waiting_since < 3 * NSEC_PER_SEC) return;
+    }
+    waiting_since = 0;
+    loot_named_map = loot_map;
     LootEvent e = {.ns = now, .map = loot_map, .kind = LOOT_MAP};
     snprintf(e.text, sizeof e.text, "%s", live_data.map);
     loot_push(&loot_ring, &e);
@@ -401,9 +467,9 @@ static void loot_drain(int closing) {
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
     if (closing || now >= next_summary) {
         next_summary = now + 60 * NSEC_PER_SEC;
-        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
+        fprintf(loot_file, "loot_summary\t%.3f\tinstalled=%d\tkills=%llu\tbags=%llu\tportals=%llu\tportal_types=%d\tlost=%llu\toff_main=%llu\tevictions=%llu\twaiting_full=%llu"
                 "\thits=%llu/%llu/%llu/%llu/%llu\tremovals=%llu\tremovals_hit=%llu\tunknown_caller=0x%lx\n",
-                epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags,
+                epoch, loot_installed, (unsigned long long)loot_kills, (unsigned long long)loot_bags, (unsigned long long)loot_portal_count, loot_portal_types,
                 (unsigned long long)lost, (unsigned long long)loot_off_main, (unsigned long long)loot_hits.evictions,
                 (unsigned long long)loot_ticks.overflow, (unsigned long long)loot_hit_calls[0], (unsigned long long)loot_hit_calls[1],
                 (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],
