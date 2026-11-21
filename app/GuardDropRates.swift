@@ -1170,6 +1170,45 @@ enum GameNames {
 /// The Drop rates tab of the main window (issues #41, #45), from all the data kept (DropReport has every query):
 /// dungeons on the left; the selected dungeon's drops in the middle, one row of tiles per bag; on the right the most
 /// specific thing picked: an item (a global page), a tier group, a mob's page (issue #50), or the dungeon.
+/// What the Drop rates pages look up on each click (issue #81), built once per report off the main thread, so a click
+/// only reads it. Each holds what the `DropReport` function of the same name returns.
+struct DropIndex {
+    var dungeonKills: [String: Int] = [:]                     // a dungeon's mobs' kills
+    var dungeons: [DropReport.Dungeon] = []                   // most kills first, then by name: the list's order
+    var mobs: [String: [DropReport.Mob]] = [:]                // `mobs(in:)`
+    var possible: [String: Set<Int>] = [:]                    // `possibleDrops(dungeon)`, by name
+    var tiles: [String: [DropBag?: [DropReport.Tile]]] = [:]  // `tiles(possibleDrops(dungeon))`
+    var possibleIn: [Int: [String]] = [:]                     // item → the dungeons that can drop it, by name
+    var searchable: [(item: Int, name: String)] = []          // every tagged or dropped item's base, by name
+
+    init() {}
+    init(_ r: DropReport) {
+        for d in r.dungeons {
+            let mobs = r.mobs(in: d.name), possible = r.possibleDrops(d)
+            self.mobs[d.name] = mobs
+            dungeonKills[d.name] = mobs.reduce(0) { $0 + (r.kills[$1] ?? 0) }
+            self.possible[d.name] = possible
+            tiles[d.name] = r.tiles(possible)
+            for item in possible { possibleIn[item, default: []].append(d.name) }
+        }
+        dungeons = r.dungeons.sorted { (kills(in: $0.name), $1.name) > (kills(in: $1.name), $0.name) }
+        searchable = Set(Set(r.origins.keys).union(r.items).map(r.base)).map { ($0, r.name($0)) }.sorted { ($0.name, $0.item) < ($1.name, $1.item) }
+    }
+    func kills(in dungeon: String) -> Int { dungeonKills[dungeon] ?? 0 }
+    func mobs(in dungeon: String) -> [DropReport.Mob] { mobs[dungeon] ?? [] }
+    /// Up to 30 items whose name holds `query`, by name.
+    func search(_ query: String) -> [Int] {
+        Array(searchable.lazy.filter { $0.name.localizedCaseInsensitiveContains(query) }.map(\.item).prefix(30))
+    }
+}
+
+/// What changes while you play, apart from what is picked: your loot factors and capture health. Only the views that show
+/// them observe it, so the game's updates each second don't redraw the whole window (issue #81).
+final class DropLive: ObservableObject {
+    @Published var now: LootNow?
+    @Published var health = CaptureHealth()
+}
+
 final class DropRatesModel: ObservableObject {
     /// The main window shows the Drop rates tab instead of the Guard tab.
     @Published var shown = false { didSet { resetOrders() } }
@@ -1186,17 +1225,19 @@ final class DropRatesModel: ObservableObject {
     /// Why the tab can't show data (no database, no game data); nil when it can.
     @Published var problem: String?
     @Published private(set) var report = DropReport()
-    @Published private(set) var health = CaptureHealth()
+    @Published private(set) var index = DropIndex()
+    let live = DropLive()
+    var health: CaptureHealth { live.health }
     @Published private(set) var sprites: [Int: CGImage] = [:]
     @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
     private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
     /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
-    @Published private(set) var now: LootNow?
+    var now: LootNow? { live.now }
     var catalog = LootCatalog()
 
     func update(now: LootNow?) {
-        if now != self.now { self.now = now }
+        if now != live.now { live.now = now }
         if let now { cutSprites(now.textures) }
     }
     /// Your rate now: the base rate times your multiplier for this mob, and its dungeon's modifiers only while you're in
@@ -1207,9 +1248,12 @@ final class DropRatesModel: ObservableObject {
         return abs(m - 1) < 0.001 ? nil : rate.rate * m
     }
 
-    func update(health: CaptureHealth) { if health != self.health { self.health = health } }
-    func update(_ report: DropReport) {
-        if report != self.report { self.report = report }
+    func update(health: CaptureHealth) { if health != live.health { live.health = health } }
+    /// A new report and its lookups, set together. The caller compares reports off the main thread; without `index`, it
+    /// is built here.
+    func update(_ report: DropReport, index: DropIndex? = nil) {
+        self.report = report
+        self.index = index ?? DropIndex(report)
         if !iconsAsked {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
