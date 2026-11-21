@@ -294,13 +294,13 @@ struct DropAlert: Equatable {
 enum DropRules {
     /// Drops older than this are not announced (an import or a catch-up after a pause, not a live drop).
     static let freshness: Int64 = 120_000
-    /// How long the popup stays up.
-    static let shown = 10.0
+    /// How long each popup stays up.
+    static let shown = 5.0
 
     /// An item alerts when it is what made its bag a chosen colour (its own bag type is the drop's) and it is
     /// at least the chosen rarity, when it is shiny and
     /// shiny alerts are on, or when an item rule matches it (in any bag). Every matching item gets its
-    /// own alert, in bag order, each with its own rarity.
+    /// own alert, in bag order, each with its own rarity and bag.
     static func alerts(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
                        nowMs: Int64) -> [DropAlert] {
         guard settings.enabled, nowMs - drop.epochMs <= freshness else { return [] }
@@ -313,7 +313,8 @@ enum DropRules {
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
             let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
             guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+            // The popup shows the item's own bag: a blue potion riding in a white bag shows blue.
+            return DropAlert(item: item.name, bag: ownBag ?? bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
                              rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? "")
         }
     }

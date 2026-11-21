@@ -88,18 +88,19 @@ enum DropTests {
         white.bags = []; white.shiny = true
         check(DropRules.alerts(for: whiteBag, settings: white, shiny: [2651], catalog: malphas, nowMs: now).map(\.item) == ["Tome of Divine Favor"],
               "a shiny alerts whatever bag it rides in")
-        white.shiny = false; white.rules = confirmed(ItemRule(names: ["mark of"]))
-        check(DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now).map(\.item) == ["Mark of Malphas"],
-              "a rule alerts whatever bag it rides in")
+        white.shiny = false; white.bags = [.white]; white.rules = confirmed(ItemRule(title: "Marks", names: ["mark of"]))
+        let both = DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now)
+        check(both.map(\.title) == ["Berserker's Breastplate", "Marks"] && both.map(\.bag) == [.white, .purple],
+              "a rule alerts whatever bag it rides in, each popup showing the item's own bag")
         // The stack: oldest on top, each up for its own time, a burst past the limit waits its turn.
         func alert(_ name: String) -> DropAlert { DropAlert(item: name, bag: .red, rarity: .common, shiny: false, mob: "", dungeon: "") }
         var stack = DropStack()
         stack.push([alert("a"), alert("b")], now: 0)
         stack.push([alert("c")], now: 4)
         check(stack.visible.map(\.alert.item) == ["a", "b", "c"] && stack.visible.map(\.shownAt) == [0, 0, 4], "new popups go below, oldest on top")
-        stack.expire(now: 9.9)
+        stack.expire(now: 4.9)
         check(stack.visible.count == 3, "each stays up for the set time")
-        stack.expire(now: 10)
+        stack.expire(now: 5)
         check(stack.visible.map(\.alert.item) == ["c"], "the oldest close at their time and the rest move up")
         stack.dismiss(stack.visible[0].id, now: 11); stack.dismiss(999, now: 11)
         check(stack.entries.isEmpty, "a click closes one; a gone id does nothing")
@@ -108,8 +109,8 @@ enum DropTests {
         stack.dismiss(stack.visible[2].id, now: 22)
         check(stack.visible.map(\.alert.item) == ["1", "2", "4", "5", "6"] && stack.visible.last?.shownAt == 22,
               "a closed middle popup lets the next waiting one show, its time starting then")
-        stack.expire(now: 30)
-        check(stack.visible.map(\.alert.item) == ["6", "7"] && stack.visible.map(\.shownAt) == [22, 30], "expired ones make room for the rest")
+        stack.expire(now: 25)
+        check(stack.visible.map(\.alert.item) == ["6", "7"] && stack.visible.map(\.shownAt) == [22, 25], "expired ones make room for the rest")
         var both = r; both.rules = confirmed(ItemRule(slot: 9, enchants: ["Lucky Streak", "Loot Bonus IV"]))
         check(fires(LootItem(id: 4, name: "Both", enchants: 2, enchantIds: [0x639, 0x2a0]), both) == "Both", "a ring with both enchantments")
         check(fires(LootItem(id: 4, name: "One", enchants: 1, enchantIds: [0x639]), both) == nil, "all enchantments: one is not enough")
