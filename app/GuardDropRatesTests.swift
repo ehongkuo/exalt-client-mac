@@ -293,16 +293,21 @@ enum DropRateTests {
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
-        // The Items list (issue #68): by type in family order, untiered first, then best tier; search by name.
+        // The Items list (issue #68): categories, then types in family order; untiered, then set tier, then best tier.
         var book = DropReport()
-        book.names = [1: "Doom Bow", 2: "Bow of Covert Havens", 3: "Coral Bow", 4: "Ring of Paramount Attack", 5: "Potion of Life", 6: "Dirk"]
-        book.slots = [1: 3, 2: 3, 3: 3, 4: 9, 5: 10, 6: 2]
+        book.names = [1: "Doom Bow", 2: "Bow of Covert Havens", 3: "Coral Bow", 4: "Ring of Paramount Attack", 5: "Potion of Life", 6: "Dirk",
+                      7: "Mark of Malphas", 8: "Bee Pet Skin", 9: "Ninja Skin", 10: "Bow of the Ranger"]
+        book.slots = [1: 3, 2: 3, 3: 3, 4: 9, 5: 10, 6: 2, 7: 10, 8: 10, 9: 10, 10: 3]
         book.tiers = [2: 10, 3: 14, 4: 6]
-        book.itemSections = book.sections([1, 2, 3, 4, 5, 6])
-        check(book.itemSections == [.init(title: "Dagger", items: [6]), .init(title: "Bow", items: [1, 3, 2]), .init(title: "Ring", items: [4]),
-                                    .init(title: "Consumables", items: [5])], "items by type, untiered then best tier")
-        check(book.itemSections(matching: " bow ") == [.init(title: "Bow", items: [1, 3, 2])] && book.itemSections(matching: "zzz").isEmpty
-              && book.itemSections(matching: "") == book.itemSections, "searching an item's name finds it")
+        book.labels = [1: ["UT"], 10: ["ST"], 5: ["CONSUMABLE", "STATPOTION"], 7: ["MARK"], 8: [], 9: []]
+        book.itemCategories = book.categories(Set(1...10))
+        check(book.itemCategories.map(\.title) == ["Weapons", "Rings", "Potions", "Marks", "Skins"], "categories in the wiki's order")
+        check(book.itemCategories[0].types == [.init(title: "Dagger", items: [6]), .init(title: "Bow", items: [1, 10, 3, 2])],
+              "weapons by type; UT, then ST, then best tier")
+        check(book.itemCategories[4].types.map(\.title) == ["Character skins", "Pet skins"] && book.kind(1) == "UT" && book.kind(10) == "ST" && book.kind(3) == "T14",
+              "skins split; kinds")
+        check(book.itemSections(matching: " bow ") == [.init(title: "Weapons · Bow", items: [1, 10, 3, 2])] && book.itemSections(matching: "zzz").isEmpty
+              && book.itemSections(matching: "mark") == [.init(title: "Marks", items: [7])], "searching an item's name finds it")
         var gold = DropReport()
         gold.names = [1: "Zed Key", 2: "Ninja Skin", 3: "Amber Pet Stone", 4: "Blueprint_7", 5: "Assassin Skin", 6: "Bee Pet Skin"]
         for item in 1...6 { gold.bags[item] = .gold }

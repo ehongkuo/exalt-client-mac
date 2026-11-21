@@ -136,27 +136,58 @@ struct DropRatesView: View {
         }
     }
 
-    /// Every catalog item by type, untiered then best tier first (issue #68). The sections are worked out once per
-    /// report and search.
+    /// Every catalog item (issue #68): category rows that open to type rows, which open to items, like the mob page's
+    /// bags. A search lists the matches flat instead. Both are worked out once per report and search.
     private var itemList: some View {
-        let sections = model.shownItems
-        return List {
-            if sections.isEmpty {
-                Text(model.search.isEmpty ? "No items yet: the catalog loads with the game data." : "No item matches “\(model.search)”.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(sections, id: \.title) { section in
-                Section(section.title) {
-                    ForEach(section.items, id: \.self) { item in
-                        listRow(model.item == item, { model.mob = nil; model.group = nil; model.item = item }) {
-                            SpriteIcon(image: model.sprites[item], size: 24)
-                            Text(report.name(item)).lineLimit(1).help(report.name(item))
-                            Spacer()
-                            if let tier = report.tiers[item] { Text("T\(tier)").font(.caption).foregroundStyle(.secondary) }
+        List {
+            if model.search.trimmingCharacters(in: .whitespaces).isEmpty {
+                if report.itemCategories.isEmpty { Text("No items yet: the catalog loads with the game data.").foregroundStyle(.secondary) }
+                ForEach(report.itemCategories, id: \.title) { category in
+                    let count = category.types.reduce(0) { $0 + $1.items.count }
+                    itemFolder(category.title, sprite: category.types[0].items[0], count: count, indent: 0)
+                    if model.openItemRows.contains(category.title) {
+                        if category.types.count == 1 {
+                            itemRows(category.types[0].items, indent: 1)
+                        } else {
+                            ForEach(category.types, id: \.title) { type in
+                                let key = category.title + "/" + type.title
+                                itemFolder(type.title, key: key, sprite: type.items[0], count: type.items.count, indent: 1)
+                                if model.openItemRows.contains(key) { itemRows(type.items, indent: 2) }
+                            }
                         }
                     }
                 }
+            } else {
+                if model.shownItems.isEmpty { Text("No item matches “\(model.search)”.").foregroundStyle(.secondary) }
+                ForEach(model.shownItems, id: \.title) { section in
+                    Section(section.title) { itemRows(section.items, indent: 0) }
+                }
             }
+        }
+    }
+    /// A category or type: its first item's sprite, name and count; clicking opens or closes it.
+    private func itemFolder(_ title: String, key: String? = nil, sprite: Int, count: Int, indent: Int) -> some View {
+        let key = key ?? title, open = model.openItemRows.contains(key)
+        return listRow(false, { if open { model.openItemRows.remove(key) } else { model.openItemRows.insert(key) } }) {
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary).rotationEffect(.degrees(open ? 90 : 0)).frame(width: 10)
+            SpriteIcon(image: model.sprites[sprite], size: 24)
+            Text(title).fontWeight(indent == 0 ? .semibold : .regular).lineLimit(1)
+            Spacer()
+            Text(count.formatted()).monospacedDigit().foregroundStyle(.secondary)
+        }
+        .padding(.leading, CGFloat(indent) * 16)
+        .accessibilityLabel("\(title), \(count) items")
+        .accessibilityAddTraits(open ? .isSelected : [])
+    }
+    private func itemRows(_ items: [Int], indent: Int) -> some View {
+        ForEach(items, id: \.self) { item in
+            listRow(model.item == item, { model.mob = nil; model.group = nil; model.item = item }) {
+                SpriteIcon(image: model.sprites[item], size: 24)
+                Text(report.name(item)).lineLimit(1).help(report.name(item))
+                Spacer()
+                if let kind = report.kind(item) { Text(kind).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(.leading, CGFloat(indent) * 16 + (indent > 0 ? 10 : 0))
         }
     }
 
