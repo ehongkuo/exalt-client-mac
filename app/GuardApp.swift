@@ -160,7 +160,8 @@ final class LaunchController: ObservableObject {
             let dylib = GuardPaths.dylib(forApp: bundle)
             let expected = (try? String(contentsOf: GuardPaths.buildHashFile(forApp: bundle), encoding: .utf8)).flatMap(FileHash.expected)
             let exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
-            let portals = DropRateStore(path: LootImport.dbPath(data: dropsURL))?.portalTypes() ?? []
+            let store = DropRateStore(path: LootImport.dbPath(data: dropsURL))
+            let portals = store?.portalTypes() ?? [], players = store?.playerTypes() ?? []
             func plan(_ actual: String?) -> Result<LaunchPlan, LaunchProblem> {
                 LaunchPlan.make(install: install, dylib: dylib, data: dataURL, settings: settings, expectedHash: expected,
                                 actualHash: actual, running: running, observationOnly: observationOnly, portals: portals, exists: exists)
@@ -174,7 +175,10 @@ final class LaunchController: ObservableObject {
             switch result {
             case .failure(let problem): next = .failed(problem.message)
             case .success(let launch):
-                do { try GameLauncher.start(launch); next = .launched(Date()) }
+                do {
+                    try GameLauncher.start(launch); next = .launched(Date())
+                    TrafficCapture.start(logs: GuardPaths.logs(data: dataURL), portals: Set(portals), players: Set(players), build: expected ?? "unknown")
+                }
                 catch { next = .failed("Could not start DECA's launcher: \(error.localizedDescription)") }
             }
             DispatchQueue.main.async {
