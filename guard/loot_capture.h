@@ -184,6 +184,18 @@ static void loot_status_pos(void *status, float pos[2]) {
     if (p) { il2cpp_field_get_value(p, loot_x_field, &pos[0]); il2cpp_field_get_value(p, loot_y_field, &pos[1]); }
 }
 /* Hands the bag to the app through the live file and wakes it, for drop alerts with no lag (issue #75). */
+static LootRecent loot_recent;
+/* Hands a portal linked to a kill to the app, with the kill's facts (issue #74). The caller posts the wake-up. */
+static void loot_announce_portal(uint64_t now, const LootType *portal, const LootKillFacts *kill) {
+    static LivePortalsData portals;
+    if (!live) return;
+    portals.portals[portals.count % LIVE_PORTALS] = (LivePortal){
+        .ns = now, .epoch = start_epoch + (double)(now - start_ns) / 1e9, .id = portal->id, .type = portal->type,
+        .pos = {portal->pos[0], portal->pos[1]}, .mob = kill->type, .mob_pos = {kill->pos[0], kill->pos[1]},
+        .damage = kill->damage, .since_hit_ms = kill->since_hit_ms};
+    ++portals.count;
+    portals_write(live_portals(live), &portals);
+}
 static void loot_announce(const LootEvent *bag, const char *enchants) {
     static LiveBagsData bags;
     if (!live) return;
@@ -302,6 +314,8 @@ static void loot_remove_observed(void *self, int32_t id, const void *info) {
                            .pos = {known->pos[0], known->pos[1]},
                            .v = {h.damage[0], h.damage[1], h.damage[2], h.max, (int32_t)((now - h.last_ns) / 1000000), h.others}};
             loot_tick_killed(&loot_ticks, id, known->pos);
+            loot_recent_add(&loot_recent, (LootKillFacts){id, known->type, {known->pos[0], known->pos[1]},
+                                                          h.damage[0] + h.damage[1] + h.damage[2], e.v[4]});
             if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
         }
     }
@@ -314,10 +328,15 @@ static void loot_newtick_observed(void *self, void *message, const void *info) {
     static LootSpot bags[LOOT_PENDING];
     static int32_t killers[LOOT_PENDING];
     uint64_t now = monotonic_ns();
+    int portals = 0;
     for (int i = 0, n = loot_tick_end(&loot_ticks, bags, killers); i < n; ++i) {
         LootEvent e = {.ns = now, .id = bags[i].id, .map = loot_map, .kind = LOOT_DROP, .v = {killers[i]}};
         loot_push(&loot_ring, &e);
+        const LootType *portal = killers[i] ? loot_type_find(loot_types, bags[i].id) : 0;
+        const LootKillFacts *kill = portal && loot_is_portal(&loot_portals, portal->type) ? loot_recent_find(&loot_recent, killers[i]) : 0;
+        if (kill) { loot_announce_portal(now, portal, kill); ++portals; }
     }
+    if (portals && live) notify_post(LIVE_BAG_NOTIFICATION);
 }
 
 /* Same rule as the death guard's hooks: install once, in the Nexus, on the main thread. */

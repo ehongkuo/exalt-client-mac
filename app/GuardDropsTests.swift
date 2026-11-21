@@ -205,6 +205,69 @@ enum DropTests {
         check(DropDelayLog.lines(fresh, wakeNs: nil, mainNs: 4_000_000, shownNs: 4_000_000, panelNs: 4_000_000, tickGapMs: 1400,
                                  popups: []).hasPrefix("2000\t\t2.0\t2.0\t2.0\t1400\t\t"),
               "a bag the timer found has no wake time")
+        portals()
         print("Drop alert tests passed")
+    }
+
+    /// Portal alerts (issue #74): portals straight from the guard, the rule each must pass, and the catalog names.
+    static func portals() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("portal-test-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
+        store.exec("""
+            INSERT INTO dungeons(name, portal, texture_file, texture_index) VALUES ('Snake Pit', 1816, 'lofiEnvironment2', 5),
+                ('Undead Lair', 1818, NULL, NULL), ('Pet Yard', NULL, NULL, NULL);
+            INSERT INTO objects(type, name, display_name, class, boss, drop_source) VALUES (3340, 'Medusa', NULL, 'Character', 0, 1),
+                (3341, 'Wall', NULL, 'Wall', 0, 0);
+            """)
+        let names = PortalNames.load(store)
+        check(names.list == ["Snake Pit", "Undead Lair"] && names.textures == ["Snake Pit": GameTexture(file: "lofiEnvironment2", index: 5)]
+              && names.dungeons == [1816: "Snake Pit", 1818: "Undead Lair"] && names.mobs == [3340: "Medusa"],
+              "dungeons with a portal, their sprites, and mob names")
+
+        // The ring: the first look sets the start, later portals come back oldest first, an overrun keeps the latest.
+        var data = LivePortalsData()
+        func put(_ n: UInt32) {
+            var p = LivePortal(); p.id = Int32(n)
+            withUnsafeMutableBytes(of: &data.portals) { $0.bindMemory(to: LivePortal.self)[Int((n - 1) % UInt32(LIVE_PORTALS))] = p }
+            data.count = n
+        }
+        var seen: GuardBags.Seen?
+        put(1)
+        check(GuardPortals.new(data, pid: 7, seen: &seen).isEmpty, "first look replays nothing")
+        put(2); put(3)
+        check(GuardPortals.new(data, pid: 7, seen: &seen).map(\.id) == [2, 3], "new portals, oldest first")
+        check(GuardPortals.new(data, pid: 7, seen: &seen).isEmpty, "each portal once")
+        for n in UInt32(4)...20 { put(n) }
+        check(GuardPortals.new(data, pid: 7, seen: &seen).map(\.id) == Array(13...20), "an overrun keeps the latest")
+        put(21)
+        check(GuardPortals.new(data, pid: 8, seen: &seen).isEmpty, "a new guard session starts over")
+
+        // The rule: your kill died on the portal's spot, and its dungeon is chosen.
+        let t = Date().timeIntervalSince1970, nowMs = Int64(t * 1000)
+        func portal(_ type: Int32 = 1818, at x: Float = 10.5, damage: Int32 = 900, sinceHit: Int32 = 10, age: Double = 0) -> LivePortal {
+            var p = LivePortal(); p.epoch = t - age; p.type = type; p.pos = (x, 20); p.mob = 3340; p.mob_pos = (10, 20)
+            p.damage = damage; p.since_hit_ms = sinceHit
+            return p
+        }
+        var s = DropAlertSettings()
+        func fires(_ p: LivePortal, _ settings: DropAlertSettings? = nil) -> DropAlert? {
+            DropRules.alert(for: p, names: names, settings: settings ?? s, nowMs: nowMs)
+        }
+        check(fires(portal()) == nil, "an unchosen dungeon stays quiet")
+        s.portals = ["Undead Lair"]
+        let alert = fires(portal())
+        check(alert == DropAlert(item: "Undead Lair portal", bag: nil, rarity: .common, shiny: false, mob: "Medusa", dungeon: "Undead Lair", portal: true)
+              && alert?.detail == "Portal · Medusa", "a chosen dungeon's portal alerts, naming the dungeon and the mob")
+        check(fires(portal(1816)) == nil && fires(portal(9999)) == nil, "another dungeon, or a portal type with no dungeon")
+        check(fires(portal(at: 11.4)) != nil && fires(portal(at: 11.6)) == nil, "within 1.5 tiles of the kill")
+        check(fires(portal(damage: 0)) == nil && fires(portal(sinceHit: 1001)) == nil, "a kill that didn't die by your hits")
+        check(fires(portal(age: 200)) == nil, "an old portal stays quiet")
+        check(fires(portal(), { var x = s; x.enabled = false; return x }()) == nil, "off with drop alerts")
+
+        let defaults = UserDefaults(suiteName: "portal-test-\(UUID().uuidString)")!
+        var saved = DropAlertSettings(); saved.portals = ["Snake Pit"]; saved.save(to: defaults)
+        check(DropAlertSettings(defaults: defaults).portals == ["Snake Pit"], "chosen dungeons are saved")
     }
 }

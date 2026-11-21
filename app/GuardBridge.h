@@ -20,6 +20,9 @@ static inline void guard_join_send(void *map, const LiveJoinData *data) {
 static inline int guard_bags_copy(const void *map, LiveBagsData *out) {
     return bags_read(live_bags((void *)map), out);
 }
+static inline int guard_portals_copy(const void *map, LivePortalsData *out) {
+    return portals_read(live_portals((void *)map), out);
+}
 static inline int guard_process_alive(int32_t pid) {
     return pid > 0 && kill(pid, 0) == 0;
 }
