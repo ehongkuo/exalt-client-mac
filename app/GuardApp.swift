@@ -1109,6 +1109,14 @@ struct GuardPanel {
     }
 
     /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    /// A rule's terms, found by id: a term list saves typed text as it disappears, which happens after its rule was
+    /// removed, when an index binding would point past the end and crash (issue #75).
+    private func terms(_ id: UUID, _ path: WritableKeyPath<ItemRule, [String]>) -> Binding<[String]> {
+        Binding(get: { drops.settings.rules.first { $0.id == id }?[keyPath: path] ?? [] },
+                set: { value in
+                    if let i = drops.settings.rules.firstIndex(where: { $0.id == id }) { drops.settings.rules[i][keyPath: path] = value }
+                })
+    }
     @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
         let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
             .buttonStyle(.borderless).help("Remove rule")
@@ -1158,8 +1166,8 @@ struct GuardPanel {
                     .fixedSize()
                     Spacer(minLength: 0)
                 }
-                TermList(label: "Name", hint: "any of these", terms: rule.names, options: drops.catalog.names)
-                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: rule.enchants,
+                TermList(label: "Name", hint: "any of these", terms: terms(rule.wrappedValue.id, \.names), options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: terms(rule.wrappedValue.id, \.enchants),
                          options: drops.enchantNames)
                 if rule.wrappedValue.enchants.count > 1 {
                     Picker("Needs", selection: rule.allEnchants) {
