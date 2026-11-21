@@ -1776,7 +1776,7 @@ struct DropAlertsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Divider().padding(.vertical, 2)
             Text("Dungeon portals").font(.headline)
-            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary)
+            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(drops.settings.portals.sorted(), id: \.self) { name in
                 HStack(spacing: 6) {
                     SpriteIcon(image: drops.portalSprites[name], size: 16)
