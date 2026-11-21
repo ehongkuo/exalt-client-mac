@@ -16,7 +16,7 @@ What the guard can and cannot observe:
    inflicted a condition at 95 HP where the client calculated 48 (see Phase 0 status).
 2. Not every HP loss passes through a hook the guard sees. Damage over time is driven by the server
    with no client report: captures show bleeding (about 3 HP per update) and the Ice Citadel frostbite
-   drain, and suffocation drains about 100 HP/s (wiki; not captured). Poison is not a player status.
+   drain, and suffocation drains 17–20 HP per update, about 90 HP/s (captured). Poison is not a player status.
 3. The server owns HP. It applies the damage it computes, plus all healing (regeneration, potions,
    pets, allies), and sends HP in periodic updates, about every 200 ms. An update carries only the
    net result.
@@ -263,7 +263,7 @@ subtract its expected drain until the next update from the projection.
 |---|---|---|---|
 | Bleeding | 20 HP/s, and stops regeneration from VIT; captures show about 3 HP per update | No | Condition word 0 bit `0x8000` (captured) |
 | Frostbite (Blizzard, Ice Citadel) | "Rapid" once the meter is full; clean updates lose 10–15 HP (60–70 HP/s); one capture also has five 33–34 HP updates with no report | Assume yes | Frostbite meter at player `+0x530` reaches its maximum |
-| Suffocation (Ocean Trench) | About 100 HP/s once oxygen reaches 0 (approximate) | Yes | Breath meter at player `+0x52c` reaches 0 |
+| Suffocation (Ocean Trench) | 17–20 HP per 200 ms update (about 90 HP/s at 930 max HP), starting 0.2–0.6 s after breath reaches 0; two drains can land in one update (36–40 HP); worst clean update 48 HP | Yes | Breath meter at player `+0x52c` reaches 0 |
 
 Use the published rate where it is stated (bleeding: 4 HP per 200 ms update) and the measured worst
 case otherwise. Bleeding cannot kill on its own but still lowers HP before the next hit. Poison is not
@@ -307,7 +307,7 @@ text in this build, so heals in the same update go unexcluded: read the highest 
 median.
 
 Open:
-- A capture of suffocation in the Ocean Trench must confirm the rate and that breath 0 means no oxygen.
+- Suffocation (captured 2026-11-21, one character): breath 0 means no oxygen; whether the rate scales with max HP is not known.
 - Where the 33–34 HP frostbite updates come from.
 - Whether drain alone should escape (suffocation can kill with no hit) is not decided.
 
