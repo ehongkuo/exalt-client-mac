@@ -61,6 +61,8 @@ struct DropAlertSettings: Equatable {
     var shiny = true
     /// Item rules (issue #47) alert in any bag, alongside the filters above.
     var rules: [ItemRule] = []
+    /// Dungeons whose portal alerts when a mob drops it (issue #74), by name.
+    var portals: Set<String> = []
 }
 
 extension DropAlertSettings {
@@ -71,6 +73,7 @@ extension DropAlertSettings {
         if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { minRarity = r }
         if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { shiny = v }
         if let v = defaults.data(forKey: "dropAlertRules"), let r = try? JSONDecoder().decode([ItemRule].self, from: v) { rules = r }
+        if let v = defaults.stringArray(forKey: "dropAlertPortals") { portals = Set(v) }
     }
     func save(to defaults: UserDefaults) {
         defaults.set(enabled, forKey: "dropAlerts")
@@ -79,6 +82,7 @@ extension DropAlertSettings {
         defaults.set(minRarity.rawValue, forKey: "dropAlertRarity")
         defaults.set(shiny, forKey: "dropAlertShiny")
         defaults.set(try? JSONEncoder().encode(rules), forKey: "dropAlertRules")
+        defaults.set(portals.sorted(), forKey: "dropAlertPortals")
     }
 }
 
@@ -277,9 +281,11 @@ struct DropAlert: Equatable {
     var dungeon: String
     /// The title of the item rule that matched, if any.
     var rule = ""
+    /// A dungeon portal a mob dropped (issue #74): `item` names it, `dungeon` picks its sprite.
+    var portal = false
 
     var detail: String {
-        var parts = [bag?.name ?? "Bag"]
+        var parts = [portal ? "Portal" : bag?.name ?? "Bag"]
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -309,6 +315,56 @@ enum DropRules {
         }
         func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
         return matches.max { rank($0) < rank($1) }?.alert
+    }
+
+    /// A portal the guard linked to a kill alerts when the kill died on the portal's spot (the rule the drop rates count
+    /// portals by: `DropReport.died` for a kill the server removed, and `portalSpot`) and its dungeon is chosen (issue #74).
+    static func alert(for portal: LivePortal, names: PortalNames, settings: DropAlertSettings, nowMs: Int64) -> DropAlert? {
+        let dx = Double(portal.pos.0 - portal.mob_pos.0), dy = Double(portal.pos.1 - portal.mob_pos.1)
+        guard settings.enabled, portal.damage > 0, portal.since_hit_ms <= 1000, dx * dx + dy * dy <= DropReport.portalSpot,
+              let dungeon = names.dungeons[Int(portal.type)], settings.portals.contains(dungeon),
+              nowMs - Int64(portal.epoch * 1000) <= freshness else { return nil }
+        return DropAlert(item: "\(dungeon) portal", bag: nil, rarity: .common, shiny: false, mob: names.mobs[Int(portal.mob)] ?? "",
+                         dungeon: dungeon, portal: true)
+    }
+}
+
+/// Portals straight from the guard (issue #74): the live file keeps the latest `LIVE_PORTALS` it linked to a kill.
+enum GuardPortals {
+    /// The portals after `seen`, oldest first; the first look at a guard session only sets the starting point.
+    static func new(_ data: LivePortalsData, pid: Int32, seen: inout GuardBags.Seen?) -> [LivePortal] {
+        defer { seen = GuardBags.Seen(pid: pid, count: data.count) }
+        guard let last = seen, last.pid == pid, data.count > last.count else { return [] }
+        let first = max(last.count, data.count > UInt32(LIVE_PORTALS) ? data.count - UInt32(LIVE_PORTALS) : 0)
+        return withUnsafeBytes(of: data.portals) { raw in
+            let portals = raw.bindMemory(to: LivePortal.self)
+            return (first..<data.count).map { portals[Int($0 % UInt32(LIVE_PORTALS))] }
+        }
+    }
+}
+
+/// What portal alerts need from the game catalog (issue #74), loaded off the main thread with the drop-rate catalog.
+struct PortalNames: Equatable {
+    /// Dungeons with a portal, by name, and each one's portal texture, for the settings list.
+    var list: [String] = []
+    var textures: [String: GameTexture] = [:]
+    /// Portal type → dungeon. shortcut: only each dungeon's lowest portal type (`dungeons.portal`); every mob-dropped
+    /// portal in the drop database so far is one, add the other types if a variant shows up.
+    var dungeons: [Int: String] = [:]
+    var mobs: [Int: String] = [:]
+
+    static func load(_ store: DropRateStore) -> PortalNames {
+        var n = PortalNames()
+        func text(_ s: OpaquePointer, _ i: Int32) -> String { String(cString: sqlite3_column_text(s, i)) }
+        store.run("SELECT name, portal, texture_file, texture_index FROM dungeons WHERE portal IS NOT NULL ORDER BY name") {
+            let name = text($0, 0)
+            n.list.append(name); n.dungeons[Int(sqlite3_column_int64($0, 1))] = name
+            if sqlite3_column_type($0, 2) != SQLITE_NULL { n.textures[name] = GameTexture(file: text($0, 2), index: Int(sqlite3_column_int64($0, 3))) }
+        }
+        store.run("SELECT type, coalesce(display_name, name) FROM objects WHERE class = 'Character'") {
+            if sqlite3_column_type($0, 1) != SQLITE_NULL { n.mobs[Int(sqlite3_column_int64($0, 0))] = text($0, 1) }
+        }
+        return n
     }
 }
 

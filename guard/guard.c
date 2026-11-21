@@ -752,6 +752,7 @@ static void open_live(const char *folder) {
     memset(live_control(live), 0, sizeof(LiveControl));   /* ignore settings left from a past session */
     memset(live_join(live), 0, sizeof(LiveJoin));         /* and Join clicks */
     memset(live_bags(live), 0, sizeof(LiveBags));         /* and bags */
+    memset(live_portals(live), 0, sizeof(LivePortals));   /* and portals */
     atomic_store_explicit(&live->seq, 0, memory_order_relaxed);
     atomic_thread_fence(memory_order_release);
     live->magic = LIVE_MAGIC;

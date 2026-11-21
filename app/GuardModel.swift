@@ -445,6 +445,14 @@ final class LiveFeed {
         return guard_bags_copy(map, &data) != 0 ? data : nil
     }
 
+    /// The portals the guard linked to a kill (issue #74), or nil without a live file.
+    func portals() -> LivePortalsData? {
+        remapIfNeeded()
+        guard let map else { return nil }
+        var data = LivePortalsData()
+        return guard_portals_copy(map, &data) != 0 ? data : nil
+    }
+
     /// Writes a settings change for the guard to pick up on its next check.
     func send(_ settings: GuardSettings, request: UInt32) -> Bool {
         remapIfNeeded()

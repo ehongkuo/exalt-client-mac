@@ -6,7 +6,8 @@
  *   - LiveData, written by the guard after every check, read by the app;
  *   - LiveControl, written by the app when the user applies settings, read by the guard;
  *   - LiveJoin, written by the app when the user clicks Join on a party call, read by the guard;
- *   - LiveBags, written by the guard as each bag appears, read by the app for drop alerts (issue #75).
+ *   - LiveBags, written by the guard as each bag appears, read by the app for drop alerts (issue #75);
+ *   - LivePortals, written by the guard as it links a portal to a kill, read by the app for portal alerts (issue #74).
  * A writer makes `seq` odd while writing and even when done; a reader retries if `seq`
  * changed or was odd. */
 #include <stdatomic.h>
@@ -23,7 +24,9 @@
 #define LIVE_JOIN_OFFSET 3584
 #define LIVE_BAGS_OFFSET 4096
 #define LIVE_BAGS 12
-/* Posted (notify_post) after each bag, so the app wakes at once instead of on its next timer tick. */
+#define LIVE_PORTALS_OFFSET 7168   /* added without a version bump: an older reader never maps it */
+#define LIVE_PORTALS 8
+/* Posted (notify_post) after each bag or portal, so the app wakes at once instead of on its next timer tick. */
 #define LIVE_BAG_NOTIFICATION "local.exalt.clientmac.bag"
 
 /* Result of the latest settings change sent from the app. */
@@ -121,6 +124,30 @@ typedef struct {
     LiveBagsData data;
 } LiveBags;
 
+/* A portal the guard linked to a kill, one tick after it appeared, with the kill's facts; the app decides whether it
+ * counts as the kill's drop. */
+typedef struct {
+    uint64_t ns;                  /* CLOCK_MONOTONIC when the guard linked it */
+    double epoch;
+    int32_t id, type;             /* the portal object */
+    float pos[2];
+    int32_t mob;                  /* the kill's object type */
+    float mob_pos[2];
+    int32_t damage;               /* your damage to the mob */
+    int32_t since_hit_ms;         /* from your last hit to its removal */
+    int32_t reserved;
+} LivePortal;
+/* count: portals since the guard loaded; the newest is portals[(count - 1) % LIVE_PORTALS]. */
+typedef struct {
+    uint32_t count, reserved;
+    LivePortal portals[LIVE_PORTALS];
+} LivePortalsData;
+typedef struct {
+    _Atomic uint32_t seq;
+    uint32_t reserved;
+    LivePortalsData data;
+} LivePortals;
+
 typedef struct {
     uint32_t magic, version;
     _Atomic uint32_t seq;
@@ -137,7 +164,8 @@ typedef struct {
 _Static_assert(sizeof(LiveState) <= LIVE_CONTROL_OFFSET, "live state must end before the control block");
 _Static_assert(LIVE_CONTROL_OFFSET + sizeof(LiveControl) <= LIVE_JOIN_OFFSET, "control block must end before the join block");
 _Static_assert(LIVE_JOIN_OFFSET + sizeof(LiveJoin) <= LIVE_BAGS_OFFSET, "join block must end before the bags");
-_Static_assert(LIVE_BAGS_OFFSET + sizeof(LiveBags) <= LIVE_FILE_SIZE, "bags block must fit");
+_Static_assert(LIVE_BAGS_OFFSET + sizeof(LiveBags) <= LIVE_PORTALS_OFFSET, "bags block must end before the portals");
+_Static_assert(LIVE_PORTALS_OFFSET + sizeof(LivePortals) <= LIVE_FILE_SIZE, "portals block must fit");
 
 static inline void seqlock_write(_Atomic uint32_t *seq, void *dst, const void *src, size_t size) {
     uint32_t value = atomic_load_explicit(seq, memory_order_relaxed);
@@ -161,6 +189,7 @@ static inline uint32_t seqlock_read(const _Atomic uint32_t *seq, void *dst, cons
 static inline LiveControl *live_control(void *file) { return (LiveControl *)((char *)file + LIVE_CONTROL_OFFSET); }
 static inline LiveJoin *live_join(void *file) { return (LiveJoin *)((char *)file + LIVE_JOIN_OFFSET); }
 static inline LiveBags *live_bags(void *file) { return (LiveBags *)((char *)file + LIVE_BAGS_OFFSET); }
+static inline LivePortals *live_portals(void *file) { return (LivePortals *)((char *)file + LIVE_PORTALS_OFFSET); }
 
 static inline void live_publish(LiveState *state, const LiveData *data) {
     seqlock_write(&state->seq, &state->data, data, sizeof *data);
@@ -188,5 +217,11 @@ static inline void bags_write(LiveBags *bags, const LiveBagsData *data) {
 }
 static inline int bags_read(const LiveBags *bags, LiveBagsData *out) {
     return seqlock_read(&bags->seq, out, (const void *)&bags->data, sizeof *out) != 0;
+}
+static inline void portals_write(LivePortals *portals, const LivePortalsData *data) {
+    seqlock_write(&portals->seq, &portals->data, data, sizeof *data);
+}
+static inline int portals_read(const LivePortals *portals, LivePortalsData *out) {
+    return seqlock_read(&portals->seq, out, (const void *)&portals->data, sizeof *out) != 0;
 }
 #endif

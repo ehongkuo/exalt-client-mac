@@ -151,6 +151,20 @@ static inline int loot_tick_end(LootTicks *t, LootSpot *bags, int32_t *killers) 
     return n;
 }
 
+/* The latest kills' facts, so a portal linked to one a tick later can carry them to the app (issue #74). Killers come
+ * from the last tick only, so the newest match is the one. */
+#define LOOT_RECENT 64
+typedef struct { int32_t id, type; float pos[2]; int32_t damage, since_hit_ms; } LootKillFacts;
+typedef struct { LootKillFacts kills[LOOT_RECENT]; uint32_t next; } LootRecent;
+static inline void loot_recent_add(LootRecent *r, LootKillFacts f) { r->kills[r->next++ % LOOT_RECENT] = f; }
+static inline const LootKillFacts *loot_recent_find(const LootRecent *r, int32_t id) {
+    for (uint32_t i = 0; i < LOOT_RECENT && i < r->next; ++i) {
+        const LootKillFacts *k = &r->kills[(r->next - 1 - i) % LOOT_RECENT];
+        if (k->id == id) return k;
+    }
+    return 0;
+}
+
 /* Loot bag object types, as in the app's DropBag (RealmHound's ids; 17xx are boosted bags). */
 static inline int loot_is_bag(uint16_t type) {
     switch (type) {
