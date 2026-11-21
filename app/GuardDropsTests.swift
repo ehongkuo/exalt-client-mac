@@ -131,6 +131,16 @@ enum DropTests {
               "any one of several names")
         var draft = r; draft.rules = [ItemRule(slot: 4, minTier: 4)]
         check(fires(LootItem(id: 1, name: "T4 tome", enchants: 0), draft) == nil, "a draft rule never alerts")
+        // Alert me (issue #68): a confirmed rule for the item's name that alerts in any bag, with alerts on, added once.
+        var me = DropAlertSettings(); me.enabled = false; me.bags = []
+        me.alert(on: "Doom Bow"); me.alert(on: "Doom Bow")
+        check(me.enabled && me.rules.count == 1 && me.rules[0].confirmed && me.alerts(on: "Doom Bow") && !me.alerts(on: "Bow"), "Alert me adds one confirmed rule")
+        check(DropRules.alerts(for: drop(1292, [LootItem(id: 200, name: "Doom Bow", enchants: 0)]), settings: me, shiny: [], nowMs: now).first?.rule == "Doom Bow"
+              && DropRules.alerts(for: drop(1292, [LootItem(id: 201, name: "Doom Bow Shiny", enchants: 0)]), settings: me, shiny: [], nowMs: now).count == 1
+              && DropRules.alerts(for: drop(1292, [LootItem(id: 202, name: "Bow of Covert Havens", enchants: 0)]), settings: me, shiny: [], nowMs: now).isEmpty,
+              "the rule matches the item and its shiny, not other items")
+        var coin = DropAlertSettings(); coin.alert(on: "Divine Coin")   // a stack's page drops " x1" from the name
+        check(coin.rules[0].matches(LootItem(id: 1, name: "Divine Coin x3", enchants: 0), catalog: RuleCatalog()), "a stack's rule matches every stack size")
         var titled = r; titled.rules = confirmed(ItemRule(title: " Tomes ", slot: 4, minTier: 4))
         check(DropRules.alerts(for: drop(1280, [LootItem(id: 1, name: "T4 tome", enchants: 0)]), settings: titled, shiny: [], catalog: catalog,
                               nowMs: now).first?.rule == "Tomes", "the alert names the rule")
