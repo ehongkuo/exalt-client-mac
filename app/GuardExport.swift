@@ -18,7 +18,7 @@ enum LogExport {
         defer { try? fm.removeItem(at: staging) }
         let logs = GuardPaths.logs(data: data)
         let sessions = ((try? fm.contentsOfDirectory(atPath: logs.path)) ?? [])
-            .filter { $0.hasPrefix("guard-") && $0.hasSuffix(".tsv") }.sorted()
+            .filter { ($0.hasPrefix("guard-") || $0.hasPrefix("drops-")) && $0.hasSuffix(".tsv") }.sorted()
         for name in sessions {
             try fm.copyItem(at: logs.appendingPathComponent(name), to: folder.appendingPathComponent(name))
         }
@@ -49,7 +49,7 @@ enum LogCleanup {
         let cutoff = now.addingTimeInterval(-keepDays * 86400)
         var removed = 0
         for name in (try? fm.contentsOfDirectory(atPath: logs.path)) ?? []
-        where (name.hasPrefix("guard-") && name.hasSuffix(".tsv")) || (name.hasPrefix("hit-flight-") && name.hasSuffix(".bin")) {
+        where ((name.hasPrefix("guard-") || name.hasPrefix("drops-")) && name.hasSuffix(".tsv")) || (name.hasPrefix("hit-flight-") && name.hasSuffix(".bin")) {
             let url = logs.appendingPathComponent(name)
             guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
                   modified < cutoff, (try? fm.removeItem(at: url)) != nil else { continue }

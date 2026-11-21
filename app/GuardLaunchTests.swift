@@ -98,15 +98,16 @@ enum LaunchTests {
         try! FileManager.default.createDirectory(at: exportLogs, withIntermediateDirectories: true)
         try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-1.tsv"))
         try! Data("status\tguard_loaded\n".utf8).write(to: exportLogs.appendingPathComponent("guard-2.tsv"))
+        try! Data(DropDelayLog.header.utf8).write(to: DropDelayLog.file(logs: exportLogs, pid: 3))
         try! Data(count: 4096).write(to: exportLogs.appendingPathComponent("guard-live.bin"))
         try! SettingsFile.save(GuardSettings(armed: true, potion: 50, ceiling: 80), to: GuardPaths.settingsFile(data: exportData))
         let zip = exportData.appendingPathComponent("export.zip")
-        check((try? LogExport.export(data: exportData, to: zip)) == 2, "two session logs exported")
+        check((try? LogExport.export(data: exportData, to: zip)) == 3, "two session logs and a drop log exported")
         let list = Process(); let pipe = Pipe()
         list.executableURL = URL(fileURLWithPath: "/usr/bin/unzip"); list.arguments = ["-Z1", zip.path]; list.standardOutput = pipe
         try! list.run(); list.waitUntilExit()
         let entries = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").map(String.init)
-        check(entries.contains("export/guard-1.tsv") && entries.contains("export/guard-2.tsv"), "logs in zip \(entries)")
+        check(entries.contains("export/guard-1.tsv") && entries.contains("export/guard-2.tsv") && entries.contains("export/drops-3.tsv"), "logs in zip \(entries)")
         check(entries.contains("export/guard-settings.conf"), "settings in zip")
         check(!entries.contains { $0.hasSuffix("guard-live.bin") }, "live file left out")
         check(LogExport.defaultName(date: Date(timeIntervalSince1970: 0)).hasPrefix("Exalt Client Mac logs 19"), "default name")
@@ -114,10 +115,10 @@ enum LaunchTests {
         let old = Date().addingTimeInterval(-(LogCleanup.keepDays + 1) * 86400)
         try! Data().write(to: exportLogs.appendingPathComponent("hit-flight-3.bin"))
         try! Data().write(to: exportLogs.appendingPathComponent("notes.txt"))
-        for name in ["guard-1.tsv", "hit-flight-3.bin", "guard-live.bin", "notes.txt"] {
+        for name in ["guard-1.tsv", "drops-3.tsv", "hit-flight-3.bin", "guard-live.bin", "notes.txt"] {
             try! FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: exportLogs.appendingPathComponent(name).path)
         }
-        check(LogCleanup.removeOld(data: exportData) == 2, "old log and recording removed")
+        check(LogCleanup.removeOld(data: exportData) == 3, "old logs and recording removed")
         let left = Set((try? FileManager.default.contentsOfDirectory(atPath: exportLogs.path)) ?? [])
         check(left == ["guard-2.tsv", "guard-live.bin", "notes.txt"], "recent log, live file and other files kept \(left)")
         check(FileManager.default.fileExists(atPath: GuardPaths.settingsFile(data: exportData).path), "settings kept")

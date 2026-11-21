@@ -217,35 +217,103 @@ enum DropTests {
             check(names[0x639] == "Lucky Streak" && names.count > 500, "enchantment names from RealmHound's assets")
         }
 
-        // The log: first sight sets the start, later drops come back with their items in slot order.
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("drop-tests-\(getpid())")
-        let dbFolder = folder.appendingPathComponent("acct/databases")
-        try? FileManager.default.removeItem(at: folder)
-        try! FileManager.default.createDirectory(at: dbFolder, withIntermediateDirectories: true)
-        var db: OpaquePointer?
-        check(sqlite3_open(dbFolder.appendingPathComponent("loot_history.db").path, &db) == SQLITE_OK, "create test log")
-        func exec(_ sql: String) { check(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK, sql) }
-        exec("""
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE loot_drops (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, dungeon TEXT, bag_type INTEGER, mob_name TEXT);
-            CREATE TABLE loot_items (id INTEGER PRIMARY KEY AUTOINCREMENT, drop_id INTEGER, slot INTEGER, item_id INTEGER,
-                                     item_name TEXT, enchant_count INTEGER, enchant_ids TEXT NOT NULL DEFAULT '');
-            INSERT INTO loot_drops VALUES (1, 5, 'Old', 1708, 'Old boss');
-            """)
-        let log = LootLog(accounts: folder)
-        check(log.poll().isEmpty && log.logs == 1, "old drops are not replayed")
-        exec("""
-            INSERT INTO loot_drops VALUES (2, 9, 'Shatters', 1708, 'The Forgotten King');
-            INSERT INTO loot_items VALUES (NULL, 2, 1, 101, 'Second', 0, ''), (NULL, 2, 0, 100, 'First', 2, '1593,263');
-            INSERT INTO loot_drops VALUES (3, 10, 'Shatters', 1292, 'Empty');
-            """)
-        let found = log.poll()
-        check(found.map(\.id) == [2, 3] && found[0].items.map(\.name) == ["First", "Second"] && found[0].items[0].enchants == 2
-              && found[0].items[0].enchantIds == [0x639, 0x107] && found[0].items[1].enchantIds.isEmpty
-              && found[1].items.isEmpty && found[0].mob == "The Forgotten King", "new drops with items")
-        check(log.poll().isEmpty, "each drop once")
-        sqlite3_close(db)
-        try? FileManager.default.removeItem(at: folder)
+        // The guard's bags (issue #75): the first look sets the start, later bags come back oldest first.
+        var data = LiveBagsData()
+        func put(_ n: UInt32, items: [Int32], enchants: String = "") {
+            var b = LiveBag(); b.ns = UInt64(n) * 1_000_000; b.epoch = Double(n); b.id = Int32(n); b.type = 1708
+            withUnsafeMutableBytes(of: &b.items) { raw in
+                for (i, v) in (items + Array(repeating: -1, count: 8 - items.count)).enumerated() { raw.storeBytes(of: v, toByteOffset: 4 * i, as: Int32.self) }
+            }
+            withUnsafeMutableBytes(of: &b.enchants) { raw in for (i, c) in enchants.utf8.enumerated() { raw[i] = c } }
+            withUnsafeMutableBytes(of: &data.bags) { $0.bindMemory(to: LiveBag.self)[Int((n - 1) % UInt32(LIVE_BAGS))] = b }
+            data.count = n
+        }
+        var seen: GuardBags.Seen?
+        put(1, items: [100])
+        check(GuardBags.new(data, pid: 7, seen: &seen).isEmpty, "first look replays nothing")
+        put(2, items: [100, 101], enchants: ",AAIBOQYFAA")   // slot 1: one enchantment, 0x639
+        put(3, items: [])
+        let fresh = GuardBags.new(data, pid: 7, seen: &seen)
+        check(fresh.map(\.id) == [2, 3] && fresh[0].items.prefix(3) == [100, 101, -1], "new bags, oldest first")
+        check(GuardBags.new(data, pid: 7, seen: &seen).isEmpty, "each bag once")
+        for n in UInt32(4)...20 { put(n, items: [100]) }
+        check(GuardBags.new(data, pid: 7, seen: &seen).map(\.id) == Array(9...20), "an overrun keeps the latest")
+        put(21, items: [100])
+        check(GuardBags.new(data, pid: 8, seen: &seen).isEmpty, "a new guard session starts over")
+        var names = RuleCatalog(); names.itemNames = [101: "Second"]
+        let drop = GuardBags.drop(fresh[0], catalog: names, dungeon: "Shatters")
+        check(drop.items.map(\.name) == ["Item 100", "Second"] && drop.items[1].enchantIds == [0x639] && drop.items[1].enchants == 1
+              && drop.items[0].enchants == 0 && drop.bag == 1708 && drop.dungeon == "Shatters" && drop.epochMs == 2000 && drop.mob.isEmpty,
+              "a bag as the rules see it")
+        let lines = DropDelayLog.lines(fresh, wakeNs: 3_500_000, mainNs: 4_000_000, shownNs: 4_300_000, panelNs: 5_000_000, tickGapMs: 100,
+                                       popups: ["Second", ""])
+        check(lines == "2000\t1.5\t2.0\t2.3\t3.0\t100\tSecond\t1708\n3000\t0.5\t1.0\t1.3\t2.0\t100\t\t1708\n", "delay log \(lines)")
+        check(DropDelayLog.lines(fresh, wakeNs: nil, mainNs: 4_000_000, shownNs: 4_000_000, panelNs: 4_000_000, tickGapMs: 1400,
+                                 popups: []).hasPrefix("2000\t\t2.0\t2.0\t2.0\t1400\t\t"),
+              "a bag the timer found has no wake time")
+        portals()
         print("Drop alert tests passed")
+    }
+
+    /// Portal alerts (issue #74): portals straight from the guard, the rule each must pass, and the catalog names.
+    static func portals() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("portal-test-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = DropRateStore(path: folder.appendingPathComponent("drop_rates.db").path)!
+        store.exec("""
+            INSERT INTO dungeons(name, portal, texture_file, texture_index) VALUES ('Snake Pit', 1816, 'lofiEnvironment2', 5),
+                ('Undead Lair', 1818, NULL, NULL), ('Pet Yard', NULL, NULL, NULL);
+            INSERT INTO objects(type, name, display_name, class, boss, drop_source) VALUES (3340, 'Medusa', NULL, 'Character', 0, 1),
+                (3341, 'Wall', NULL, 'Wall', 0, 0);
+            """)
+        let names = PortalNames.load(store)
+        check(names.list == ["Snake Pit", "Undead Lair"] && names.textures == ["Snake Pit": GameTexture(file: "lofiEnvironment2", index: 5)]
+              && names.dungeons == [1816: "Snake Pit", 1818: "Undead Lair"] && names.mobs == [3340: "Medusa"],
+              "dungeons with a portal, their sprites, and mob names")
+
+        // The ring: the first look sets the start, later portals come back oldest first, an overrun keeps the latest.
+        var data = LivePortalsData()
+        func put(_ n: UInt32) {
+            var p = LivePortal(); p.id = Int32(n)
+            withUnsafeMutableBytes(of: &data.portals) { $0.bindMemory(to: LivePortal.self)[Int((n - 1) % UInt32(LIVE_PORTALS))] = p }
+            data.count = n
+        }
+        var seen: GuardBags.Seen?
+        put(1)
+        check(GuardPortals.new(data, pid: 7, seen: &seen).isEmpty, "first look replays nothing")
+        put(2); put(3)
+        check(GuardPortals.new(data, pid: 7, seen: &seen).map(\.id) == [2, 3], "new portals, oldest first")
+        check(GuardPortals.new(data, pid: 7, seen: &seen).isEmpty, "each portal once")
+        for n in UInt32(4)...20 { put(n) }
+        check(GuardPortals.new(data, pid: 7, seen: &seen).map(\.id) == Array(13...20), "an overrun keeps the latest")
+        put(21)
+        check(GuardPortals.new(data, pid: 8, seen: &seen).isEmpty, "a new guard session starts over")
+
+        // The rule: your kill died on the portal's spot, and its dungeon is chosen.
+        let t = Date().timeIntervalSince1970, nowMs = Int64(t * 1000)
+        func portal(_ type: Int32 = 1818, at x: Float = 10.5, damage: Int32 = 900, sinceHit: Int32 = 10, age: Double = 0) -> LivePortal {
+            var p = LivePortal(); p.epoch = t - age; p.type = type; p.pos = (x, 20); p.mob = 3340; p.mob_pos = (10, 20)
+            p.damage = damage; p.since_hit_ms = sinceHit
+            return p
+        }
+        var s = DropAlertSettings()
+        func fires(_ p: LivePortal, _ settings: DropAlertSettings? = nil) -> DropAlert? {
+            DropRules.alert(for: p, names: names, settings: settings ?? s, nowMs: nowMs)
+        }
+        check(fires(portal()) == nil, "an unchosen dungeon stays quiet")
+        s.portals = ["Undead Lair"]
+        let alert = fires(portal())
+        check(alert == DropAlert(item: "Undead Lair portal", bag: nil, rarity: .common, shiny: false, mob: "Medusa", dungeon: "Undead Lair", portal: true)
+              && alert?.detail == "Portal · Medusa", "a chosen dungeon's portal alerts, naming the dungeon and the mob")
+        check(fires(portal(1816)) == nil && fires(portal(9999)) == nil, "another dungeon, or a portal type with no dungeon")
+        check(fires(portal(at: 11.4)) != nil && fires(portal(at: 11.6)) == nil, "within 1.5 tiles of the kill")
+        check(fires(portal(damage: 0)) == nil && fires(portal(sinceHit: 1001)) == nil, "a kill that didn't die by your hits")
+        check(fires(portal(age: 200)) == nil, "an old portal stays quiet")
+        check(fires(portal(), { var x = s; x.enabled = false; return x }()) == nil, "off with drop alerts")
+
+        let defaults = UserDefaults(suiteName: "portal-test-\(UUID().uuidString)")!
+        var saved = DropAlertSettings(); saved.portals = ["Snake Pit"]; saved.save(to: defaults)
+        check(DropAlertSettings(defaults: defaults).portals == ["Snake Pit"], "chosen dungeons are saved")
     }
 }
