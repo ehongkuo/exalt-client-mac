@@ -100,7 +100,8 @@ struct DropRatesView: View {
                 Keyed([model.drawn, dungeon?.name, model.search, model.item]) { dungeonList }.equatable()
                     .frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    // Lazy, with the pane's parts as its rows: a big dungeon's grid is built only as you scroll to it.
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         Welcome(live: model.live)
                         if let dungeon {
                             Keyed([model.drawn, dungeon.name, model.mob, model.item, model.group, drops.bagSprites.count]) { dropsPane(dungeon) }
@@ -168,7 +169,7 @@ private struct CaptureBar: View {
 private struct Welcome: View {
     @ObservedObject var live: DropLive
     var body: some View {
-        if live.health.kills == 0 { note }
+        if live.health.kills == 0 { note.padding(.bottom, 4) }
     }
     private var note: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -267,7 +268,7 @@ extension DropRatesView {
         let dropped = Set(mobs.flatMap { (report.copies[$0] ?? [:]).keys })
         let shown = index.possible[d.name] ?? []
         let rows = index.tiles[d.name] ?? [:]
-        return VStack(alignment: .leading, spacing: 12) {
+        return Group {   // rows of the pane's lazy stack
             breadcrumb(d)
             Text("\(runs.formatted()) runs · \(index.kills(in: d.name).formatted()) kills across \(mobs.count) mob types").foregroundStyle(.secondary)
             if !mobs.isEmpty { mobStrip(mobs) }
@@ -286,6 +287,7 @@ extension DropRatesView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 6) {
                             ForEach(tiles, id: \.self) { tile in   // a pick redraws only the tiles it selects or clears
                                 Keyed([model.drawn, d.name, tile, selected(tile)]) { tileView(tile, d, dropped: dropped) }.equatable()
+                                    .frame(width: 40, height: 40)   // its size: the grid places it without measuring it
                             }
                         }
                     }
@@ -350,6 +352,7 @@ extension DropRatesView {
                     .accessibilityLabel("\(name)\(boss ? ", boss" : ""), \(n) kills")
                 }
                 .equatable()
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 28, maxHeight: 28)   // its column's width: placed without measuring it
             }
             }
         }
