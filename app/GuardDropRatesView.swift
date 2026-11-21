@@ -97,11 +97,13 @@ struct DropRatesView: View {
             }
             HSplitView {
                 // Each pane redraws only when what it shows changes: the list and the grid stay put on other clicks.
-                Keyed([model.drawn, dungeon?.name, model.search, model.item]) { dungeonList }.equatable()
+                // Row order and "new" marks come from `stable`, which must see every pick, so it runs here, outside the key.
+                let rows = dungeonRows
+                Keyed([model.drawn, dungeon?.name, model.search, model.item, rows.map(\.row.name), rows.map(\.grew)]) { dungeonList(rows) }
+                    .equatable()
                     .frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
                 ScrollView {
-                    // Lazy, with the pane's parts as its rows: a big dungeon's grid is built only as you scroll to it.
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 16) {
                         Welcome(live: model.live)
                         if let dungeon {
                             Keyed([model.drawn, dungeon.name, model.mob, model.item, model.group, drops.bagSprites.count]) { dropsPane(dungeon) }
@@ -169,7 +171,7 @@ private struct CaptureBar: View {
 private struct Welcome: View {
     @ObservedObject var live: DropLive
     var body: some View {
-        if live.health.kills == 0 { note.padding(.bottom, 4) }
+        if live.health.kills == 0 { note }
     }
     private var note: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -185,11 +187,15 @@ private struct Welcome: View {
 extension DropRatesView {
     // MARK: Dungeons and search
 
-    private var dungeonList: some View {
+    /// The dungeons the search matches, most kills first, in the order first shown, each with whether it grew since.
+    private var dungeonRows: [(row: DropReport.Dungeon, grew: Bool)] {
+        let q = model.search.trimmingCharacters(in: .whitespaces), index = index
+        let sorted = q.isEmpty ? index.dungeons : index.dungeons.filter { $0.name.localizedCaseInsensitiveContains(q) }   // dungeons you played first
+        return model.stable("dungeons", sorted) { index.kills(in: $0.name) }
+    }
+    private func dungeonList(_ rows: [(row: DropReport.Dungeon, grew: Bool)]) -> some View {
         let q = model.search.trimmingCharacters(in: .whitespaces)
         let index = index, picked = dungeon?.name
-        let sorted = q.isEmpty ? index.dungeons : index.dungeons.filter { $0.name.localizedCaseInsensitiveContains(q) }   // dungeons you played first
-        let rows = model.stable("dungeons", sorted) { index.kills(in: $0.name) }
         let items = q.isEmpty ? [] : index.search(q)
         return VStack(spacing: 0) {
             TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding(8)
@@ -254,8 +260,9 @@ extension DropRatesView {
     private func listSection<Content: View>(_ title: String, help: String? = nil, @ViewBuilder _ rows: () -> Content) -> some View {
         Group {
             Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 4)
+                .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 6)
                 .help(help ?? "")
+            Divider().padding(.horizontal, 8)
             rows()
         }
     }
@@ -268,7 +275,7 @@ extension DropRatesView {
         let dropped = Set(mobs.flatMap { (report.copies[$0] ?? [:]).keys })
         let shown = index.possible[d.name] ?? []
         let rows = index.tiles[d.name] ?? [:]
-        return Group {   // rows of the pane's lazy stack
+        return VStack(alignment: .leading, spacing: 12) {
             breadcrumb(d)
             Text("\(runs.formatted()) runs · \(index.kills(in: d.name).formatted()) kills across \(mobs.count) mob types").foregroundStyle(.secondary)
             if !mobs.isEmpty { mobStrip(mobs) }
@@ -820,6 +827,7 @@ struct MobPage: View {
 private struct ListRowInsets: ViewModifier {
     func body(content: Content) -> some View {
         content.padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            .overlay(alignment: .bottom) { VStack { Divider() }.padding(.leading, 46).padding(.trailing, 16) }   // a List's row separator
     }
 }
 
