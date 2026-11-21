@@ -147,9 +147,10 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_mobs(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_tiers(mob INTEGER NOT NULL, family TEXT NOT NULL, tier INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_drops(mob INTEGER NOT NULL, item INTEGER NOT NULL);
-        -- The Realm's biomes (issue #69), from RealmEye's biome pages: rank is RealmEye's order, event a mob under an
-        -- Encounters heading. A mob on several biome pages has a row in each.
-        CREATE TABLE IF NOT EXISTS catalog_biomes(biome TEXT NOT NULL, rank INTEGER NOT NULL, mob INTEGER NOT NULL, event INTEGER NOT NULL);
+        -- The Realm's biomes (issue #69), from RealmEye's biome pages: tier (Rookie, Adept, Veteran, Seasonal), rank in
+        -- RealmEye's order, and kind, the page's section (encounter, hero, guardian, regular). A mob on several biome
+        -- pages has a row in each.
+        CREATE TABLE IF NOT EXISTS catalog_biomes(biome TEXT NOT NULL, tier TEXT NOT NULL, rank INTEGER NOT NULL, mob INTEGER NOT NULL, kind TEXT NOT NULL);
         -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
         CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
@@ -575,9 +576,10 @@ struct DropReport: Equatable {
     var textures: [Int: GameTexture] = [:]
     /// Portals (issue #64): mob → portal type → its kills that dropped one, as seen (loot boosts not taken out).
     var portals: [Mob: [Int: Int]] = [:]
-    /// The Realm's mobs by biome (issue #69), in RealmEye's order, each split into event bosses, quest mobs and the rest.
-    /// Mobs on no biome page (killed, not in the catalog) close the list under "Other". Empty: the catalog has no biomes.
-    struct Biome: Hashable { var name: String, events: [Mob], quests: [Mob], regular: [Mob] }
+    /// The Realm's mobs by biome (issue #69), as RealmEye sorts them: by tier (Rookie, Adept, Veteran, Seasonal), then
+    /// each biome's regular enemies, Heroes of Oryx, encounters and beacon guardians, one mob per name. Mobs on no biome
+    /// page (killed, not in the catalog) close the list under "Other". Empty: the catalog has no biomes.
+    struct Biome: Hashable { var name: String, tier: String, regular: [Mob], heroes: [Mob], encounters: [Mob], guardians: [Mob] }
     var biomes: [Biome] = []
     /// Every listed dungeon's mobs by folded name, then dungeon (issue #69): what the search matches mob names in.
     struct NamedMob: Hashable { var key: String, mob: Mob }
@@ -793,22 +795,25 @@ struct DropReport: Equatable {
         r.mobIndex = byPlace.flatMap { place, mobs in
             mobs.filter { r.names[$0.type] != nil }.map { NamedMob(key: Self.fold(r.name($0.type)), mob: $0) }.filter { seen.insert([$0.key, place]).inserted }
         }.sorted { ($0.key, $0.mob.dungeon) < ($1.key, $1.mob.dungeon) }
-        var biomes: [(name: String, mobs: Set<Int>, events: Set<Int>)] = []
-        store.run("SELECT biome, mob, event FROM catalog_biomes ORDER BY rank") {
-            if biomes.last?.name != text($0, 0) { biomes.append((text($0, 0), [], [])) }
-            biomes[biomes.count - 1].mobs.insert(int($0, 1))
-            if int($0, 2) != 0 { biomes[biomes.count - 1].events.insert(int($0, 1)) }
+        var biomes: [(name: String, tier: String, kinds: [Int: String])] = []
+        store.run("SELECT biome, tier, mob, kind FROM catalog_biomes ORDER BY rank") {
+            if biomes.last?.name != text($0, 0) { biomes.append((text($0, 0), text($0, 1), [:])) }
+            biomes[biomes.count - 1].kinds[int($0, 2)] = text($0, 3)
         }
         if !biomes.isEmpty {
             let realm = byPlace[Self.realm] ?? []
-            let placed = biomes.reduce(into: Set<Int>()) { $0.formUnion($1.mobs) }
-            biomes.append(("Other", Set(realm.map(\.type)).subtracting(placed), []))
+            let placed = biomes.reduce(into: Set<Int>()) { $0.formUnion($1.kinds.keys) }
+            let tiers = ["Rookie", "Adept", "Veteran", "Seasonal"]
+            biomes = biomes.enumerated().sorted { (tiers.firstIndex(of: $0.element.tier) ?? 4, $0.offset) < (tiers.firstIndex(of: $1.element.tier) ?? 4, $1.offset) }.map(\.element)
+            biomes.append(("Other", "", Dictionary(uniqueKeysWithValues: Set(realm.map(\.type)).subtracting(placed).map { ($0, "regular") })))
             r.biomes = biomes.compactMap { b in
-                let mobs = realm.filter { b.mobs.contains($0.type) }
+                // One chip per name (several game types often share a RealmEye name): the first in the Realm's order,
+                // so the one with the most kills.
+                var names: Set<String> = []
+                let mobs = realm.filter { b.kinds[$0.type] != nil && names.insert(r.name($0.type)).inserted }
                 guard !mobs.isEmpty else { return nil }
-                let events = mobs.filter { b.events.contains($0.type) }, rest = mobs.filter { !b.events.contains($0.type) }
-                return Biome(name: b.name, events: events, quests: rest.filter { r.labels[$0.type]?.contains("QUEST") == true },
-                             regular: rest.filter { r.labels[$0.type]?.contains("QUEST") != true })
+                func kind(_ k: String) -> [Mob] { mobs.filter { b.kinds[$0.type] == k } }
+                return Biome(name: b.name, tier: b.tier, regular: kind("regular"), heroes: kind("hero"), encounters: kind("encounter"), guardians: kind("guardian"))
             }
         }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
@@ -1167,7 +1172,7 @@ enum GameNames {
             for (mob, family, tier) in rows.tiers { store.run("INSERT INTO catalog_tiers(mob, family, tier) VALUES (?, ?, ?)", [mob, family, tier]) }
             for (mob, item) in rows.drops { store.run("INSERT INTO catalog_drops(mob, item) VALUES (?, ?)", [mob, item]) }
             for (rank, b) in rows.biomes.enumerated() { for mob in b.mobs {
-                store.run("INSERT INTO catalog_biomes(biome, rank, mob, event) VALUES (?, ?, ?, ?)", [b.name, rank, mob, b.events.contains(mob) ? 1 : 0])
+                store.run("INSERT INTO catalog_biomes(biome, tier, rank, mob, kind) VALUES (?, ?, ?, ?, ?)", [b.name, b.tier, rank, mob, b.kinds[mob] ?? "regular"])
             } }
         }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
@@ -1175,19 +1180,24 @@ enum GameNames {
         return true
     }
 
+    /// A Realm biome in the drop catalog file (issue #69): its mobs, and each one's section on RealmEye's page unless regular.
+    struct CatalogBiome { var name: String, tier: String, mobs: [Int], kinds: [Int: String] }
     /// The rows of a drop catalog file (tools/drop_catalog.py writes it): ids are hex strings ("0x0d50"). nil when it
     /// isn't a catalog.
     static func dropCatalog(_ data: Data)
-        -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [(name: String, mobs: [Int], events: Set<Int>)])? {
+        -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome])? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dungeons = root["dungeons"] as? [[String: Any]], let mobs = root["mobs"] as? [[String: Any]] else { return nil }
         func ids(_ value: Any?) -> [Int] {
             ((value as? [String]) ?? []).compactMap { $0.hasPrefix("0x") ? Int($0.dropFirst(2), radix: 16) : nil }
         }
-        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [(name: String, mobs: [Int], events: Set<Int>)]) = ([], [], [], [])
+        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome]) = ([], [], [], [])
         for d in dungeons { if let name = d["name"] as? String { rows.mobs += ids(d["mobs"]).map { (name, $0) } } }
         for b in dungeons.compactMap({ $0["biomes"] as? [[String: Any]] }).joined() {
-            if let name = b["name"] as? String { rows.biomes.append((name, ids(b["mobs"]), Set(ids(b["events"])))) }
+            guard let name = b["name"] as? String else { continue }
+            var kinds: [Int: String] = [:]   // the first section wins: encounter, then hero, then guardian
+            for kind in ["guardian", "hero", "encounter"] { for mob in ids(b[kind == "hero" ? "heroes" : kind + "s"]) { kinds[mob] = kind } }
+            rows.biomes.append(CatalogBiome(name: name, tier: b["tier"] as? String ?? "", mobs: ids(b["mobs"]), kinds: kinds))
         }
         for m in mobs {
             let tiers = (m["tiers"] as? [String: [Int]]) ?? [:]

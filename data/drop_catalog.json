@@ -2237,6 +2237,7 @@
    "biomes": [
     {
      "name": "Beach",
+     "tier": "Rookie",
      "mobs": [
       "0x0600",
       "0x0601",
@@ -2268,10 +2269,15 @@
       "0xac7c",
       "0xac7e"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [
+      "0xac7e"
+     ],
+     "guardians": []
     },
     {
      "name": "Undead Forest",
+     "tier": "Rookie",
      "mobs": [
       "0x0612",
       "0x0613",
@@ -2295,10 +2301,15 @@
       "0x7f01",
       "0xcf00"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [],
+     "guardians": [
+      "0xcf00"
+     ]
     },
     {
      "name": "Low Forest",
+     "tier": "Rookie",
      "mobs": [
       "0x0605",
       "0x0606",
@@ -2325,10 +2336,13 @@
       "0x551d",
       "0x551e"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [],
+     "guardians": []
     },
     {
      "name": "Mid Plains",
+     "tier": "Rookie",
      "mobs": [
       "0x0205",
       "0x020d",
@@ -2409,10 +2423,39 @@
       "0x55c1",
       "0xcf02"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [
+      "0x065a",
+      "0x065b",
+      "0x065c",
+      "0x065f",
+      "0x0660",
+      "0x0661",
+      "0x091b",
+      "0x091c",
+      "0x091d",
+      "0x091e",
+      "0x0925",
+      "0x5518",
+      "0x55b0",
+      "0x55b1",
+      "0x55b2",
+      "0x55b3",
+      "0x55b4",
+      "0x55b5",
+      "0x55bd",
+      "0x55be",
+      "0x55bf",
+      "0x55c0",
+      "0x55c1"
+     ],
+     "guardians": [
+      "0xcf02"
+     ]
     },
     {
      "name": "Nature Ruins",
+     "tier": "Rookie",
      "mobs": [
       "0x0204",
       "0x061c",
@@ -2470,10 +2513,29 @@
       "0x55bc",
       "0xc771"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [
+      "0x0921",
+      "0x0922",
+      "0x0923",
+      "0x0924",
+      "0x0dc0",
+      "0x0dc1",
+      "0x0dc2",
+      "0x55ab",
+      "0x55ac",
+      "0x55ad",
+      "0x55ae",
+      "0x55ba",
+      "0x55bb",
+      "0x55bc",
+      "0xc771"
+     ],
+     "guardians": []
     },
     {
      "name": "Mid Desert",
+     "tier": "Rookie",
      "mobs": [
       "0x0620",
       "0x0622",
@@ -2515,10 +2577,28 @@
       "0x7f22",
       "0xcf01"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [
+      "0x0675",
+      "0x0678",
+      "0x0679",
+      "0x067a",
+      "0x067b",
+      "0x067c",
+      "0x558d",
+      "0x55a4",
+      "0x55a5",
+      "0x55a6",
+      "0x55a7",
+      "0x55a8"
+     ],
+     "guardians": [
+      "0xcf01"
+     ]
     },
     {
      "name": "High Plains",
+     "tier": "Rookie",
      "mobs": [
       "0x063b",
       "0x063c",
@@ -2544,10 +2624,15 @@
       "0x556a",
       "0xcf02"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [],
+     "guardians": [
+      "0xcf02"
+     ]
     },
     {
      "name": "High Forest",
+     "tier": "Rookie",
      "mobs": [
       "0x0206",
       "0x0207",
@@ -2577,10 +2662,22 @@
       "0x559c",
       "0x748f"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [
+      "0x0669",
+      "0x0928",
+      "0x092b",
+      "0x092d",
+      "0x558a",
+      "0x5598",
+      "0x559a",
+      "0x559c"
+     ],
+     "guardians": []
     },
     {
      "name": "High Desert",
+     "tier": "Rookie",
      "mobs": [
       "0x0646",
       "0x0647",
@@ -2596,10 +2693,15 @@
       "0x555c",
       "0xcf01"
      ],
-     "events": []
+     "encounters": [],
+     "heroes": [],
+     "guardians": [
+      "0xcf01"
+     ]
     },
     {
      "name": "Coral Reefs",
+     "tier": "Adept",
      "mobs": [
       "0x06d8",
       "0x0d61",
@@ -2616,16 +2718,21 @@
       "0xc0bf",
       "0xc0c0"
      ],
-     "events": [
+     "encounters": [
       "0x0d61",
       "0x5607",
       "0x86ea",
       "0x86ff",
       "0x8725"
-     ]
+     ],
+     "heroes": [
+      "0x86cc"
+     ],
+     "guardians": []
     },
     {
      "name": "Sprite Forest",
+     "tier": "Adept",
      "mobs": [
       "0x0652",
       "0x0b5b",
@@ -2659,16 +2766,39 @@
       "0xc777",
       "0xcf0a"
      ],
-     "events": [
+     "encounters": [
       "0x0d59",
+      "0x0d5a",
+      "0x0d5b",
+      "0x0d5c",
       "0x55f9",
+      "0x55fa",
+      "0x55fb",
+      "0x55fc",
       "0x872d",
       "0xbb9b",
-      "0xc775"
+      "0xbb9c",
+      "0xbb9d",
+      "0xbb9e",
+      "0xc775",
+      "0xc776",
+      "0xc777"
+     ],
+     "heroes": [
+      "0x0b5b",
+      "0x870a",
+      "0x870b",
+      "0x870c",
+      "0xac77",
+      "0xac79"
+     ],
+     "guardians": [
+      "0xcf0a"
      ]
     },
     {
      "name": "Haunted Hallows",
+     "tier": "Adept",
      "mobs": [
       "0x0659",
       "0x0d56",
@@ -2699,16 +2829,34 @@
       "0xc75a",
       "0xcf07"
      ],
-     "events": [
+     "encounters": [
       "0x0d56",
+      "0x0d57",
+      "0x0d58",
       "0x55f3",
+      "0x55f4",
+      "0x55f5",
       "0x86ce",
       "0x86e9",
-      "0xc758"
+      "0xc758",
+      "0xc75a"
+     ],
+     "heroes": [
+      "0x5dcc",
+      "0x5dcd",
+      "0x5dce",
+      "0x86d3",
+      "0x86d4",
+      "0x8728",
+      "0x8729"
+     ],
+     "guardians": [
+      "0xcf07"
      ]
     },
     {
      "name": "Shipwreck Cove",
+     "tier": "Adept",
      "mobs": [
       "0x0e37",
       "0x0e39",
@@ -2749,18 +2897,48 @@
       "0xccd0",
       "0xcf09"
      ],
-     "events": [
+     "encounters": [
       "0x0e37",
+      "0x0e39",
+      "0x0e3b",
+      "0x0e3d",
+      "0x0e4e",
+      "0x0e4f",
+      "0x420b",
+      "0x421e",
+      "0x4225",
       "0x4ffb",
+      "0x5613",
+      "0x5614",
+      "0x5615",
+      "0x5617",
+      "0x5618",
       "0x561a",
       "0x5670",
       "0x5e25",
+      "0x86a1",
       "0xc757",
-      "0xc780"
+      "0xc759",
+      "0xc780",
+      "0xc781"
+     ],
+     "heroes": [
+      "0x5dd3",
+      "0x5dd4",
+      "0x5dd5",
+      "0x5dd7",
+      "0x86c3",
+      "0x86c4",
+      "0x86c5",
+      "0x86c6"
+     ],
+     "guardians": [
+      "0xcf09"
      ]
     },
     {
      "name": "Dead Church",
+     "tier": "Adept",
      "mobs": [
       "0x06da",
       "0x06db",
@@ -2799,16 +2977,45 @@
       "0xcf05",
       "0xcf06"
      ],
-     "events": [
+     "encounters": [
+      "0x0d5d",
       "0x0d5f",
+      "0x5601",
       "0x5603",
       "0x869c",
+      "0x869d",
+      "0x869e",
       "0x86b9",
-      "0x8718"
+      "0x86ba",
+      "0x86bb",
+      "0x86bc",
+      "0x86c8",
+      "0x86c9",
+      "0x86ca",
+      "0x8718",
+      "0x871a"
+     ],
+     "heroes": [
+      "0x06da",
+      "0x06db",
+      "0x426b",
+      "0x426c",
+      "0x426d",
+      "0x5216",
+      "0x55b7",
+      "0x55b8",
+      "0x5dcf",
+      "0x5dd6",
+      "0xac84"
+     ],
+     "guardians": [
+      "0xcf05",
+      "0xcf06"
      ]
     },
     {
      "name": "Risen Hell",
+     "tier": "Adept",
      "mobs": [
       "0x0651",
       "0x0668",
@@ -2828,13 +3035,24 @@
       "0xc3d3",
       "0xcf08"
      ],
-     "events": [
+     "encounters": [
       "0x0d56",
       "0x55f3"
+     ],
+     "heroes": [
+      "0x0668",
+      "0x5589",
+      "0x86ac",
+      "0x86f7",
+      "0x870d"
+     ],
+     "guardians": [
+      "0xcf08"
      ]
     },
     {
      "name": "Abandoned City",
+     "tier": "Adept",
      "mobs": [
       "0x0654",
       "0x0655",
@@ -2886,7 +3104,7 @@
       "0xc1e2",
       "0xcf03"
      ],
-     "events": [
+     "encounters": [
       "0x0d54",
       "0x0d59",
       "0x55df",
@@ -2907,10 +3125,22 @@
       "0xb1d5",
       "0xb1d6",
       "0xbb9b"
+     ],
+     "heroes": [
+      "0x0935",
+      "0x09a7",
+      "0x4263",
+      "0x86db",
+      "0x86f9",
+      "0x8727"
+     ],
+     "guardians": [
+      "0xcf03"
      ]
     },
     {
      "name": "Deep Sea Abyss",
+     "tier": "Veteran",
      "mobs": [
       "0x0409",
       "0x55c4",
@@ -2933,7 +3163,7 @@
       "0x86d8",
       "0xaabf"
      ],
-     "events": [
+     "encounters": [
       "0x8698",
       "0x8699",
       "0x869a",
@@ -2942,10 +3172,18 @@
       "0x86a4",
       "0x86a5",
       "0x86aa"
-     ]
+     ],
+     "heroes": [
+      "0x0409",
+      "0x6da1",
+      "0x86d7",
+      "0x86d8"
+     ],
+     "guardians": []
     },
     {
      "name": "Carboniferous",
+     "tier": "Veteran",
      "mobs": [
       "0x265b",
       "0x265c",
@@ -2973,7 +3211,8 @@
       "0xcf0b",
       "0xcf0f"
      ],
-     "events": [
+     "encounters": [
+      "0x4225",
       "0x5108",
       "0x513f",
       "0x5140",
@@ -2981,10 +3220,23 @@
       "0x86fe",
       "0x8703",
       "0xb28f"
+     ],
+     "heroes": [
+      "0x266e",
+      "0x86b1",
+      "0x86b2",
+      "0x86b3",
+      "0x86b4",
+      "0x86b8"
+     ],
+     "guardians": [
+      "0xcf0b",
+      "0xcf0f"
      ]
     },
     {
      "name": "Floral Escape",
+     "tier": "Veteran",
      "mobs": [
       "0x1090",
       "0x10b6",
@@ -3021,7 +3273,8 @@
       "0xcf11",
       "0xcf14"
      ],
-     "events": [
+     "encounters": [
+      "0x1090",
       "0x10b6",
       "0x10b7",
       "0x10b8",
@@ -3038,10 +3291,23 @@
       "0x5140",
       "0x5683",
       "0xc786"
+     ],
+     "heroes": [
+      "0x4267",
+      "0x5644",
+      "0x872b",
+      "0xc76f",
+      "0xc770",
+      "0xc772"
+     ],
+     "guardians": [
+      "0xcf11",
+      "0xcf14"
      ]
     },
     {
      "name": "Sanguine Forest",
+     "tier": "Veteran",
      "mobs": [
       "0x07c0",
       "0x07c1",
@@ -3115,7 +3381,8 @@
       "0xcf19",
       "0xcf1a"
      ],
-     "events": [
+     "encounters": [
+      "0x1090",
       "0x10b6",
       "0x10b7",
       "0x10b8",
@@ -3124,14 +3391,39 @@
       "0x10bc",
       "0x10d8",
       "0x10f6",
+      "0x41b4",
       "0x425e",
       "0x4260",
       "0x4261",
+      "0x43fa",
+      "0x43fb",
       "0x445f",
       "0x4485",
       "0x55c7",
+      "0x55cb",
+      "0x55cf",
+      "0x55d0",
+      "0x55d1",
+      "0x55d2",
+      "0x55d3",
+      "0x55d4",
+      "0x55d5",
+      "0x55d6",
+      "0x55d8",
       "0x5682",
+      "0x5e85",
+      "0x726a",
       "0x734d",
+      "0x734e",
+      "0x734f",
+      "0x735a",
+      "0x735b",
+      "0x735c",
+      "0x735f",
+      "0x8693",
+      "0x8694",
+      "0x8695",
+      "0x8696",
       "0x86bd",
       "0x86be",
       "0x86bf",
@@ -3139,11 +3431,29 @@
       "0x86c1",
       "0x86c2",
       "0x8715",
-      "0xb030"
+      "0x8716",
+      "0xb00f",
+      "0xb027",
+      "0xb030",
+      "0xb132",
+      "0xb13a"
+     ],
+     "heroes": [
+      "0x07c0",
+      "0x07c1",
+      "0x07c2",
+      "0x86cd",
+      "0xcdff"
+     ],
+     "guardians": [
+      "0xcf15",
+      "0xcf19",
+      "0xcf1a"
      ]
     },
     {
      "name": "Runic Tundra",
+     "tier": "Veteran",
      "mobs": [
       "0x0d51",
       "0x0d52",
@@ -3182,20 +3492,43 @@
       "0xc783",
       "0xcf1d"
      ],
-     "events": [
+     "encounters": [
+      "0x0d51",
+      "0x0d52",
+      "0x0d53",
+      "0x41b4",
       "0x4227",
       "0x424c",
+      "0x43fa",
+      "0x43fb",
       "0x55ec",
+      "0x55ed",
+      "0x55ee",
+      "0x55ef",
       "0x5670",
       "0x5682",
       "0x5e25",
+      "0xb00f",
+      "0xb027",
       "0xb030",
+      "0xb132",
+      "0xb13a",
       "0xb28f",
       "0xc783"
+     ],
+     "heroes": [
+      "0x86b0",
+      "0x86b5",
+      "0x86b6",
+      "0x86d6"
+     ],
+     "guardians": [
+      "0xcf1d"
      ]
     },
     {
      "name": "Eternal Frost",
+     "tier": "Seasonal",
      "mobs": [
       "0x0f1f",
       "0x1fee",
@@ -3215,15 +3548,18 @@
       "0xb3e5",
       "0xb3e6"
      ],
-     "events": [
+     "encounters": [
       "0x0f1f",
       "0x1fee",
       "0x640b",
       "0xb3dd"
-     ]
+     ],
+     "heroes": [],
+     "guardians": []
     },
     {
      "name": "Relentless Springs",
+     "tier": "Seasonal",
      "mobs": [
       "0x089a",
       "0x089b",
@@ -3250,7 +3586,7 @@
       "0x79e4",
       "0xc758"
      ],
-     "events": [
+     "encounters": [
       "0x089f",
       "0x0f1e",
       "0x5108",
@@ -3260,7 +3596,9 @@
       "0x5683",
       "0x5e25",
       "0xc758"
-     ]
+     ],
+     "heroes": [],
+     "guardians": []
     }
    ],
    "icon": 100

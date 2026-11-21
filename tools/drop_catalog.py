@@ -133,14 +133,24 @@ def biome_pages(html):
     return list(dict.fromkeys((slug, re.sub(r'\s+Enemies$', '', htmllib.unescape(name).strip())) for slug, name in found))
 
 
+# The Realm's biome tiers, from RealmEye's "Biomes of the Realm" table (/wiki/the-realm, read Nov 2026).
+# shortcut: by hand, as the biome pages the build reads don't carry it; a biome missing here shows under no tier.
+TIERS = {'Rookie': ['Beach', 'Undead Forest', 'Low Forest', 'Low Desert', 'Mid Plains', 'Nature Ruins', 'Mid Desert',
+                    'High Plains', 'High Forest', 'High Desert'],
+         'Adept': ['Coral Reefs', 'Sprite Forest', 'Haunted Hallows', 'Shipwreck Cove', 'Dead Church', 'Risen Hell', 'Abandoned City'],
+         'Veteran': ['Deep Sea Abyss', 'Carboniferous', 'Sanguine Forest', 'Runic Tundra', 'Floral Escape'],
+         'Seasonal': ['Eternal Frost', 'Relentless Springs']}
+
+
 def biome_mobs(html):
-    """(slug, name, event) of a biome page's mobs; event: under an Encounters heading (the Realm's event bosses), not
-    their minions."""
+    """(slug, name, kind) of a biome page's mobs. kind is RealmEye's section: 'encounter', 'hero' (Heroes of Oryx),
+    'guardian' (Beacon Guardian) or 'regular'; a section's minions count in it."""
     parts = re.split(r'<h[2-6][^>]*>(.*?)</h[2-6]>', wiki(html))
-    out = [(slug, name, False) for slug, name in image_links(parts[0])]
+    out = [(slug, name, 'regular') for slug, name in image_links(parts[0])]
     for heading, body in zip(parts[1::2], parts[2::2]):
         text = re.sub('<[^>]+>', '', heading).casefold()
-        out += [(slug, name, 'encounter' in text and 'minion' not in text) for slug, name in image_links(body)]
+        kind = 'encounter' if 'encounter' in text else 'hero' if 'heroes' in text else 'guardian' if 'beacon' in text else 'regular'
+        out += [(slug, name, kind) for slug, name in image_links(body)]
     return out
 
 
@@ -343,7 +353,10 @@ def build(fetch, game, sprites=SPRITES):
                                     mobs=list(map(hexid, sorted(types)))))
         if biomes:   # the Realm (issue #69): a mob on several biome pages is in each
             def ids(found): return list(map(hexid, sorted({t for s, _, _ in found if s in mobs for t in mobs[s]['types'] or []})))
-            out['dungeons'][-1]['biomes'] = [dict(name=title, mobs=ids(found), events=ids([f for f in found if f[2]]))
+            tier = {b: t for t, names in TIERS.items() for b in names}
+            out['dungeons'][-1]['biomes'] = [dict(name=title, tier=tier.get(title, ''), mobs=ids(found),
+                                                  **{key: ids([f for f in found if f[2] == k]) for k, key in
+                                                     (('encounter', 'encounters'), ('hero', 'heroes'), ('guardian', 'guardians'))})
                                              for title, found in biomes]
         if p and not game.objects[p]['texture']: portal_sprites.append((p, name, html))
     need_sprite, no_item = list(portal_sprites), {}
@@ -465,8 +478,10 @@ def self_test():
              '<a href="/wiki/beach-enemies">Beach Enemies</a></div><div class="wiki-sidebar"><a href="/wiki/x-enemies">X Enemies</a></div>')
     assert biome_pages(realm) == [('beach-enemies', 'Beach'), ('mid-desert-enemies', 'Mid Desert')], biome_pages(realm)
     biome = ('<div class="wiki-page"><a href="/wiki/a"><img alt="A" src="/s/a.png"></a><h5>Minions</h5><a href="/wiki/b"><img alt="B" src="/s/b.png"></a>'
-             '<h4>Realm Encounters</h4><a href="/wiki/c"><img alt="C" src="/s/c.png"></a><h5>Encounter Minions</h5><a href="/wiki/d"><img alt="D" src="/s/d.png"></a></div>')
-    assert biome_mobs(biome) == [('a', 'A', False), ('b', 'B', False), ('c', 'C', True), ('d', 'D', False)], biome_mobs(biome)
+             '<h4>Realm Encounters</h4><a href="/wiki/c"><img alt="C" src="/s/c.png"></a><h5>Encounter Minions</h5><a href="/wiki/d"><img alt="D" src="/s/d.png"></a>'
+             '<h4>Heroes of Oryx</h4><a href="/wiki/e"><img alt="E" src="/s/e.png"></a><h4>Beacon Guardian</h4><a href="/wiki/f"><img alt="F" src="/s/f.png"></a></div>')
+    assert biome_mobs(biome) == [('a', 'A', 'regular'), ('b', 'B', 'regular'), ('c', 'C', 'encounter'), ('d', 'D', 'encounter'),
+                                 ('e', 'E', 'hero'), ('f', 'F', 'guardian')], biome_mobs(biome)
     assert dungeon_list(listing) == [('test-den', 'Test Den'), ('oryx-s-nook', 'Oryx’s Nook')]
     den = ('<div class="wiki-page"><h4>Key</h4><a href="/wiki/den-key"><img alt="Den Key" src="/s/y.png"></a>'
            '<h2 id="layout">Layout</h2><h4>Village</h4><a href="/wiki/den-guard"><img alt="Den Guard" src="/s/g.png"></a>'
@@ -523,7 +538,7 @@ def self_test():
         den_entry = c['dungeons'][1]
         assert den_entry['portal'] == '0x0010' and den_entry['mobs'] == ['0x0011', '0x0013'], den_entry
         assert c['dungeons'][0]['mobs'] == ['0x0013'] and 'icon' not in c['dungeons'][0]
-        assert c['dungeons'][0]['biomes'] == [dict(name='Beach', mobs=['0x0013'], events=['0x0013'])], c['dungeons'][0]
+        assert c['dungeons'][0]['biomes'] == [dict(name='Beach', tier='Rookie', mobs=['0x0013'], encounters=['0x0013'], heroes=[], guardians=[])], c['dungeons'][0]
         assert 'biomes' not in den_entry
         assert den_entry['icon'] == 42, den_entry
         assert c['mobs'][0] == dict(name='Den King', types=['0x0011'], realmeye='den-king', tiers={'ring': [3], 'weapon': [7, 8]},

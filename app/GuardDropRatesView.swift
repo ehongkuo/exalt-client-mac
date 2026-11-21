@@ -264,16 +264,20 @@ struct DropRatesView: View {
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
-    /// The bosses and the minions killed here, each in their own row; the Realm's by biome, then event bosses, quest mobs
-    /// and the rest (issue #69). Clicking one opens its page on the right; clicking it again, the breadcrumb or Esc closes it.
-    @ViewBuilder private func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
+    /// The bosses and the minions killed here, each in their own row; the Realm's by tier and biome, in RealmEye's sections
+    /// (issue #69). Clicking one opens its page on the right; clicking it again, the breadcrumb or Esc closes it.
+    @ViewBuilder func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
         if mobs.first?.dungeon == DropReport.realm && !report.biomes.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(report.biomes, id: \.name) { biome in
-                    Text(biome.name).font(.subheadline.weight(.semibold)).padding(.top, 4)
-                    if !biome.events.isEmpty { mobRow("EVENT BOSSES", biome.events) }
-                    if !biome.quests.isEmpty { mobRow("QUEST MOBS", biome.quests) }
-                    if !biome.regular.isEmpty { mobRow("REGULAR", biome.regular) }
+                ForEach(Array(report.biomes.enumerated()), id: \.element.name) { i, biome in
+                    if biome.tier != (i > 0 ? report.biomes[i - 1].tier : nil), !biome.tier.isEmpty {
+                        Text("\(biome.tier) biomes").font(.title3.weight(.semibold)).padding(.top, i > 0 ? 12 : 0)
+                    }
+                    Text(biome.name).font(.headline).padding(.top, 4)
+                    if !biome.regular.isEmpty { mobRow("REGULAR ENEMIES", biome.regular) }
+                    if !biome.heroes.isEmpty { mobRow("HEROES OF ORYX", biome.heroes) }
+                    if !biome.encounters.isEmpty { mobRow("ENCOUNTERS", biome.encounters) }
+                    if !biome.guardians.isEmpty { mobRow("BEACON GUARDIAN", biome.guardians) }
                 }
             }
         } else {
