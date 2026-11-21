@@ -51,7 +51,7 @@ The installed app contains its integration library and supported-game fingerprin
 
 If [RealmHound](https://github.com/pillarzz/RealmHound) is installed, **Also open RealmHound** next to **Start game** opens it with the game (on by default, remembered). It reads game traffic passively and needs one-time capture access: `brew install --cask wireshark-chmodbpf`.
 
-**More → Drop alerts** plays a sound and shows a popup at the top of the screen when RealmHound logs a bag you chose (White, Orange (UT) and Red (ST) by default), optionally only at a minimum rarity (enchantment slots), and for any shiny item. It reads RealmHound's loot log read-only, so RealmHound has to be running. The popup has no buttons: it goes after 10 s, or when clicked.
+The **Drop alerts** tab plays a sound and shows a popup at the top of the screen when RealmHound logs a bag you chose (White, Orange (UT) and Red (ST) by default), optionally only at a minimum rarity (enchantment slots), and for any shiny item. It reads RealmHound's loot log read-only, so RealmHound has to be running. The popup has no buttons: it goes after 10 s, or when clicked.
 
 <br clear="right">
 

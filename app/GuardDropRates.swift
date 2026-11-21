@@ -554,6 +554,9 @@ struct DropReport: Equatable {
     /// kills, mobs that can drop (by the dungeon they were killed in), and untiered drops (tiers cover tiered loot).
     struct Uncataloged: Equatable { var dungeons: [String] = [], mobs: [Mob] = [], items: [Int] = [] }
     var uncataloged = Uncataloged()
+    /// The Items list (issue #68): every catalog item by type, worked out once per report.
+    struct ItemSection: Hashable { var title: String, items: [Int] }
+    var itemSections: [ItemSection] = []
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -756,6 +759,9 @@ struct DropReport: Equatable {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
+        let catalogItems = Set(r.tiers.keys).union(r.slots.keys).union(r.bags.keys).union(r.origins.keys)
+            .union(r.mobDrops.values.joined()).union(r.copies.values.flatMap(\.keys)).map(r.base)
+        r.itemSections = r.sections(Set(catalogItems).filter { r.names[$0] != nil && !r.name($0).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name($0)) })
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
         var listed: [String: Dungeon] = [:]
@@ -794,6 +800,25 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    /// Items by type (weapons, abilities, armors, rings, eggs, consumables, then the rest), each untiered first, then
+    /// best tier, then by name.
+    func sections(_ items: Set<Int>) -> [ItemSection] {
+        let order = Self.weaponSlots + Self.abilitySlots + Self.armorSlots + [9, 26, 10]
+        func title(_ slot: Int?) -> String {
+            slot == 10 ? "Consumables" : slot.flatMap { s in ItemRule.types.first { $0.slot == s }?.name } ?? "Other"
+        }
+        return Dictionary(grouping: items) { slots[$0] }
+            .sorted { (order.firstIndex(of: $0.key ?? -1) ?? order.count, title($0.key)) < (order.firstIndex(of: $1.key ?? -1) ?? order.count, title($1.key)) }
+            .map { slot, items in
+                ItemSection(title: title(slot), items: items.sorted { (tiers[$0].map { -$0 } ?? Int.min, name($0)) < (tiers[$1].map { -$0 } ?? Int.min, name($1)) })
+            }
+    }
+    /// The Items list filtered by name, any case; empty sections go.
+    func itemSections(matching query: String) -> [ItemSection] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return itemSections }
+        return itemSections.map { ItemSection(title: $0.title, items: $0.items.filter { name($0).localizedCaseInsensitiveContains(q) }) }.filter { !$0.items.isEmpty }
+    }
     static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
     /// A mob's base rate per kill for `n` drops (copies, or kills with a bag) (issue #58).
     func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
@@ -1171,8 +1196,14 @@ enum GameNames {
 /// dungeons on the left; the selected dungeon's drops in the middle, one row of tiles per bag; on the right the most
 /// specific thing picked: an item (a global page), a tier group, a mob's page (issue #50), or the dungeon.
 final class DropRatesModel: ObservableObject {
-    /// The main window shows the Drop rates tab instead of the Guard tab.
-    @Published var shown = false { didSet { resetOrders() } }
+    /// The main window's tab (issue #68 adds Drop alerts).
+    enum Tab { case guardTab, rates, alerts }
+    @Published var tab = Tab.guardTab { didSet { resetOrders() } }
+    /// The main window shows the Drop rates tab.
+    var shown: Bool { get { tab == .rates } set { tab = newValue ? .rates : .guardTab } }
+    /// The left panel's view (issue #68): the item encyclopedia or the dungeons.
+    enum Browse { case items, dungeons }
+    @Published var browse = Browse.items
     @Published var dungeon: String? { didSet { resetOrders(); lootDetails = false } }
     @Published var mob: DropReport.Mob? { didSet { resetOrders(); if mob != nil { lootDetails = false } } }   // its page on the right; the grid stays dungeon-wide
     @Published var group: DropReport.Group? { didSet { resetOrders(); if group != nil { lootDetails = false } } }
@@ -1181,7 +1212,9 @@ final class DropRatesModel: ObservableObject {
     @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
-    @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
+    @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items and dungeons by name
+    /// The Items list under the search, worked out when the search or the report changes, not on each redraw.
+    private(set) var shownItems: [DropReport.ItemSection] = []
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
     @Published var problem: String?
@@ -1209,7 +1242,7 @@ final class DropRatesModel: ObservableObject {
 
     func update(health: CaptureHealth) { if health != self.health { self.health = health } }
     func update(_ report: DropReport) {
-        if report != self.report { self.report = report }
+        if report != self.report { self.report = report; shownItems = report.itemSections(matching: search) }
         if !iconsAsked {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
@@ -1238,7 +1271,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.
     func select(dungeon: String, keepItem: Bool = false) {
-        self.dungeon = dungeon; mob = nil; group = nil
+        self.dungeon = dungeon; mob = nil; group = nil; browse = .dungeons
         if !keepItem { item = nil }
     }
     /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.

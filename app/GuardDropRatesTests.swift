@@ -293,6 +293,16 @@ enum DropRateTests {
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
+        // The Items list (issue #68): by type in family order, untiered first, then best tier; search by name.
+        var book = DropReport()
+        book.names = [1: "Doom Bow", 2: "Bow of Covert Havens", 3: "Coral Bow", 4: "Ring of Paramount Attack", 5: "Potion of Life", 6: "Dirk"]
+        book.slots = [1: 3, 2: 3, 3: 3, 4: 9, 5: 10, 6: 2]
+        book.tiers = [2: 10, 3: 14, 4: 6]
+        book.itemSections = book.sections([1, 2, 3, 4, 5, 6])
+        check(book.itemSections == [.init(title: "Dagger", items: [6]), .init(title: "Bow", items: [1, 3, 2]), .init(title: "Ring", items: [4]),
+                                    .init(title: "Consumables", items: [5])], "items by type, untiered then best tier")
+        check(book.itemSections(matching: " bow ") == [.init(title: "Bow", items: [1, 3, 2])] && book.itemSections(matching: "zzz").isEmpty
+              && book.itemSections(matching: "") == book.itemSections, "searching an item's name finds it")
         var gold = DropReport()
         gold.names = [1: "Zed Key", 2: "Ninja Skin", 3: "Amber Pet Stone", 4: "Blueprint_7", 5: "Assassin Skin", 6: "Bee Pet Skin"]
         for item in 1...6 { gold.bags[item] = .gold }

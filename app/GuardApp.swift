@@ -635,7 +635,6 @@ final class WindowState: ObservableObject {
     /// Which rows of the More section are open.
     @Published var sessionOpen = false
     @Published var partyOpen = false
-    @Published var dropsOpen = false
     @Published var diagnosticsOpen = false
 }
 
@@ -705,8 +704,10 @@ struct GuardView: View {
         #if !GUARD_SYNC_CAPTURE
         let _ = settings.sync(with: source.snapshot, live: source.link.isLive)
         #endif
-        if rates.shown {
+        if rates.tab == .rates {
             DropRatesView(model: rates, drops: drops)
+        } else if rates.tab == .alerts {
+            DropAlertsView(drops: drops, rates: rates, live: source.link.isLive)
         } else {
             MainLayout {
                 VStack(spacing: 10) {
@@ -1053,8 +1054,6 @@ struct GuardPanel {
             }
             disclosure($window.partyOpen, "Party calls", value: partyValue(running)) { partyDetail(running) }
             RowDivider()
-            disclosure($window.dropsOpen, "Drop alerts", value: drops.settings.enabled ? "On" : "Off") { dropDetail() }
-            RowDivider()
             disclosure($window.diagnosticsOpen, "Diagnostics and logs", value: "") { diagnostics(running, link, rate) }
         }
         .padding(.bottom, 4)
@@ -1148,160 +1147,6 @@ struct GuardPanel {
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))
-    }
-
-    /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
-    /// A rule's terms, found by id: a term list saves typed text as it disappears, which happens after its rule was
-    /// removed, when an index binding would point past the end and crash (issue #75).
-    private func terms(_ id: UUID, _ path: WritableKeyPath<ItemRule, [String]>) -> Binding<[String]> {
-        Binding(get: { drops.settings.rules.first { $0.id == id }?[keyPath: path] ?? [] },
-                set: { value in
-                    if let i = drops.settings.rules.firstIndex(where: { $0.id == id }) { drops.settings.rules[i][keyPath: path] = value }
-                })
-    }
-    @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
-        let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
-            .buttonStyle(.borderless).help("Remove rule")
-        if rule.wrappedValue.confirmed {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill").font(.system(size: 16)).foregroundStyle(.green)
-                VStack(alignment: .leading, spacing: 1) {
-                    let title = rule.wrappedValue.title.trimmingCharacters(in: .whitespaces)
-                    Text(title.isEmpty ? "Untitled rule" : title).fontWeight(.semibold)
-                    Text(rule.wrappedValue.summary).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Button("Edit") { rule.wrappedValue.confirmed = false }.controlSize(.small)
-                remove
-            }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.10)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.green.opacity(0.45)))
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    TextField("Rule name, shown in the alert", text: rule.title)
-                    remove
-                }
-                HStack(spacing: 6) {
-                    Picker("Type", selection: rule.slot) {
-                        Text("Any").tag(Int?.none)
-                        ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
-                    }
-                    .fixedSize()
-                    Picker("Class", selection: rule.playerClass) {
-                        Text("Any").tag(String?.none)
-                        ForEach(ItemRule.classes.keys.sorted(), id: \.self) { Text($0).tag(String?.some($0)) }
-                    }
-                    .fixedSize()
-                    Spacer(minLength: 0)
-                }
-                HStack(spacing: 6) {
-                    Picker("Tier", selection: rule.minTier) {
-                        Text("Any").tag(Int?.none)
-                        ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
-                    }
-                    .fixedSize()
-                    Picker("Rarity", selection: rule.minRarity) {
-                        ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
-                    }
-                    .fixedSize()
-                    Spacer(minLength: 0)
-                }
-                TermList(label: "Name", hint: "any of these", terms: terms(rule.wrappedValue.id, \.names), options: drops.catalog.names)
-                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: terms(rule.wrappedValue.id, \.enchants),
-                         options: drops.enchantNames)
-                if rule.wrappedValue.enchants.count > 1 {
-                    Picker("Needs", selection: rule.allEnchants) {
-                        Text("All enchantments").tag(true)
-                        Text("Any one").tag(false)
-                    }
-                    .pickerStyle(.segmented).fixedSize()
-                }
-                HStack {
-                    Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Confirm") { rule.wrappedValue.confirmed = true }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(rule.wrappedValue.isBlank).help(rule.wrappedValue.isBlank ? "Set at least one part first" : "Start alerting on this rule")
-                }
-            }
-            .textFieldStyle(.roundedBorder)
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-        }
-    }
-
-    private func dropDetail() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch).controlSize(.small)
-            Group {
-                HStack {
-                    Toggle("Play a sound", isOn: $drops.settings.sound).toggleStyle(.checkbox)
-                    Spacer()
-                    Button("Test alert") {
-                        drops.show([DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""),
-                                    DropAlert(item: "Test shiny", bag: .orange, rarity: .uncommon, shiny: true, mob: "Test", dungeon: "", rule: "Test rule")])
-                    }
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(DropBag.allCases, id: \.self) { bag in
-                        Toggle(isOn: Binding(get: { drops.settings.bags.contains(bag) },
-                                             set: { on in if on { drops.settings.bags.insert(bag) } else { drops.settings.bags.remove(bag) } })) {
-                            HStack(spacing: 6) {
-                                BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 16)
-                                Text(bag.name).frame(width: 78, alignment: .leading)
-                                Text(bag.holds).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
-                        .toggleStyle(.checkbox)
-                    }
-                }
-                Picker("Lowest rarity", selection: $drops.settings.minRarity) {
-                    ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
-                }
-                .fixedSize()
-                Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
-                portalAlerts()
-                Divider().padding(.vertical, 2)
-                Text("Item rules").fontWeight(.semibold)
-                Text("Also alert when any item matches a rule, in any bag.").foregroundStyle(.secondary)
-                ForEach($drops.settings.rules) { $rule in itemRule($rule) }
-                Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
-            }
-            .disabled(!drops.settings.enabled)
-            Text(!source.link.isLive ? "Drops come from the guard: they alert only when you start the game from this app."
-                 : "Watching bags as they drop" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
-                .foregroundStyle(!source.link.isLive ? bad : Color.secondary)
-            Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
-                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.system(size: 11))
-    }
-
-    /// Dungeon portals (issue #74): chosen dungeons, each with its portal's sprite.
-    private func portalAlerts() -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Divider().padding(.vertical, 2)
-            Text("Dungeon portals").fontWeight(.semibold)
-            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary)
-            ForEach(drops.settings.portals.sorted(), id: \.self) { name in
-                HStack(spacing: 6) {
-                    SpriteIcon(image: drops.portalSprites[name], size: 16)
-                    Text(name)
-                    Spacer()
-                    Button { drops.settings.portals.remove(name) } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.borderless).help("Stop alerting for \(name)")
-                }
-            }
-            Menu("Add dungeon") {
-                ForEach(drops.portalNames.list.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
-                    Button(name) { drops.settings.portals.insert(name) }
-                }
-            }
-            .controlSize(.small).fixedSize().disabled(drops.portalNames.list.isEmpty)
-        }
     }
 
     private func diagnostics(_ s: GuardSnapshot?, _ link: Link, _ rate: Double?) -> some View {
@@ -1603,7 +1448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
         state.showCompact = { [weak self] in self?.showCompact() }
         // After the view switched, so the narrow guard view's frame is not held at the stats views' minimum width.
-        ratesWatch = rates.$shown.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
+        ratesWatch = rates.$tab.map { $0 != .guardTab }.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in
             guard let self else { return }
@@ -1647,7 +1492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             }
         }
         // Screenshot hook: open every More row (tools/readme-screenshots.sh).
-        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.dropsOpen = true; state.diagnosticsOpen = true }
+        if env["GUARD_OPEN_MORE"] != nil { state.sessionOpen = true; state.partyOpen = true; state.diagnosticsOpen = true }
         #endif
         window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -1769,6 +1614,187 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     }
 }
 #endif
+
+/// The Drop alerts tab (issue #68): bags, rarity, shiny, dungeon portals, and room to edit item rules. It was the
+/// More → Drop alerts row of the Guard tab.
+struct DropAlertsView: View {
+    @ObservedObject var drops: DropAlerts
+    @ObservedObject var rates: DropRatesModel
+    /// The game was started from this app, so its guard hands over the drops.
+    var live: Bool
+
+    /// One item rule (issue #47): a draft is edited and confirmed; a confirmed rule shows as one locked-in line.
+    /// A rule's terms, found by id: a term list saves typed text as it disappears, which happens after its rule was
+    /// removed, when an index binding would point past the end and crash (issue #75).
+    private func terms(_ id: UUID, _ path: WritableKeyPath<ItemRule, [String]>) -> Binding<[String]> {
+        Binding(get: { drops.settings.rules.first { $0.id == id }?[keyPath: path] ?? [] },
+                set: { value in
+                    if let i = drops.settings.rules.firstIndex(where: { $0.id == id }) { drops.settings.rules[i][keyPath: path] = value }
+                })
+    }
+    @ViewBuilder private func itemRule(_ rule: Binding<ItemRule>) -> some View {
+        let remove = Button { drops.settings.rules.removeAll { $0.id == rule.wrappedValue.id } } label: { Image(systemName: "minus.circle") }
+            .buttonStyle(.borderless).help("Remove rule")
+        if rule.wrappedValue.confirmed {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 16)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    let title = rule.wrappedValue.title.trimmingCharacters(in: .whitespaces)
+                    Text(title.isEmpty ? "Untitled rule" : title).fontWeight(.semibold)
+                    Text(rule.wrappedValue.summary).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Edit") { rule.wrappedValue.confirmed = false }
+                remove
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.green.opacity(0.45)))
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    TextField("Rule name, shown in the alert", text: rule.title)
+                    remove
+                }
+                HStack(spacing: 6) {
+                    Picker("Type", selection: rule.slot) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(ItemRule.types, id: \.slot) { Text($0.name).tag(Int?.some($0.slot)) }
+                    }
+                    .fixedSize()
+                    Picker("Class", selection: rule.playerClass) {
+                        Text("Any").tag(String?.none)
+                        ForEach(ItemRule.classes.keys.sorted(), id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 6) {
+                    Picker("Tier", selection: rule.minTier) {
+                        Text("Any").tag(Int?.none)
+                        ForEach(1...14, id: \.self) { Text("\($0) and up").tag(Int?.some($0)) }
+                    }
+                    .fixedSize()
+                    Picker("Rarity", selection: rule.minRarity) {
+                        ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                TermList(label: "Name", hint: "any of these", terms: terms(rule.wrappedValue.id, \.names), options: drops.catalog.names)
+                TermList(label: "Enchant", hint: rule.wrappedValue.enchants.count > 1 ? "" : "Return adds another", terms: terms(rule.wrappedValue.id, \.enchants),
+                         options: drops.enchantNames)
+                if rule.wrappedValue.enchants.count > 1 {
+                    Picker("Needs", selection: rule.allEnchants) {
+                        Text("All enchantments").tag(true)
+                        Text("Any one").tag(false)
+                    }
+                    .pickerStyle(.segmented).fixedSize()
+                }
+                HStack {
+                    Text("Draft: alerts once confirmed").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Confirm") { rule.wrappedValue.confirmed = true }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(rule.wrappedValue.isBlank).help(rule.wrappedValue.isBlank ? "Set at least one part first" : "Start alerting on this rule")
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack { MainTabs(rates: rates); Spacer() }.padding(8)
+            Divider()
+            ScrollView {
+                HStack(alignment: .top, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Alert when a chosen bag drops", isOn: $drops.settings.enabled).toggleStyle(.switch)
+                        Group {
+                            HStack {
+                                Toggle("Play a sound", isOn: $drops.settings.sound).toggleStyle(.checkbox)
+                                Spacer()
+                                Button("Test alert") {
+                                    drops.show([DropAlert(item: "Test item", bag: .red, rarity: .legendary, shiny: false, mob: "Test", dungeon: ""),
+                                                DropAlert(item: "Test shiny", bag: .orange, rarity: .uncommon, shiny: true, mob: "Test", dungeon: "", rule: "Test rule")])
+                                }
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(DropBag.allCases, id: \.self) { bag in
+                                    Toggle(isOn: Binding(get: { drops.settings.bags.contains(bag) },
+                                                         set: { on in if on { drops.settings.bags.insert(bag) } else { drops.settings.bags.remove(bag) } })) {
+                                        HStack(spacing: 6) {
+                                            BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 18)
+                                            Text(bag.name).frame(width: 90, alignment: .leading)
+                                            Text(bag.holds).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                    .toggleStyle(.checkbox)
+                                }
+                            }
+                            Picker("Lowest rarity", selection: $drops.settings.minRarity) {
+                                ForEach(DropRarity.allCases, id: \.self) { Text($0 == .common ? "Any" : $0.name).tag($0) }
+                            }
+                            .fixedSize()
+                            Toggle("Always alert for shiny items, in any bag", isOn: $drops.settings.shiny).toggleStyle(.checkbox)
+                            portalAlerts()
+                        }
+                        .disabled(!drops.settings.enabled)
+                        Divider().padding(.vertical, 2)
+                        Text(!live ? "Drops come from the guard: they alert only when you start the game from this app."
+                             : "Watching bags as they drop" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
+                            .foregroundStyle(!live ? bad : Color.secondary)
+                        Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(width: 380, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Item rules").font(.headline)
+                        Text("Also alert when any item matches a rule, in any bag. An item's page in Drop rates has Alert me, which adds one.")
+                            .foregroundStyle(.secondary)
+                        ForEach($drops.settings.rules) { $rule in itemRule($rule) }
+                        Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }
+                    }
+                    .disabled(!drops.settings.enabled)
+                    .frame(minWidth: 420, maxWidth: 720, alignment: .leading)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(minWidth: 900, minHeight: 560)
+        .background(Color(white: 0.12))
+        .preferredColorScheme(.dark)
+    }
+
+    /// Dungeon portals (issue #74): chosen dungeons, each with its portal's sprite.
+    private func portalAlerts() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.vertical, 2)
+            Text("Dungeon portals").font(.headline)
+            Text("Also alert when a mob drops a portal to one of these dungeons.").foregroundStyle(.secondary)
+            ForEach(drops.settings.portals.sorted(), id: \.self) { name in
+                HStack(spacing: 6) {
+                    SpriteIcon(image: drops.portalSprites[name], size: 16)
+                    Text(name)
+                    Spacer()
+                    Button { drops.settings.portals.remove(name) } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless).help("Stop alerting for \(name)")
+                }
+            }
+            Menu("Add dungeon") {
+                ForEach(drops.portalNames.list.filter { !drops.settings.portals.contains($0) }, id: \.self) { name in
+                    Button(name) { drops.settings.portals.insert(name) }
+                }
+            }
+            .fixedSize().disabled(drops.portalNames.list.isEmpty)
+        }
+    }
+}
 
 /// Suggestions under a rule's text field as you type (issue #47). SwiftUI has them from macOS 15; older systems go without.
 private struct Suggestions: ViewModifier {

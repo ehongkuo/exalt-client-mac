@@ -3,13 +3,14 @@ import SwiftUI
 
 /// The Drop rates tab's views; `DropRatesModel` (in GuardDropRates.swift) holds what is picked.
 
-/// Guard | Drop rates, at the top of the main window in both tabs. An orange dot: capture is off.
+/// Guard | Drop rates | Drop alerts, at the top of the main window in every tab. An orange dot: capture is off.
 struct MainTabs: View {
     @ObservedObject var rates: DropRatesModel
     var body: some View {
         HStack(spacing: 2) {
-            tab("Guard", selected: !rates.shown) { rates.shown = false }
-            tab("Drop rates", selected: rates.shown, warning: rates.health.refused != nil) { rates.shown = true }
+            tab("Guard", selected: rates.tab == .guardTab) { rates.tab = .guardTab }
+            tab("Drop rates", selected: rates.tab == .rates, warning: rates.health.refused != nil) { rates.tab = .rates }
+            tab("Drop alerts", selected: rates.tab == .alerts) { rates.tab = .alerts }
         }
         .padding(2)
         .background(Color.black.opacity(0.25))
@@ -47,7 +48,10 @@ struct DropRatesView: View {
                 Divider()
             }
             HSplitView {
-                dungeonList.frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
+                leftPanel.frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
+                if model.browse == .items {
+                    ScrollView { itemPage.padding(16) }.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         if model.health.kills == 0 { welcome }
@@ -57,6 +61,7 @@ struct DropRatesView: View {
                 }
                 .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 ScrollView { rightPane.padding(16) }.frame(minWidth: 300, idealWidth: 380, maxWidth: 760)
+                }
             }
         }
         .frame(minWidth: 980, minHeight: 560)
@@ -116,7 +121,56 @@ struct DropRatesView: View {
         .background(Color.accentColor.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: Dungeons and search
+    // MARK: Items, dungeons and search
+
+    /// One search box over Items | Dungeons (issue #68).
+    private var leftPanel: some View {
+        VStack(spacing: 0) {
+            TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
+            Picker("", selection: $model.browse) {
+                Text("Items").tag(DropRatesModel.Browse.items)
+                Text("Dungeons").tag(DropRatesModel.Browse.dungeons)
+            }
+            .pickerStyle(.segmented).labelsHidden().padding(8)
+            if model.browse == .items { itemList } else { dungeonList }
+        }
+    }
+
+    /// Every catalog item by type, untiered then best tier first (issue #68). The sections are worked out once per
+    /// report and search.
+    private var itemList: some View {
+        let sections = model.shownItems
+        return List {
+            if sections.isEmpty {
+                Text(model.search.isEmpty ? "No items yet: the catalog loads with the game data." : "No item matches “\(model.search)”.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(sections, id: \.title) { section in
+                Section(section.title) {
+                    ForEach(section.items, id: \.self) { item in
+                        listRow(model.item == item, { model.mob = nil; model.group = nil; model.item = item }) {
+                            SpriteIcon(image: model.sprites[item], size: 24)
+                            Text(report.name(item)).lineLimit(1).help(report.name(item))
+                            Spacer()
+                            if let tier = report.tiers[item] { Text("T\(tier)").font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Items view's page: the picked item, or the loot profile.
+    @ViewBuilder private var itemPage: some View {
+        if model.lootDetails { LootProfileView(model: model) }
+        else if let item = model.item { itemPane(report.base(item)) }
+        else {
+            VStack(alignment: .leading, spacing: 16) {
+                if model.health.kills == 0 { welcome }
+                Text("Pick an item for where it drops and its rate from each mob, or search for one by name.").foregroundStyle(.secondary)
+            }
+        }
+    }
 
     private var dungeonList: some View {
         let q = model.search.trimmingCharacters(in: .whitespaces)
@@ -126,7 +180,6 @@ struct DropRatesView: View {
         let items = q.isEmpty ? [] : Array(Set(Set(report.origins.keys).union(report.items).map(report.base))
             .filter { report.name($0).localizedCaseInsensitiveContains(q) }.sorted { report.name($0) < report.name($1) }.prefix(30))
         return VStack(spacing: 0) {
-            TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding(8)
             List {
                 if !q.isEmpty && items.isEmpty && rows.isEmpty {
                     Text("Nothing matches “\(q)”.").foregroundStyle(.secondary)
@@ -383,6 +436,8 @@ struct DropRatesView: View {
                         if let tier = report.group(item)?.tier { pill("T\(tier)", EmptyView()) }
                     }
                 }
+                Spacer()
+                alertMe(item)
             }
             if sources.isEmpty {
                 Text(possible.isEmpty ? "Not dropped yet." : "Not dropped yet. The game data or RealmEye lists it in:").foregroundStyle(.secondary)
@@ -400,6 +455,18 @@ struct DropRatesView: View {
             if total > 0 {
                 section("RARITY · every copy") { RarityBars(counts: report.rarityCounts(types), total: total).padding(12) }
             }
+        }
+    }
+    /// Adds a confirmed item rule for this item and turns alerts on (issue #68). The guard names items from the item
+    /// catalog, which leaves out items with no type, so a rule could never match those.
+    @ViewBuilder private func alertMe(_ item: Int) -> some View {
+        let name = report.name(item)
+        if drops.settings.enabled && drops.settings.alerts(on: name) {
+            Label("Alerting", systemImage: "bell.fill").foregroundStyle(.green).help("A rule alerts when \(name) drops; edit it in Drop alerts")
+        } else {
+            Button { drops.settings.alert(on: name) } label: { Label("Alert me", systemImage: "bell") }
+                .disabled(!(drops.catalog.itemNames[item] != nil))
+                .help((drops.catalog.itemNames[item] != nil) ? "Add a rule that alerts when \(name) drops, in any bag" : "Alerts can't name this item yet")
         }
     }
     private func pill<Icon: View>(_ text: String, _ icon: Icon) -> some View {
