@@ -183,6 +183,18 @@ static void loot_status_pos(void *status, float pos[2]) {
     void *p = read_reference(status, loot_pos_field);
     if (p) { il2cpp_field_get_value(p, loot_x_field, &pos[0]); il2cpp_field_get_value(p, loot_y_field, &pos[1]); }
 }
+/* Hands the bag to the app through the live file and wakes it, for drop alerts with no lag (issue #75). */
+static void loot_announce(const LootEvent *bag, const char *enchants) {
+    static LiveBagsData bags;
+    if (!live) return;
+    LiveBag *b = &bags.bags[bags.count % LIVE_BAGS];
+    *b = (LiveBag){.ns = bag->ns, .epoch = start_epoch + (double)(bag->ns - start_ns) / 1e9, .id = bag->id, .type = bag->type};
+    for (int i = 0; i < 8; ++i) b->items[i] = bag->v[i];
+    snprintf(b->enchants, sizeof b->enchants, "%s", enchants);
+    ++bags.count;
+    bags_write(live_bags(live), &bags);
+    notify_post(LIVE_BAG_NOTIFICATION);
+}
 /* Reads the message, not the game object: a bag's first status (its contents) is in it. */
 static void loot_object(void *connection, void *data) {
     /* A new map starts when the server gives you a new id, which it does before it sends the map's
@@ -214,6 +226,7 @@ static void loot_object(void *connection, void *data) {
     loot_tick_bag(&loot_ticks, id, pos);
     LootEvent extra[16];
     int extras = 0;
+    const char *enchants = "";
     void *const *stats = NULL;
     int32_t n = list_items(read_reference(status, loot_stats_field), "CGOECEPGBBG[]", &loot_stat_list, &stats);
     for (int32_t i = 0; i < n; ++i) {
@@ -227,7 +240,9 @@ static void loot_object(void *connection, void *data) {
         LootEvent *e = &extra[extras++];
         *e = (LootEvent){.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG_STAT, .v = {stat, value}};
         read_text(read_reference(stats[i], loot_stat_text_field), e->text, sizeof e->text);
+        if (stat == 80) enchants = e->text;
     }
+    loot_announce(&bag, enchants);
     if (loot_push(&loot_ring, &bag)) atomic_fetch_add_explicit(&loot_bags, 1, memory_order_relaxed);
     for (int i = 0; i < extras; ++i) loot_push(&loot_ring, &extra[i]);
 }
