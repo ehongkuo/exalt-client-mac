@@ -195,7 +195,11 @@ extension ItemRule {
 
 /// What item rules look up: each item's type and tier from the item catalog (issue #40), and enchantment names.
 struct RuleCatalog: Equatable {
-    struct Item: Equatable { var slot: Int?, tier: Int? }
+    struct Item: Equatable {
+        var slot: Int?, tier: Int?
+        /// The bag this item makes a drop (its <BagType>), nil when the catalog has none.
+        var bag: DropBag? = nil
+    }
     var items: [Int: Item] = [:]
     var enchants: [Int: String] = [:]
     /// Item names by type, for the guard's bags (issue #75).
@@ -222,10 +226,9 @@ struct RuleCatalog: Equatable {
     /// Reads the catalog's items and RealmHound's enchantments.xml (call it off the main thread).
     static func load(_ store: DropRateStore, xml: URL) -> RuleCatalog {
         var catalog = RuleCatalog()
-        store.run("SELECT type, slot_type, tier FROM items WHERE slot_type IS NOT NULL") { s in
-            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(
-                slot: Int(sqlite3_column_int64(s, 1)),
-                tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
+        store.run("SELECT type, slot_type, tier, bag_type FROM items WHERE slot_type IS NOT NULL OR bag_type IS NOT NULL") { s in
+            func int(_ i: Int32) -> Int? { sqlite3_column_type(s, i) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, i)) }
+            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(slot: int(1), tier: int(2), bag: int(3).flatMap(DropBag.init(bagType:)))
         }
         store.run("SELECT type, coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
             if let t = sqlite3_column_text(s, 1) { catalog.itemNames[Int(sqlite3_column_int64(s, 0))] = String(cString: t) }
@@ -284,8 +287,12 @@ struct DropAlert: Equatable {
     /// A dungeon portal a mob dropped (issue #74): `item` names it, `dungeon` picks its sprite.
     var portal = false
 
+    /// The popup's headline: the rule's title, or the item's name when no titled rule matched.
+    var title: String { rule.isEmpty ? item : rule }
+
     var detail: String {
-        var parts = [portal ? "Portal" : bag?.name ?? "Bag"]
+        var parts = rule.isEmpty ? [] : [item]
+        parts.append(portal ? "Portal" : bag?.name ?? "Bag")
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -295,26 +302,29 @@ struct DropAlert: Equatable {
 enum DropRules {
     /// Drops older than this are not announced (an import or a catch-up after a pause, not a live drop).
     static let freshness: Int64 = 120_000
-    /// How long the popup stays up.
-    static let shown = 10.0
+    /// How long each popup stays up.
+    static let shown = 5.0
 
-    /// An item alerts when its bag is chosen and it is at least the chosen rarity, when it is shiny and
-    /// shiny alerts are on, or when an item rule matches it (in any bag). The popup names the best matching
-    /// item, a rule's item first.
-    static func alert(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
-                      nowMs: Int64) -> DropAlert? {
-        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return nil }
+    /// An item alerts when it is what made its bag a chosen colour (its own bag type is the drop's) and it is
+    /// at least the chosen rarity, when it is shiny and
+    /// shiny alerts are on, or when an item rule matches it (in any bag). Every matching item gets its
+    /// own alert, in bag order, each with its own rarity and bag.
+    static func alerts(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
+                       nowMs: Int64) -> [DropAlert] {
+        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return [] }
         let bag = DropBag(id: drop.bag)
         let bagChosen = bag.map(settings.bags.contains) ?? false
-        let matches = drop.items.compactMap { item -> (ruled: Bool, alert: DropAlert)? in
+        return drop.items.compactMap { item in
+            // Lesser items ride along in the bag; an item missing from the catalog still alerts, as before #76.
+            let ownBag = catalog.items[item.id]?.bag
+            let bagChosen = bagChosen && (ownBag == nil || ownBag == bag)
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
             let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
             guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return (rule != nil, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
-                                           rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? ""))
+            // The popup shows the item's own bag: a blue potion riding in a white bag shows blue.
+            return DropAlert(item: item.name, bag: ownBag ?? bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+                             rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? "")
         }
-        func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
-        return matches.max { rank($0) < rank($1) }?.alert
     }
 
     /// A portal the guard linked to a kill alerts when the kill died on the portal's spot (the rule the drop rates count
@@ -327,6 +337,43 @@ enum DropRules {
         return DropAlert(item: "\(dungeon) portal", bag: nil, rarity: .common, shiny: false, mob: names.mobs[Int(portal.mob)] ?? "",
                          dungeon: dungeon, portal: true)
     }
+}
+
+/// The drop popups on screen, oldest on top, and those waiting for room. A popup's time starts when it
+/// shows, so a burst past the limit waits instead of being missed.
+struct DropStack: Equatable {
+    struct Entry: Equatable {
+        var id: Int
+        var alert: DropAlert
+        /// When it showed (seconds, any clock); nil while it waits for room.
+        var shownAt: Double?
+    }
+    /// How many popups show at once: five 64 pt cards fit under the Join popup on a laptop screen.
+    static let limit = 5
+    private(set) var entries: [Entry] = []
+    private var nextId = 0
+
+    /// The popups on screen, top to bottom.
+    var visible: [Entry] { entries.filter { $0.shownAt != nil } }
+
+    mutating func push(_ alerts: [DropAlert], now: Double) {
+        for alert in alerts { entries.append(Entry(id: nextId, alert: alert)); nextId += 1 }
+        fill(now: now)
+    }
+    /// Closes popups whose time is up and shows waiting ones in their place.
+    mutating func expire(now: Double, after shown: Double = DropRules.shown) {
+        entries.removeAll { $0.shownAt.map { now - $0 >= shown } ?? false }
+        fill(now: now)
+    }
+    /// A click closes one popup; an id already gone (a popup still fading out) does nothing.
+    mutating func dismiss(_ id: Int, now: Double) {
+        entries.removeAll { $0.id == id }
+        fill(now: now)
+    }
+    private mutating func fill(now: Double) {
+        for i in entries.indices.prefix(Self.limit) where entries[i].shownAt == nil { entries[i].shownAt = now }
+    }
+
 }
 
 /// Portals straight from the guard (issue #74): the live file keeps the latest `LIVE_PORTALS` it linked to a kill.
