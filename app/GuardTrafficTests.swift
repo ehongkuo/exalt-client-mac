@@ -130,7 +130,7 @@ enum TrafficTests {
 
     static func loot() {
         var lines: [String] = []
-        let loot = TrafficLoot(portals: [1900]) { lines.append($0) }
+        let loot = TrafficLoot(portals: [1900], players: [782]) { lines.append($0) }
         loot.projectile = { object, from, to in object == 50 && from == 10 && to == 20 + TrafficLoot.lateHit ? (300, 25) : (0, 0) }
         func feed(_ type: UInt8, _ payload: [UInt8], _ time: Double, outgoing: Bool = false) {
             guard let p = TrafficPacket.parse(type: type, payload: payload, outgoing: outgoing) else { return check(false, "parse \(type)") }
@@ -182,6 +182,13 @@ enum TrafficTests {
         feed(ID.update, update([], drops: [50]), 23)
         loot.flush(now: 24)
         check(windows.count == 1 && windows[0] == (20 + TrafficLoot.lateHit, 23 + TrafficLoot.lateHit), "second kill's window: \(windows)")
+
+        // Another player an enemy hit, then left: not a kill.
+        feed(ID.update, update([(type: 782, id: 70, x: 2, y: 2, stats: [])]), 21)
+        feed(ID.damage, damage(target: 70, amount: 50, attacker: 9), 21)
+        feed(ID.update, update([], drops: [70]), 21.5)
+        loot.flush(now: 23)
+        check(!kinds("kill").contains { $0[3] == "70" }, "a player is never a kill")
 
         // A second sighting of the same bag is not a new bag.
         feed(ID.update, update([(type: 1287, id: 60, x: 6, y: 5, stats: [])]), 21)

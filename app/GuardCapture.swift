@@ -11,7 +11,7 @@ enum TrafficCapture {
     static let port: UInt16 = 2050
 
     /// Waits for the game the launcher starts, then captures until it exits. Returns at once.
-    static func start(logs: URL, portals: Set<Int>, build: String) {
+    static func start(logs: URL, portals: Set<Int>, players: Set<Int>, build: String) {
         let started = Date().timeIntervalSince1970
         Thread.detachNewThread {
             var pid: Int32 = 0
@@ -44,18 +44,18 @@ enum TrafficCapture {
             }
             // pcap's own timeout doesn't fire in immediate mode with no traffic, so wait on its descriptor instead.
             pcap_setnonblock(handle, 1, &error)
-            run(handle, out: out, started: started, pid: pid, build: build, portals: portals, hits: hits,
+            run(handle, out: out, started: started, pid: pid, build: build, portals: portals, players: players, hits: hits,
                 alive: { guard_process_alive(pid) != 0 }, wait: pcap_get_selectable_fd(handle))
             pcap_close(handle)
         }
     }
 
     /// Decodes a saved capture, as `start` would live: for comparing a session again after a decoder change.
-    static func replay(pcap file: String, out: URL, hits: URL?, portals: Set<Int>) -> String? {
+    static func replay(pcap file: String, out: URL, hits: URL?, portals: Set<Int>, players: Set<Int> = []) -> String? {
         var error = [CChar](repeating: 0, count: Int(PCAP_ERRBUF_SIZE))
         guard let handle = pcap_open_offline(file, &error) else { return String(cString: error) }
         defer { pcap_close(handle) }
-        run(handle, out: out, started: 0, pid: 0, build: "replay", portals: portals, hits: { hits }, alive: { true })
+        run(handle, out: out, started: 0, pid: 0, build: "replay", portals: portals, players: players, hits: { hits }, alive: { true })
         return nil
     }
 
@@ -73,7 +73,7 @@ enum TrafficCapture {
     /// Both directions of one connection; each map is a new connection with fresh ciphers.
     private struct Connection { var incoming = TrafficFlow(outgoing: false), outgoing = TrafficFlow(outgoing: true), reported = false }
 
-    private static func run(_ handle: OpaquePointer, out: URL, started: Double, pid: Int32, build: String, portals: Set<Int>,
+    private static func run(_ handle: OpaquePointer, out: URL, started: Double, pid: Int32, build: String, portals: Set<Int>, players: Set<Int>,
                             hits hitsFile: () -> URL?, alive: () -> Bool, wait fd: Int32 = -1) {
         guard FileManager.default.createFile(atPath: out.path, contents: nil, attributes: [.posixPermissions: 0o600]),
               let file = try? FileHandle(forWritingTo: out) else { return }
@@ -89,7 +89,7 @@ enum TrafficCapture {
             pcap_freecode(&program)
         }
         let link = pcap_datalink(handle)
-        let loot = TrafficLoot(portals: portals, emit: emit)
+        let loot = TrafficLoot(portals: portals, players: players, emit: emit)
         var hits = TrafficHits(), hitsHandle: FileHandle?, mapStart = 0.0, hitsRefusalWritten = false
         loot.projectile = { hits.damage($0, from: $1, to: $2) }
         var connections: [String: Connection] = [:]

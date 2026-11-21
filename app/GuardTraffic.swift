@@ -227,6 +227,8 @@ final class TrafficLoot {
     static let lateHit = 0.25
 
     let portals: Set<Int>
+    /// Player classes: an enemy's hit on a player is a Damage message too, but a player leaving is never a kill.
+    let players: Set<Int>
     private let sink: (String) -> Void
     /// Your projectile damage on an object between two times, from the guard's damage hook: (main, alt).
     var projectile: (_ object: Int, _ from: Double, _ to: Double) -> (Int, Int) = { _, _, _ in (0, 0) }
@@ -248,7 +250,9 @@ final class TrafficLoot {
     private var known: [Int: Int] = [:], texts: [Int: String] = [:]
     private(set) var kills = 0, bagCount = 0, portalCount = 0
 
-    init(portals: Set<Int>, emit: @escaping (String) -> Void) { self.portals = portals; self.sink = emit }
+    init(portals: Set<Int>, players: Set<Int> = [], emit: @escaping (String) -> Void) {
+        self.portals = portals; self.players = players; self.sink = emit
+    }
 
     private func emit(_ line: String) { if queue.isEmpty { sink(line) } else { queue.append(.line(line)) } }
 
@@ -356,7 +360,7 @@ final class TrafficLoot {
     private func removed(_ id: Int, time: Double) {
         guard let h = hits.removeValue(forKey: id) else { return }
         // Where the server last put it; one it never sent can't be placed, so RealmHound skips it too.
-        guard let o = objects[id] else { return }
+        guard let o = objects[id], !players.contains(o.type) else { return }
         let start = removedAt[id].map { $0 + Self.lateHit } ?? mapStart
         removedAt[id] = time
         queue.append(.kill(Kill(time: time, map: map, start: start, id: id, object: o, hit: h, since: time - h.last)))
