@@ -192,12 +192,13 @@ extension DropRatesView {
         let items = q.isEmpty ? [] : index.search(q)
         return VStack(spacing: 0) {
             TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding(8)
-            List {
+            // A lazy stack, not a List: a List re-measures every row it inserts, which made each keystroke and pick slow (issue #81).
+            ScrollView { LazyVStack(alignment: .leading, spacing: 0) {
                 if !q.isEmpty && items.isEmpty && rows.isEmpty {
-                    Text("Nothing matches “\(q)”.").foregroundStyle(.secondary)
+                    Text("Nothing matches “\(q)”.").foregroundStyle(.secondary).modifier(ListRowInsets())
                 }
                 if !items.isEmpty {
-                    Section("Items") {
+                    listSection("Items") {
                         ForEach(items, id: \.self) { item in
                             listRow(model.item == item, { model.group = nil; model.item = item }) {
                                 SpriteIcon(image: model.sprites[item], size: 24)
@@ -206,7 +207,7 @@ extension DropRatesView {
                         }
                     }
                 }
-                Section("Dungeons") {
+                listSection("Dungeons") {
                     ForEach(rows, id: \.row.name) { d, grew in
                         let n = index.kills(in: d.name)
                         Keyed([model.drawn, d.name, picked == d.name, grew, n]) {   // a pick re-measures only the rows it changes
@@ -224,7 +225,7 @@ extension DropRatesView {
                     }
                 }
                 if q.isEmpty { uncatalogedSection }
-            }
+            }.padding(.vertical, 6) }
         }
     }
 
@@ -232,13 +233,10 @@ extension DropRatesView {
     @ViewBuilder private var uncatalogedSection: some View {
         let u = report.uncataloged
         if !(u.dungeons.isEmpty && u.mobs.isEmpty && u.items.isEmpty) {
-            Section {
+            listSection("Not in the catalog yet", help: "Seen in play but missing from the drop catalog. Running tools/drop_catalog.py build picks them up.") {
                 ForEach(u.dungeons, id: \.self) { name in uncatalogedRow(nil, name, "map") }
                 ForEach(u.mobs, id: \.self) { mob in uncatalogedRow(model.sprites[mob.type], report.name(mob.type), mob.dungeon) }
                 ForEach(u.items, id: \.self) { item in uncatalogedRow(model.sprites[item], report.name(item), "item") }
-            } header: {
-                Text("Not in the catalog yet")
-                    .help("Seen in play but missing from the drop catalog. Running tools/drop_catalog.py build picks them up.")
             }
         }
     }
@@ -248,6 +246,16 @@ extension DropRatesView {
             Text(name).lineLimit(1).help(name)
             Spacer()
             Text(kind).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .modifier(ListRowInsets())
+    }
+    /// A section of the dungeon list: its header, as a List draws one, then its rows.
+    private func listSection<Content: View>(_ title: String, help: String? = nil, @ViewBuilder _ rows: () -> Content) -> some View {
+        Group {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 4)
+                .help(help ?? "")
+            rows()
         }
     }
 
@@ -596,9 +604,11 @@ extension DropRatesView {
         Button(action: action) { row(content).contentShape(Rectangle()) }.buttonStyle(.plain)
     }
     private func listRow<Content: View>(_ selected: Bool, _ action: @escaping () -> Void, @ViewBuilder _ content: () -> Content) -> some View {
-        Button(action: action) { HStack(spacing: 6) { content() }.contentShape(Rectangle()) }
-            .buttonStyle(.plain)
-            .listRowBackground(selected ? Color.accentColor.opacity(0.25) : Color.clear)
+        Button(action: action) {
+            HStack(spacing: 6) { content() }.modifier(ListRowInsets())
+                .background(selected ? Color.accentColor.opacity(0.25) : Color.clear).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
     /// ⓘ: how to read a rate, in one place.
     private func rateInfo(_ key: String) -> some View {
@@ -800,6 +810,13 @@ struct MobPage: View {
     private func pill(_ text: String) -> some View {
         Text(text).font(.caption).padding(.horizontal, 8).padding(.vertical, 2)
             .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
+    }
+}
+
+/// A dungeon list row's size, as a List row: 32 pt apart, inset from the edges.
+private struct ListRowInsets: ViewModifier {
+    func body(content: Content) -> some View {
+        content.padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
     }
 }
 
