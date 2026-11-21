@@ -174,8 +174,9 @@ enum DropRateTests {
               "item tier, slot and bag")
         check(names("SELECT name FROM objects WHERE drop_source = 0") == ["Abyss Gate Wall"], "a wall is not a drop source")
         check(RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).items ==
-              [0x024c: .init(slot: 3, tier: nil), 0x0c10: .init(slot: 14, tier: nil), 0x0a00: .init(slot: 14, tier: 13)],
-              "item rules read type and tier, untiered items too (issue #47)")
+              [0x024c: .init(slot: 3, tier: nil, bag: .white), 0x0c10: .init(slot: 14, tier: nil, bag: .purple),
+               0x0a00: .init(slot: 14, tier: 13, bag: .egg), 0x0a01: .init(slot: nil, tier: nil, bag: .gold)],
+              "item rules read type, tier and own bag, untiered and slotless items too (issues #47, #76)")
         check(RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).names.count == 3 &&
               RuleCatalog.load(catalog, xml: folder.appendingPathComponent("none")).names.contains("Robe of the Grand Sorcerer"),
               "rule suggestions read item names (issue #47)")

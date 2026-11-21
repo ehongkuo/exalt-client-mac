@@ -63,6 +63,16 @@ static void test_ticks(void) {
     assert(t.overflow == 1);
 }
 
+static void test_recent(void) {
+    static LootRecent r;
+    assert(!loot_recent_find(&r, 5));
+    loot_recent_add(&r, (LootKillFacts){5, 3340, {1, 2}, 900, 10});
+    loot_recent_add(&r, (LootKillFacts){5, 3341, {3, 4}, 50, 20});   /* the same id again: the newest wins */
+    assert(loot_recent_find(&r, 5)->type == 3341 && loot_recent_find(&r, 5)->damage == 50);
+    for (int i = 0; i < LOOT_RECENT; ++i) loot_recent_add(&r, (LootKillFacts){100 + i, 1, {0, 0}, 1, 0});
+    assert(!loot_recent_find(&r, 5) && loot_recent_find(&r, 100 + LOOT_RECENT - 1));   /* overwritten */
+}
+
 static void test_source(void) {
     enum { HIT = 0x100, ALT = 0x200, MESSAGE = 0x300 };
     assert(loot_source(HIT, HIT, ALT, MESSAGE, 0, 5) == LOOT_PROJECTILE);
@@ -151,6 +161,7 @@ int main(void) {
     test_hits();
     test_seen();
     test_ticks();
+    test_recent();
     test_source();
     test_types();
     test_format();
