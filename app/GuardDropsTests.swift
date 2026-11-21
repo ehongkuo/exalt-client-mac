@@ -89,8 +89,8 @@ enum DropTests {
         check(DropRules.alerts(for: whiteBag, settings: white, shiny: [2651], catalog: malphas, nowMs: now).map(\.item) == ["Tome of Divine Favor"],
               "a shiny alerts whatever bag it rides in")
         white.shiny = false; white.bags = [.white]; white.rules = confirmed(ItemRule(title: "Marks", names: ["mark of"]))
-        let both = DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now)
-        check(both.map(\.title) == ["Berserker's Breastplate", "Marks"] && both.map(\.bag) == [.white, .purple],
+        let ruled = DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now)
+        check(ruled.map(\.title) == ["Berserker's Breastplate", "Marks"] && ruled.map(\.bag) == [.white, .purple],
               "a rule alerts whatever bag it rides in, each popup showing the item's own bag")
         // The stack: oldest on top, each up for its own time, a burst past the limit waits its turn.
         func alert(_ name: String) -> DropAlert { DropAlert(item: name, bag: .red, rarity: .common, shiny: false, mob: "", dungeon: "") }
