@@ -1256,8 +1256,8 @@ final class DropRatesModel: ObservableObject {
     @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items and dungeons by name
     /// The Items list's search results, worked out when the search or the report changes, not on each redraw.
     private(set) var shownItems: [DropReport.ItemSection] = []
-    /// Categories and types opened in the Items list ("Weapons", "Weapons/Bow").
-    @Published var openItemRows: Set<String> = []
+    /// The item type picked in the Items view ("Weapons/Bow"), whose items fill the middle pane.
+    @Published var itemType: String? { didSet { resetOrders() } }
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
     @Published var problem: String?
