@@ -209,15 +209,18 @@ extension DropRatesView {
                 Section("Dungeons") {
                     ForEach(rows, id: \.row.name) { d, grew in
                         let n = index.kills(in: d.name)
-                        listRow(picked == d.name, { model.select(dungeon: d.name) }) {
-                            SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 24)
-                            Text(d.name).lineLimit(1).help(d.name)
-                            Spacer()
-                            if grew { newMark }
-                            if n > 0 { Text(n.formatted()).monospacedDigit().foregroundStyle(.secondary) }
+                        Keyed([model.drawn, d.name, picked == d.name, grew, n]) {   // a pick re-measures only the rows it changes
+                            listRow(picked == d.name, { model.select(dungeon: d.name) }) {
+                                SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 24)
+                                Text(d.name).lineLimit(1).help(d.name)
+                                Spacer()
+                                if grew { newMark }
+                                if n > 0 { Text(n.formatted()).monospacedDigit().foregroundStyle(.secondary) }
+                            }
+                            .opacity(n > 0 ? 1 : 0.5)
+                            .accessibilityLabel("\(d.name), \(n) kills")
                         }
-                        .opacity(n > 0 ? 1 : 0.5)
-                        .accessibilityLabel("\(d.name), \(n) kills")
+                        .equatable()
                     }
                 }
                 if q.isEmpty { uncatalogedSection }
@@ -273,7 +276,9 @@ extension DropRatesView {
                         }
                         .frame(width: 36, height: 36)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 6) {
-                            ForEach(tiles, id: \.self) { tile in tileView(tile, d, dropped: dropped) }
+                            ForEach(tiles, id: \.self) { tile in   // a pick redraws only the tiles it selects or clears
+                                Keyed([model.drawn, d.name, tile, selected(tile)]) { tileView(tile, d, dropped: dropped) }.equatable()
+                            }
                         }
                     }
                     Divider()
@@ -328,12 +333,15 @@ extension DropRatesView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(mobs, id: \.self) { mob in
                 let boss = report.bosses.contains(mob.type), name = report.name(mob.type), n = report.kills[mob] ?? 0
-                chip(selected: model.mob == mob, { model.pick(mob: mob) }) {
-                    SpriteIcon(image: model.sprites[mob.type], size: 20)
-                    Text(name).lineLimit(1)
+                Keyed([model.drawn, mob, model.mob == mob]) {
+                    chip(selected: model.mob == mob, { model.pick(mob: mob) }) {
+                        SpriteIcon(image: model.sprites[mob.type], size: 20)
+                        Text(name).lineLimit(1)
+                    }
+                    .help("\(name) · \(n.formatted()) kills")
+                    .accessibilityLabel("\(name)\(boss ? ", boss" : ""), \(n) kills")
                 }
-                .help("\(name) · \(n.formatted()) kills")
-                .accessibilityLabel("\(name)\(boss ? ", boss" : ""), \(n) kills")
+                .equatable()
             }
             }
         }
@@ -348,6 +356,12 @@ extension DropRatesView {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    private func selected(_ tile: DropReport.Tile) -> Bool {
+        switch tile {
+        case .item(let item): return model.item == item && model.group == nil
+        case .group(let group, _): return model.group == group && model.item == nil
+        }
+    }
     @ViewBuilder private func tileView(_ tile: DropReport.Tile, _ d: DropReport.Dungeon, dropped: Set<Int>) -> some View {
         let anyDropped = tile.items.contains { report.variants($0).contains(where: dropped.contains) }
         switch tile {
@@ -355,7 +369,7 @@ extension DropRatesView {
             let name = report.name(item), shiny = report.variants(item).contains { report.shinyOf[$0] != nil }
             Button { model.group = nil; model.item = model.item == item ? nil : item } label: {
                 SpriteIcon(image: model.sprites[item], size: 32).opacity(anyDropped ? 1 : 0.35).padding(4)
-                    .background(tileBackground(model.item == item && model.group == nil))
+                    .background(tileBackground(selected(tile)))
             }
             .buttonStyle(.plain)
             .help(name + (shiny ? " (and its shiny)" : "") + (anyDropped ? "" : " · not dropped here yet"))
@@ -366,7 +380,7 @@ extension DropRatesView {
             Button { model.item = nil; model.group = model.group == group ? nil : group } label: {
                 GroupTile(sprites: model.rotation(items, first: shown), tier: group.tier)
                     .opacity(anyDropped ? 1 : 0.35).padding(4)
-                    .background(tileBackground(model.group == group && model.item == nil))
+                    .background(tileBackground(selected(tile)))
             }
             .buttonStyle(.plain)
             .help("\(group.name): \(items.map(report.name).joined(separator: ", "))")
