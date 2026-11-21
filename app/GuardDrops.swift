@@ -86,6 +86,16 @@ extension DropAlertSettings {
     }
 }
 
+extension DropAlertSettings {
+    /// "Alert me" on an item's page (issue #68): a confirmed rule for the item's name, with alerts turned on. A second
+    /// click adds nothing.
+    mutating func alert(on item: String) {
+        enabled = true
+        if !alerts(on: item) { rules.append(ItemRule(title: item, confirmed: true, names: [item])) }
+    }
+    func alerts(on item: String) -> Bool { rules.contains { $0.confirmed && $0.names == [item] } }
+}
+
 /// An item rule (issue #47): every part that is set must match. Blank text, nil and Common mean any part;
 /// a rule with nothing set matches nothing, and a rule alerts only once it is confirmed.
 struct ItemRule: Codable, Hashable, Identifiable {

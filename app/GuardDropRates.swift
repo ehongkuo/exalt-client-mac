@@ -554,6 +554,10 @@ struct DropReport: Equatable {
     /// kills, mobs that can drop (by the dungeon they were killed in), and untiered drops (tiers cover tiered loot).
     struct Uncataloged: Equatable { var dungeons: [String] = [], mobs: [Mob] = [], items: [Int] = [] }
     var uncataloged = Uncataloged()
+    /// The Items list (issue #68): every catalog item by category, then type, worked out once per report.
+    struct ItemSection: Hashable { var title: String, items: [Int] }
+    struct ItemCategory: Hashable { var title: String, types: [ItemSection] }
+    var itemCategories: [ItemCategory] = []
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -706,7 +710,7 @@ struct DropReport: Equatable {
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
             WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) OR type IN (SELECT portal_type FROM portals)
             UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, labels FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
                 OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
@@ -746,7 +750,7 @@ struct DropReport: Equatable {
             .union(r.shinyOf.filter { r.names[$0.value] != nil }.keys).filter { r.names[$0] == nil }
         if !missing.isEmpty {
             store.run("""
-                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
+                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, labels FROM items
                 WHERE type IN (\(missing.map(String.init).joined(separator: ",")))
                 """, row: row)
         }
@@ -756,6 +760,9 @@ struct DropReport: Equatable {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
+        let catalogItems = Set(r.tiers.keys).union(r.slots.keys).union(r.bags.keys).union(r.origins.keys)
+            .union(r.mobDrops.values.joined()).union(r.copies.values.flatMap(\.keys)).map(r.base)
+        r.itemCategories = r.categories(Set(catalogItems).filter { r.names[$0] != nil && !r.name($0).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name($0)) })
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
         var listed: [String: Dungeon] = [:]
@@ -794,6 +801,65 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    /// The Items list's categories in order, after RealmEye's wiki: equipment by slot family, then the rest by the
+    /// game's labels (skins by name, since they have none).
+    static let itemCategoryOrder = ["Weapons", "Abilities", "Armor", "Rings", "Potions", "Consumables", "Marks", "Materials",
+                                    "Blueprints", "Skins", "Pet eggs", "Emotes", "Other"]
+    /// An item's category and, for equipment and skins, its type.
+    func category(_ item: Int) -> (String, String?) {
+        let l = labels[item] ?? [], n = name(item)
+        if let slot = slots[item], let type = ItemRule.types.first(where: { $0.slot == slot && $0.slot != 26 })?.name, let family = Self.family(slot: slot) {
+            switch family {
+            case .weapons: return ("Weapons", type)
+            case .abilities: return ("Abilities", type)
+            case .armors: return ("Armor", type)
+            case .rings: return ("Rings", nil)
+            }
+        }
+        if slots[item] == 26 { return ("Pet eggs", nil) }
+        if l.contains("STATPOTION") { return ("Potions", nil) }
+        if l.contains("MARK") { return ("Marks", nil) }
+        if l.contains("UPGRADECORE") || unlocks[item] != nil || n.hasSuffix("Blueprint") { return ("Blueprints", nil) }
+        if l.contains("ARTIFACT") || l.contains("MATERIAL") { return ("Materials", nil) }
+        if n.hasSuffix(" Skin") { return ("Skins", n.hasSuffix("Pet Skin") ? "Pet skins" : "Character skins") }
+        if l.contains(where: { $0.hasSuffix("_EMOTE") }) { return ("Emotes", nil) }
+        if l.contains("CONSUMABLE") { return ("Consumables", nil) }
+        return ("Other", nil)
+    }
+    /// UT, ST or the tier ("T12"), shown beside an item; nil for the rest.
+    func kind(_ item: Int) -> String? {
+        if let tier = tiers[item] { return "T\(tier)" }
+        let l = labels[item] ?? []
+        return l.contains("ST") ? "ST" : l.contains("UT") ? "UT" : nil
+    }
+    /// Items in categories and types (a category with one type has one section), each untiered first, then set
+    /// tier, then best tier, then by name.
+    func categories(_ items: Set<Int>) -> [ItemCategory] {
+        func key(_ i: Int) -> (Int, Int, String) {
+            (tiers[i] != nil ? 2 : kind(i) == "ST" ? 1 : 0, -(tiers[i] ?? 0), name(i))
+        }
+        let typeOrder = Self.weaponSlots + Self.abilitySlots + Self.armorSlots
+        func typeKey(_ type: String) -> (Int, String) {
+            (typeOrder.firstIndex { s in ItemRule.types.first { $0.slot == s }?.name == type } ?? typeOrder.count, type)
+        }
+        let byCategory = Dictionary(grouping: items) { category($0).0 }
+        return Self.itemCategoryOrder.compactMap { title in
+            guard let inCategory = byCategory[title] else { return nil }
+            let byType = Dictionary(grouping: inCategory) { category($0).1 ?? title }
+            return ItemCategory(title: title, types: byType.keys.sorted { typeKey($0) < typeKey($1) }.map { type in
+                ItemSection(title: type, items: byType[type]!.sorted { key($0) < key($1) })
+            })
+        }
+    }
+    /// Search results: matching items by name, any case, in flat sections ("Weapons · Bow"); none for no query.
+    func itemSections(matching query: String) -> [ItemSection] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return itemCategories.flatMap { c in
+            c.types.map { t in ItemSection(title: c.types.count > 1 ? "\(c.title) · \(t.title)" : c.title,
+                                           items: t.items.filter { name($0).localizedCaseInsensitiveContains(q) }) }
+        }.filter { !$0.items.isEmpty }
+    }
     static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
     /// A mob's base rate per kill for `n` drops (copies, or kills with a bag) (issue #58).
     func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
@@ -1210,8 +1276,14 @@ final class DropLive: ObservableObject {
 }
 
 final class DropRatesModel: ObservableObject {
-    /// The main window shows the Drop rates tab instead of the Guard tab.
-    @Published var shown = false { didSet { resetOrders() } }
+    /// The main window's tab (issue #68 adds Drop alerts).
+    enum Tab { case guardTab, rates, alerts }
+    @Published var tab = Tab.guardTab { didSet { resetOrders() } }
+    /// The main window shows the Drop rates tab.
+    var shown: Bool { get { tab == .rates } set { tab = newValue ? .rates : .guardTab } }
+    /// The left panel's view (issue #68): the item encyclopedia or the dungeons.
+    enum Browse { case items, dungeons }
+    @Published var browse = Browse.items
     @Published var dungeon: String? { didSet { resetOrders(); lootDetails = false } }
     @Published var mob: DropReport.Mob? { didSet { resetOrders(); if mob != nil { lootDetails = false } } }   // its page on the right; the grid stays dungeon-wide
     @Published var group: DropReport.Group? { didSet { resetOrders(); if group != nil { lootDetails = false } } }
@@ -1220,7 +1292,11 @@ final class DropRatesModel: ObservableObject {
     @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
-    @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
+    @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items and dungeons by name
+    /// The Items list's search results, worked out when the search or the report changes, not on each redraw.
+    private(set) var shownItems: [DropReport.ItemSection] = []
+    /// The item type picked in the Items view ("Weapons/Bow"), whose items fill the middle pane.
+    @Published var itemType: String? { didSet { resetOrders() } }
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
     @Published var problem: String?
@@ -1256,6 +1332,7 @@ final class DropRatesModel: ObservableObject {
     func update(_ report: DropReport, index: DropIndex? = nil) {
         self.report = report
         self.index = index ?? DropIndex(report)
+        shownItems = report.itemSections(matching: search)
         drawn += 1
         if !iconsAsked {
             iconsAsked = true
@@ -1285,7 +1362,7 @@ final class DropRatesModel: ObservableObject {
     }
     /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.
     func select(dungeon: String, keepItem: Bool = false) {
-        self.dungeon = dungeon; mob = nil; group = nil
+        self.dungeon = dungeon; mob = nil; group = nil; browse = .dungeons
         if !keepItem { item = nil }
     }
     /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.
