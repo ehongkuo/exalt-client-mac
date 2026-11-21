@@ -89,6 +89,7 @@ python3 "$src/tests/probe/test_incident.py"
 python3 "$src/tests/probe/test_latency.py"
 python3 "$src/tests/probe/test_replay.py"
 python3 "$src/tests/probe/test_shadow_ledger.py"
+python3 "$src/tests/probe/test_traffic.py"
 [[ "${build_mode}" == --test-only ]] && { print 'Tests passed.'; exit 0; }
 else
 print '== Tests skipped (--app-only: the game may be running)'

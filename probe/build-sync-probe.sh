@@ -9,6 +9,7 @@ python3 "$repo_dir/tests/probe/test_sync_analysis.py"
 python3 "$repo_dir/tests/probe/test_latency.py"
 python3 "$repo_dir/tests/probe/test_untracked.py"
 python3 "$repo_dir/tests/probe/test_proof.py"
+python3 "$repo_dir/tests/probe/test_traffic.py"
 clang -arch x86_64 -O2 -Wall -Wextra -Werror "$repo_dir/tests/probe/sync_trace_tests.c" -o "$repo_dir/build/probe-tests/sync-trace-tests"
 "$repo_dir/build/probe-tests/sync-trace-tests"
 temp=$(mktemp "$out/ExaltSyncProbe.XXXXXX")
