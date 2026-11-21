@@ -127,7 +127,7 @@ struct DropRatesView: View {
     /// One search box over Items | Dungeons (issue #68).
     private var leftPanel: some View {
         VStack(spacing: 0) {
-            TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
+            TextField("Search items, dungeons or mobs", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
             Picker("", selection: $model.browse) {
                 Text("Items").tag(DropRatesModel.Browse.items)
                 Text("Dungeons").tag(DropRatesModel.Browse.dungeons)
@@ -231,9 +231,10 @@ struct DropRatesView: View {
         let rows = model.stable("dungeons", sorted) { kills(in: $0.name) }
         let items = q.isEmpty ? [] : Array(Set(Set(report.origins.keys).union(report.items).map(report.base))
             .filter { report.name($0).localizedCaseInsensitiveContains(q) }.sorted { report.name($0) < report.name($1) }.prefix(30))
+        let mobs = report.mobs(matching: q).prefix(30)   // the mob index is built once per report (issue #69)
         return VStack(spacing: 0) {
             List {
-                if !q.isEmpty && items.isEmpty && rows.isEmpty {
+                if !q.isEmpty && items.isEmpty && rows.isEmpty && mobs.isEmpty {
                     Text("Nothing matches “\(q)”.").foregroundStyle(.secondary)
                 }
                 if !items.isEmpty {
@@ -243,6 +244,21 @@ struct DropRatesView: View {
                                 SpriteIcon(image: model.sprites[item], size: 24)
                                 Text(report.name(item)).lineLimit(1).help(report.name(item))
                             }
+                        }
+                    }
+                }
+                if !mobs.isEmpty {
+                    Section("Mobs") {
+                        ForEach(mobs, id: \.self) { mob in
+                            let name = report.name(mob.type)
+                            listRow(model.mob == mob, { model.show(mob: mob) }) {
+                                SpriteIcon(image: model.sprites[mob.type], size: 24)
+                                Text(name).lineLimit(1)
+                                Spacer()
+                                Text(mob.dungeon).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .help("\(name) in \(mob.dungeon)")
+                            .accessibilityLabel("\(name), in \(mob.dungeon)")
                         }
                     }
                 }
@@ -353,13 +369,28 @@ struct DropRatesView: View {
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
-    /// The bosses and the minions killed here, each in their own row. Clicking one opens its page on the right;
-    /// clicking it again, the breadcrumb or Esc closes it.
-    private func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
-        let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
-        return VStack(alignment: .leading, spacing: 6) {
-            if !bosses.isEmpty { mobRow("BOSSES", bosses) }
-            if !minions.isEmpty { mobRow("MINIONS", minions) }
+    /// The bosses and the minions killed here, each in their own row; the Realm's by tier and biome, in RealmEye's sections
+    /// (issue #69). Clicking one opens its page on the right; clicking it again, the breadcrumb or Esc closes it.
+    @ViewBuilder func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
+        if mobs.first?.dungeon == DropReport.realm && !report.biomes.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(report.biomes.enumerated()), id: \.element.name) { i, biome in
+                    if biome.tier != (i > 0 ? report.biomes[i - 1].tier : nil), !biome.tier.isEmpty {
+                        Text("\(biome.tier) biomes").font(.title3.weight(.semibold)).padding(.top, i > 0 ? 12 : 0)
+                    }
+                    Text(biome.name).font(.headline).padding(.top, 4)
+                    if !biome.regular.isEmpty { mobRow("REGULAR ENEMIES", biome.regular) }
+                    if !biome.heroes.isEmpty { mobRow("HEROES OF ORYX", biome.heroes) }
+                    if !biome.encounters.isEmpty { mobRow("ENCOUNTERS", biome.encounters) }
+                    if !biome.guardians.isEmpty { mobRow("BEACON GUARDIAN", biome.guardians) }
+                }
+            }
+        } else {
+            let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
+            VStack(alignment: .leading, spacing: 6) {
+                if !bosses.isEmpty { mobRow("BOSSES", bosses) }
+                if !minions.isEmpty { mobRow("MINIONS", minions) }
+            }
         }
     }
     private func mobRow(_ title: String, _ mobs: [DropReport.Mob]) -> some View {

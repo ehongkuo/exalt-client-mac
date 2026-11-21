@@ -147,6 +147,10 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_mobs(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_tiers(mob INTEGER NOT NULL, family TEXT NOT NULL, tier INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_drops(mob INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- The Realm's biomes (issue #69), from RealmEye's biome pages: tier (Rookie, Adept, Veteran, Seasonal), rank in
+        -- RealmEye's order, and kind, the page's section (encounter, hero, guardian, regular). A mob on several biome
+        -- pages has a row in each.
+        CREATE TABLE IF NOT EXISTS catalog_biomes(biome TEXT NOT NULL, tier TEXT NOT NULL, rank INTEGER NOT NULL, mob INTEGER NOT NULL, kind TEXT NOT NULL);
         -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
         CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
@@ -576,6 +580,14 @@ struct DropReport: Equatable {
     var textures: [Int: GameTexture] = [:]
     /// Portals (issue #64): mob → portal type → its kills that dropped one, as seen (loot boosts not taken out).
     var portals: [Mob: [Int: Int]] = [:]
+    /// The Realm's mobs by biome (issue #69), as RealmEye sorts them: by tier (Rookie, Adept, Veteran, Seasonal), then
+    /// each biome's regular enemies, Heroes of Oryx, encounters and beacon guardians, one mob per name. Mobs on no biome
+    /// page (killed, not in the catalog) close the list under "Other". Empty: the catalog has no biomes.
+    struct Biome: Hashable { var name: String, tier: String, regular: [Mob], heroes: [Mob], encounters: [Mob], guardians: [Mob] }
+    var biomes: [Biome] = []
+    /// Every listed dungeon's mobs by folded name, then dungeon (issue #69): what the search matches mob names in.
+    struct NamedMob: Hashable { var key: String, mob: Mob }
+    var mobIndex: [NamedMob] = []
 
     /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
     /// that left your view.
@@ -782,6 +794,35 @@ struct DropReport: Equatable {
             }
         }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
+        // Built once per report (issue #69), so the search and the Realm's list cost nothing per render.
+        var byPlace: [String: [Mob]] = [:]
+        for d in r.dungeons { byPlace[d.name] = r.mobs(in: d.name) }
+        // One row per name and dungeon (Den King and Heroic Den King may share one): the first in the dungeon's order.
+        var seen: Set<[String]> = []
+        r.mobIndex = byPlace.flatMap { place, mobs in
+            mobs.filter { r.names[$0.type] != nil }.map { NamedMob(key: Self.fold(r.name($0.type)), mob: $0) }.filter { seen.insert([$0.key, place]).inserted }
+        }.sorted { ($0.key, $0.mob.dungeon) < ($1.key, $1.mob.dungeon) }
+        var biomes: [(name: String, tier: String, kinds: [Int: String])] = []
+        store.run("SELECT biome, tier, mob, kind FROM catalog_biomes ORDER BY rank") {
+            if biomes.last?.name != text($0, 0) { biomes.append((text($0, 0), text($0, 1), [:])) }
+            biomes[biomes.count - 1].kinds[int($0, 2)] = text($0, 3)
+        }
+        if !biomes.isEmpty {
+            let realm = byPlace[Self.realm] ?? []
+            let placed = biomes.reduce(into: Set<Int>()) { $0.formUnion($1.kinds.keys) }
+            let tiers = ["Rookie", "Adept", "Veteran", "Seasonal"]
+            biomes = biomes.enumerated().sorted { (tiers.firstIndex(of: $0.element.tier) ?? 4, $0.offset) < (tiers.firstIndex(of: $1.element.tier) ?? 4, $1.offset) }.map(\.element)
+            biomes.append(("Other", "", Dictionary(uniqueKeysWithValues: Set(realm.map(\.type)).subtracting(placed).map { ($0, "regular") })))
+            r.biomes = biomes.compactMap { b in
+                // One chip per name (several game types often share a RealmEye name): the first in the Realm's order,
+                // so the one with the most kills.
+                var names: Set<String> = []
+                let mobs = realm.filter { b.kinds[$0.type] != nil && names.insert(r.name($0.type)).inserted }
+                guard !mobs.isEmpty else { return nil }
+                func kind(_ k: String) -> [Mob] { mobs.filter { b.kinds[$0.type] == k } }
+                return Biome(name: b.name, tier: b.tier, regular: kind("regular"), heroes: kind("hero"), encounters: kind("encounter"), guardians: kind("guardian"))
+            }
+        }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
             r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
             store.run("""
@@ -801,6 +842,12 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    static func fold(_ text: String) -> String { text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+    /// Mobs whose name holds the search, by name then dungeon (issue #69).
+    func mobs(matching search: String) -> [Mob] {
+        let q = Self.fold(search.trimmingCharacters(in: .whitespaces))
+        return q.isEmpty ? [] : mobIndex.filter { $0.key.contains(q) }.map(\.mob)
+    }
     /// The Items list's categories in order, after RealmEye's wiki: equipment by slot family, then the rest by the
     /// game's labels (skins by name, since they have none).
     static let itemCategoryOrder = ["Weapons", "Abilities", "Armor", "Rings", "Potions", "Consumables", "Marks", "Materials",
@@ -1184,28 +1231,40 @@ enum GameNames {
         for o in objects.values { for item in o.unlocks.compactMap({ itemByID[$0] }) {
             store.run("INSERT INTO blueprints(blueprint, item) VALUES (?, ?)", [o.type, item])
         } }
-        store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops")
+        store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops; DELETE FROM catalog_biomes")
         if let catalog, let data = try? Data(contentsOf: catalog) {
             guard let rows = dropCatalog(data) else { store.exec("ROLLBACK"); return false }   // a broken file keeps the last catalog
             for (dungeon, mob) in rows.mobs { store.run("INSERT INTO catalog_mobs(dungeon, mob) VALUES (?, ?)", [dungeon, mob]) }
             for (mob, family, tier) in rows.tiers { store.run("INSERT INTO catalog_tiers(mob, family, tier) VALUES (?, ?, ?)", [mob, family, tier]) }
             for (mob, item) in rows.drops { store.run("INSERT INTO catalog_drops(mob, item) VALUES (?, ?)", [mob, item]) }
+            for (rank, b) in rows.biomes.enumerated() { for mob in b.mobs {
+                store.run("INSERT INTO catalog_biomes(biome, tier, rank, mob, kind) VALUES (?, ?, ?, ?, ?)", [b.name, b.tier, rank, mob, b.kinds[mob] ?? "regular"])
+            } }
         }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
         guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return false }
         return true
     }
 
+    /// A Realm biome in the drop catalog file (issue #69): its mobs, and each one's section on RealmEye's page unless regular.
+    struct CatalogBiome { var name: String, tier: String, mobs: [Int], kinds: [Int: String] }
     /// The rows of a drop catalog file (tools/drop_catalog.py writes it): ids are hex strings ("0x0d50"). nil when it
     /// isn't a catalog.
-    static func dropCatalog(_ data: Data) -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)])? {
+    static func dropCatalog(_ data: Data)
+        -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome])? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dungeons = root["dungeons"] as? [[String: Any]], let mobs = root["mobs"] as? [[String: Any]] else { return nil }
         func ids(_ value: Any?) -> [Int] {
             ((value as? [String]) ?? []).compactMap { $0.hasPrefix("0x") ? Int($0.dropFirst(2), radix: 16) : nil }
         }
-        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)]) = ([], [], [])
+        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome]) = ([], [], [], [])
         for d in dungeons { if let name = d["name"] as? String { rows.mobs += ids(d["mobs"]).map { (name, $0) } } }
+        for b in dungeons.compactMap({ $0["biomes"] as? [[String: Any]] }).joined() {
+            guard let name = b["name"] as? String else { continue }
+            var kinds: [Int: String] = [:]   // the first section wins: encounter, then hero, then guardian
+            for kind in ["guardian", "hero", "encounter"] { for mob in ids(b[kind == "hero" ? "heroes" : kind + "s"]) { kinds[mob] = kind } }
+            rows.biomes.append(CatalogBiome(name: name, tier: b["tier"] as? String ?? "", mobs: ids(b["mobs"]), kinds: kinds))
+        }
         for m in mobs {
             let tiers = (m["tiers"] as? [String: [Int]]) ?? [:]
             for type in ids(m["types"]) {
@@ -1253,7 +1312,7 @@ final class DropRatesModel: ObservableObject {
     @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
-    @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items and dungeons by name
+    @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items, dungeons and mobs by name
     /// The Items list's search results, worked out when the search or the report changes, not on each redraw.
     private(set) var shownItems: [DropReport.ItemSection] = []
     /// The item type picked in the Items view ("Weapons/Bow"), whose items fill the middle pane.
@@ -1321,6 +1380,8 @@ final class DropRatesModel: ObservableObject {
     func pick(mob: DropReport.Mob) {
         item = nil; group = nil; openGroups = []; openBags = []; self.mob = self.mob == mob ? nil : mob
     }
+    /// A mob found by the search (issue #69): opens its dungeon and its page, even when it is open already.
+    func show(mob: DropReport.Mob) { select(dungeon: mob.dungeon); pick(mob: mob) }
     /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
     func back() {
         if !search.isEmpty { search = "" } else if lootDetails { lootDetails = false } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
