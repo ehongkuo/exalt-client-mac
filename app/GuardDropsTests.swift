@@ -171,39 +171,38 @@ enum DropTests {
             check(names[0x639] == "Lucky Streak" && names.count > 500, "enchantment names from RealmHound's assets")
         }
 
-        // The log: first sight sets the start, later drops come back with their items in slot order.
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("drop-tests-\(getpid())")
-        let dbFolder = folder.appendingPathComponent("acct/databases")
-        try? FileManager.default.removeItem(at: folder)
-        try! FileManager.default.createDirectory(at: dbFolder, withIntermediateDirectories: true)
-        var db: OpaquePointer?
-        check(sqlite3_open(dbFolder.appendingPathComponent("loot_history.db").path, &db) == SQLITE_OK, "create test log")
-        func exec(_ sql: String) { check(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK, sql) }
-        exec("""
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE loot_drops (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, dungeon TEXT, bag_type INTEGER, mob_name TEXT);
-            CREATE TABLE loot_items (id INTEGER PRIMARY KEY AUTOINCREMENT, drop_id INTEGER, slot INTEGER, item_id INTEGER,
-                                     item_name TEXT, enchant_count INTEGER, enchant_ids TEXT NOT NULL DEFAULT '');
-            INSERT INTO loot_drops VALUES (1, 5, 'Old', 1708, 'Old boss');
-            """)
-        let log = LootLog(accounts: folder)
-        check(log.poll().isEmpty && log.logs == 1, "old drops are not replayed")
-        exec("""
-            INSERT INTO loot_drops VALUES (2, 9, 'Shatters', 1708, 'The Forgotten King');
-            INSERT INTO loot_items VALUES (NULL, 2, 1, 101, 'Second', 0, ''), (NULL, 2, 0, 100, 'First', 2, '1593,263');
-            INSERT INTO loot_drops VALUES (3, 10, 'Shatters', 1292, 'Empty');
-            """)
-        let found = log.poll()
-        check(found.map(\.id) == [2, 3] && found[0].items.map(\.name) == ["First", "Second"] && found[0].items[0].enchants == 2
-              && found[0].items[0].enchantIds == [0x639, 0x107] && found[0].items[1].enchantIds.isEmpty
-              && found[1].items.isEmpty && found[0].mob == "The Forgotten King", "new drops with items")
-        check(log.poll().isEmpty, "each drop once")
-        exec("INSERT INTO loot_drops VALUES (4, 11, 'Shatters', 1708, 'Next')")
-        check(log.poll().map(\.id) == [4], "a drop right after a poll is seen on the next one")
-        let lines = DropDelayLog.lines(found, nowMs: 260, pollMs: 1.25, tickGapMs: 100, popup: "Item")
-        check(lines == "9\t251\t1.2\t100\t\t1708\tThe Forgotten King\n10\t250\t1.2\t100\tItem\t1292\tEmpty\n", "delay log \(lines)")
-        sqlite3_close(db)
-        try? FileManager.default.removeItem(at: folder)
+        // The guard's bags (issue #75): the first look sets the start, later bags come back oldest first.
+        var data = LiveBagsData()
+        func put(_ n: UInt32, items: [Int32], enchants: String = "") {
+            var b = LiveBag(); b.ns = UInt64(n) * 1_000_000; b.epoch = Double(n); b.id = Int32(n); b.type = 1708
+            withUnsafeMutableBytes(of: &b.items) { raw in
+                for (i, v) in (items + Array(repeating: -1, count: 8 - items.count)).enumerated() { raw.storeBytes(of: v, toByteOffset: 4 * i, as: Int32.self) }
+            }
+            withUnsafeMutableBytes(of: &b.enchants) { raw in for (i, c) in enchants.utf8.enumerated() { raw[i] = c } }
+            withUnsafeMutableBytes(of: &data.bags) { $0.bindMemory(to: LiveBag.self)[Int((n - 1) % UInt32(LIVE_BAGS))] = b }
+            data.count = n
+        }
+        var seen: GuardBags.Seen?
+        put(1, items: [100])
+        check(GuardBags.new(data, pid: 7, seen: &seen).isEmpty, "first look replays nothing")
+        put(2, items: [100, 101], enchants: ",AAIBOQYFAA")   // slot 1: one enchantment, 0x639
+        put(3, items: [])
+        let fresh = GuardBags.new(data, pid: 7, seen: &seen)
+        check(fresh.map(\.id) == [2, 3] && fresh[0].items.prefix(3) == [100, 101, -1], "new bags, oldest first")
+        check(GuardBags.new(data, pid: 7, seen: &seen).isEmpty, "each bag once")
+        for n in UInt32(4)...20 { put(n, items: [100]) }
+        check(GuardBags.new(data, pid: 7, seen: &seen).map(\.id) == Array(9...20), "an overrun keeps the latest")
+        put(21, items: [100])
+        check(GuardBags.new(data, pid: 8, seen: &seen).isEmpty, "a new guard session starts over")
+        var names = RuleCatalog(); names.itemNames = [101: "Second"]
+        let drop = GuardBags.drop(fresh[0], catalog: names, dungeon: "Shatters")
+        check(drop.items.map(\.name) == ["Item 100", "Second"] && drop.items[1].enchantIds == [0x639] && drop.items[1].enchants == 1
+              && drop.items[0].enchants == 0 && drop.bag == 1708 && drop.dungeon == "Shatters" && drop.epochMs == 2000 && drop.mob.isEmpty,
+              "a bag as the rules see it")
+        let lines = DropDelayLog.lines(fresh, wakeNs: 3_500_000, mainNs: 4_000_000, shownNs: 4_300_000, popups: ["Second", ""])
+        check(lines == "2000\t1.5\t2.0\t2.3\tSecond\t1708\n3000\t0.5\t1.0\t1.3\t\t1708\n", "delay log \(lines)")
+        check(DropDelayLog.lines(fresh, wakeNs: nil, mainNs: 4_000_000, shownNs: 4_000_000, popups: []).hasPrefix("2000\t\t2.0\t2.0\t\t"),
+              "a bag the timer found has no wake time")
         print("Drop alert tests passed")
     }
 }

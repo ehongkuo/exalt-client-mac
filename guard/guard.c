@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
+#include <notify.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <math.h>
@@ -750,6 +751,7 @@ static void open_live(const char *folder) {
     snprintf(live_data.log_name, sizeof live_data.log_name, "guard-%d.tsv", getpid());
     memset(live_control(live), 0, sizeof(LiveControl));   /* ignore settings left from a past session */
     memset(live_join(live), 0, sizeof(LiveJoin));         /* and Join clicks */
+    memset(live_bags(live), 0, sizeof(LiveBags));         /* and bags */
     atomic_store_explicit(&live->seq, 0, memory_order_relaxed);
     atomic_thread_fence(memory_order_release);
     live->magic = LIVE_MAGIC;

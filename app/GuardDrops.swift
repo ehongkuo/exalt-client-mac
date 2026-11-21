@@ -194,6 +194,8 @@ struct RuleCatalog: Equatable {
     struct Item: Equatable { var slot: Int?, tier: Int? }
     var items: [Int: Item] = [:]
     var enchants: [Int: String] = [:]
+    /// Item names by type, for the guard's bags (issue #75).
+    var itemNames: [Int: String] = [:]
     /// Item names to suggest while typing a rule, sorted.
     var names: [String] = []
 
@@ -221,10 +223,10 @@ struct RuleCatalog: Equatable {
                 slot: Int(sqlite3_column_int64(s, 1)),
                 tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
         }
-        store.run("SELECT DISTINCT coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
-            if let t = sqlite3_column_text(s, 0) { catalog.names.append(String(cString: t)) }
+        store.run("SELECT type, coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
+            if let t = sqlite3_column_text(s, 1) { catalog.itemNames[Int(sqlite3_column_int64(s, 0))] = String(cString: t) }
         }
-        catalog.names.sort()
+        catalog.names = Set(catalog.itemNames.values).sorted()
         if let data = try? Data(contentsOf: xml.appendingPathComponent("enchantments.xml")) {
             catalog.enchants = enchantNames(inXML: String(decoding: data, as: UTF8.self))
         }
@@ -515,94 +517,51 @@ enum RealmHoundPaths {
     static var xml: URL { assets.appendingPathComponent("xml") }
 }
 
-/// Polls the loot logs for drops newer than the last one seen. A log seen for the first time only
-/// sets the starting point, so old drops are never replayed.
-final class LootLog {
-    let accounts: URL
-    private var last: [String: Int64] = [:]
-    private var stamps: [String] = []
-    private(set) var logs = 0
-    init(accounts: URL) { self.accounts = accounts }
+/// Bags straight from the guard's hook (issue #75): the live file keeps the latest `LIVE_BAGS`, with a running count.
+enum GuardBags {
+    struct Bag: Equatable { var ns: UInt64, epoch: Double, id: Int32, type: Int, items: [Int], enchants: String }
+    struct Seen: Equatable { var pid: Int32, count: UInt32 }
 
-    /// Cheap enough for every 0.1 s tick: the logs are opened only when a file of theirs changed (issue #75).
-    func poll() -> [LootDrop] {
-        let folders = (try? FileManager.default.contentsOfDirectory(at: accounts, includingPropertiesForKeys: nil)) ?? []
-        let paths = folders.map { $0.appendingPathComponent("databases/loot_history.db").path }
-            .filter { FileManager.default.fileExists(atPath: $0) }
-        logs = paths.count
-        // RealmHound commits to the WAL; a checkpoint or a recreated log changes the main file.
-        let now = paths.flatMap { [$0, $0 + "-wal"] }.map(Self.stamp)
-        guard now != stamps else { return [] }
-        stamps = now
-        var found: [LootDrop] = []
-        for path in paths {
-            // Opened per poll and read-only: RealmHound writes in WAL mode, so reading never blocks it,
-            // and a log it recreates is picked up.
-            var db: OpaquePointer?
-            defer { sqlite3_close(db) }
-            guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { continue }
-            sqlite3_busy_timeout(db, 200)
-            guard let top = Self.maxID(db) else { continue }
-            guard let seen = last[path], top >= seen else { last[path] = top; continue }  // first sight, or a reset log
-            guard top > seen else { continue }
-            found += Self.drops(db, after: seen, through: top)
-            last[path] = top
+    /// The bags after `seen`, oldest first. The first look at a guard session only sets the starting point, so
+    /// nothing is replayed.
+    static func new(_ data: LiveBagsData, pid: Int32, seen: inout Seen?) -> [Bag] {
+        defer { seen = Seen(pid: pid, count: data.count) }
+        guard let last = seen, last.pid == pid, data.count > last.count else { return [] }
+        let first = max(last.count, data.count > UInt32(LIVE_BAGS) ? data.count - UInt32(LIVE_BAGS) : 0)
+        return withUnsafeBytes(of: data.bags) { raw in
+            let bags = raw.bindMemory(to: LiveBag.self)
+            return (first..<data.count).map { bag(bags[Int($0 % UInt32(LIVE_BAGS))]) }
         }
-        return found
     }
-
-    private static func stamp(_ path: String) -> String {
-        var info = stat()
-        guard stat(path, &info) == 0 else { return path }
-        return "\(path) \(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec) \(info.st_size) \(info.st_ino)"
+    static func bag(_ b: LiveBag) -> Bag {
+        var b = b
+        let items = withUnsafeBytes(of: &b.items) { Array($0.bindMemory(to: Int32.self)).map(Int.init) }
+        let enchants = withUnsafeBytes(of: &b.enchants) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return Bag(ns: b.ns, epoch: b.epoch, id: b.id, type: Int(b.type), items: items, enchants: enchants)
     }
-
-    private static func maxID(_ db: OpaquePointer?) -> Int64? {
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT coalesce(max(id), 0) FROM loot_drops", -1, &statement, nil) == SQLITE_OK,
-              sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        return sqlite3_column_int64(statement, 0)
-    }
-
-    private static func drops(_ db: OpaquePointer?, after: Int64, through: Int64) -> [LootDrop] {
-        let sql = """
-            SELECT d.id, d.timestamp, d.dungeon, d.mob_name, d.bag_type, i.item_id, i.item_name, i.enchant_count, i.enchant_ids
-            FROM loot_drops d LEFT JOIN loot_items i ON i.drop_id = d.id
-            WHERE d.id > ? AND d.id <= ? ORDER BY d.id, i.slot
-            """
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_int64(statement, 1, after); sqlite3_bind_int64(statement, 2, through)
-        func text(_ column: Int32) -> String { sqlite3_column_text(statement, column).map { String(cString: $0) } ?? "" }
-        var drops: [LootDrop] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let id = sqlite3_column_int64(statement, 0)
-            if drops.last?.id != id {
-                drops.append(LootDrop(id: id, epochMs: sqlite3_column_int64(statement, 1), dungeon: text(2), mob: text(3),
-                                      bag: Int(sqlite3_column_int(statement, 4)), items: []))
-            }
-            if sqlite3_column_type(statement, 5) != SQLITE_NULL {
-                drops[drops.count - 1].items.append(LootItem(id: Int(sqlite3_column_int(statement, 5)), name: text(6),
-                                                             enchants: Int(sqlite3_column_int(statement, 7)),
-                                                             enchantIds: text(8).split(separator: ",").compactMap { Int($0) }))
-            }
+    /// What the alert rules see. The mob is not known yet: the guard links a bag to its kill a tick later.
+    static func drop(_ bag: Bag, catalog: RuleCatalog, dungeon: String) -> LootDrop {
+        let enchants = Enchantments.ids(bag.enchants)
+        let items = bag.items.enumerated().filter { $0.element >= 0 }.map { slot, id -> LootItem in
+            let ids = slot < enchants.count ? enchants[slot] ?? [] : []
+            return LootItem(id: id, name: catalog.itemNames[id] ?? "Item \(id)", enchants: ids.count, enchantIds: ids)
         }
-        return drops
+        return LootDrop(id: Int64(bag.id), epochMs: Int64(bag.epoch * 1000), dungeon: dungeon, mob: "", bag: bag.type, items: items)
     }
 }
 
-/// One line per drop read from RealmHound, so a slow popup shows up in the logs (issue #75). The delay runs from
-/// RealmHound's own timestamp, which is about 0.25 s after the bag appears in game, to when the drop was read.
+/// One line per bag the guard handed over, so a slow popup shows where the time went (issue #75). Times are ms after
+/// the guard saw the bag: when the app woke (empty when the 0.1 s timer found it), when the main thread took it,
+/// and when the popup was set. `popup` names the item a bag alerted for.
 enum DropDelayLog {
-    static let header = "drop_epoch_ms\tdelay_ms\tpoll_ms\ttick_gap_ms\tpopup\tbag\tmob\n"
+    static let header = "drop_epoch_ms\twake_ms\tmain_ms\tshown_ms\tpopup\tbag\n"
     static func file(logs: URL, pid: Int32 = getpid()) -> URL { logs.appendingPathComponent("drops-\(pid).tsv") }
-    static func lines(_ drops: [LootDrop], nowMs: Int64, pollMs: Double, tickGapMs: Double, popup: String) -> String {
-        drops.map { drop in
-            let shown = drop.id == drops.last?.id ? popup : ""   // one drop per 0.1 s tick, in practice
-            return ["\(drop.epochMs)", "\(nowMs - drop.epochMs)", String(format: "%.1f", pollMs), String(format: "%.0f", tickGapMs), shown,
-                    "\(drop.bag)", drop.mob].joined(separator: "\t") + "\n"
+    static func lines(_ bags: [GuardBags.Bag], wakeNs: UInt64?, mainNs: UInt64, shownNs: UInt64, popups: [String]) -> String {
+        func ms(_ ns: UInt64, _ bag: GuardBags.Bag) -> String { String(format: "%.1f", Double(Int64(bitPattern: ns &- bag.ns)) / 1e6) }
+        return bags.indices.map { i in
+            let bag = bags[i]
+            return [String(Int64(bag.epoch * 1000)), wakeNs.map { ms($0, bag) } ?? "", ms(mainNs, bag), ms(shownNs, bag),
+                    i < popups.count ? popups[i] : "", String(bag.type)].joined(separator: "\t") + "\n"
         }.joined()
     }
     static func append(_ text: String, to file: URL) {

@@ -294,20 +294,18 @@ final class PartyAlerts: ObservableObject {
     }
 }
 
-/// Drop alerts: a sound and a popup with no buttons when RealmHound logs a chosen bag or a shiny.
-/// Checked every 0.1 s tick; the popup goes after `DropRules.shown` seconds or when clicked.
+/// Drop alerts: a sound and a popup with no buttons when the guard sees a chosen bag or a shiny land (issue #75).
+/// The guard wakes the app on each bag; the 0.1 s tick catches any wake-up missed. The popup goes after `DropRules.shown` seconds or when clicked.
 final class DropAlerts: ObservableObject {
     @Published var settings: DropAlertSettings { didSet { save(); loadShiniesIfNeeded(); loadBagsIfNeeded() } }
     @Published private(set) var popup: DropAlert?
-    @Published private(set) var logs = 0
     @Published private(set) var shinies: Set<Int> = []
     @Published private(set) var bagSprites: [DropBag: CGImage] = [:]
     /// Item types, tiers and enchantment names for item rules, loaded with the drop-rate catalog.
     var catalog = RuleCatalog() { didSet { enchantNames = Set(catalog.enchants.values).sorted() } }
     /// Enchantment names to suggest while typing a rule.
     private(set) var enchantNames: [String] = []
-    private var shownAt = 0.0, lastTick = 0.0, loadingShinies = false, loadingBags = false
-    private let log = LootLog(accounts: RealmHoundPaths.accounts)
+    private var shownAt = 0.0, bagsSeen: GuardBags.Seen?, loadingShinies = false, loadingBags = false
     private let defaults = UserDefaults.standard
 
     init() {
@@ -339,29 +337,32 @@ final class DropAlerts: ObservableObject {
         #endif
     }
     private var now: Double { Double(Clock.monotonicNs()) / 1e9 }
-    func check() {
+    func check(_ source: LiveSource) {
         if popup != nil, now - shownAt >= DropRules.shown { popup = nil }
-        let tick = now, tickGap = tick - lastTick; lastTick = tick
+        bagsLanded(source, wakeNs: nil)
+    }
+    /// Reads the bags the guard handed over since the last look. `wakeNs`: when its wake-up arrived, nil from the timer.
+    func bagsLanded(_ source: LiveSource, wakeNs: UInt64?) {
         #if !GUARD_UI_TEST
-        // The log is polled with alerts off too, so turning them on never replays old drops.
-        let drops = log.poll()
-        let pollMs = (now - tick) * 1000, before = shownAt
-        if log.logs != logs { logs = log.logs }
+        let mainNs = Clock.monotonicNs()
+        // Read with alerts off too, so turning them on never replays old bags.
+        guard let pid = source.snapshot?.pid, let data = source.feed.bags() else { return }
+        let bags = GuardBags.new(data, pid: pid, seen: &bagsSeen)
+        guard !bags.isEmpty else { return }
+        let drops = bags.map { GuardBags.drop($0, catalog: catalog, dungeon: source.snapshot?.map ?? "") }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        if let alert = drops.compactMap({ DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }).last {
-            show(alert)
-        }
-        if !drops.isEmpty {
-            DropDelayLog.append(DropDelayLog.lines(drops, nowMs: Int64(Date().timeIntervalSince1970 * 1000), pollMs: pollMs,
-                                                   tickGapMs: tickGap * 1000, popup: shownAt != before ? popup?.item ?? "" : ""),
-                                to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
-        }
+        let alerts = drops.map { DropRules.alert(for: $0, settings: settings, shiny: shinies, catalog: catalog, nowMs: nowMs) }
+        if let alert = alerts.compactMap({ $0 }).last { show(alert) }
+        DropDelayLog.append(DropDelayLog.lines(bags, wakeNs: wakeNs, mainNs: mainNs, shownNs: Clock.monotonicNs(),
+                                               popups: alerts.map { $0?.item ?? "" }),
+                            to: DropDelayLog.file(logs: GuardPaths.logs(data: dataURL)))
         #endif
     }
     func show(_ alert: DropAlert) {
         popup = alert; shownAt = now
         #if !GUARD_UI_TEST
-        if settings.sound { NSSound(named: "Hero")?.play() }
+        // After the panel, which goes up on the next main-queue turn: loading the sound takes up to 0.15 s (issue #75).
+        if settings.sound { DispatchQueue.main.async { NSSound(named: "Hero")?.play() } }
         #endif
     }
     func dismiss() { popup = nil }
@@ -1210,9 +1211,9 @@ struct GuardPanel {
                 Button { drops.settings.rules.append(ItemRule()) } label: { Label("Add rule", systemImage: "plus") }.controlSize(.small)
             }
             .disabled(!drops.settings.enabled)
-            Text(drops.logs == 0 ? "RealmHound has no loot log yet. Open it while you play (Also open RealmHound)."
-                 : "Reading RealmHound's loot log" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
-                .foregroundStyle(drops.logs == 0 ? bad : Color.secondary)
+            Text(!source.link.isLive ? "Drops come from the guard: they alert only when you start the game from this app."
+                 : "Watching bags as they drop" + (drops.settings.shiny && drops.shinies.isEmpty ? " · loading the shiny list" : ""))
+                .foregroundStyle(!source.link.isLive ? bad : Color.secondary)
             Text("Uses the drops RealmHound records while it runs. Rarity counts the item's enchantment slots: Uncommon 1, Rare 2, Legendary 3, Divine 4.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -1357,6 +1358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var popupWatch: AnyCancellable?
     private var dropWatch: AnyCancellable?
     private var alertTimer: Timer?
+    private var bagToken: Int32 = 0
     private var lootTimer: Timer?
     private var lootCatalog: LootCatalog?   // on lootQueue only
     private var lootBusy = false
@@ -1444,16 +1446,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         // The feed is read and party calls are checked 10 times a second, also while a slider or the
         // window is being dragged; the windows redraw only when what they show changes. Without the
         // activity, App Nap slows timers while the game is in front.
-        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching party chat")
+        // Latency critical too: drop popups must not wait for coalesced timers while the game is in front (issue #75).
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                         reason: "Watching party chat and drops")
         alertTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.source.refresh(detailed: self.state.diagnosticsOpen)
             #if !GUARD_SYNC_CAPTURE
             self.alerts.check(self.source)
-            self.drops.check()
+            self.drops.check(self.source)
             #endif
         }
         RunLoop.main.add(alertTimer!, forMode: .common)
+        #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
+        // The guard posts this as each bag appears; stamped off the main thread so the log shows a busy main thread.
+        notify_register_dispatch(LIVE_BAG_NOTIFICATION, &bagToken, DispatchQueue.global(qos: .userInteractive)) { [weak self] _ in
+            let wake = Clock.monotonicNs()
+            DispatchQueue.main.async { guard let self else { return }; self.drops.bagsLanded(self.source, wakeNs: wake) }
+        }
+        #endif
         #if !GUARD_UI_TEST && !GUARD_SYNC_CAPTURE
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self

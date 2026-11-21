@@ -5,7 +5,8 @@
  * identical on both. Two sequence-locked blocks:
  *   - LiveData, written by the guard after every check, read by the app;
  *   - LiveControl, written by the app when the user applies settings, read by the guard;
- *   - LiveJoin, written by the app when the user clicks Join on a party call, read by the guard.
+ *   - LiveJoin, written by the app when the user clicks Join on a party call, read by the guard;
+ *   - LiveBags, written by the guard as each bag appears, read by the app for drop alerts (issue #75).
  * A writer makes `seq` odd while writing and even when done; a reader retries if `seq`
  * changed or was odd. */
 #include <stdatomic.h>
@@ -14,12 +15,16 @@
 #include <string.h>
 
 #define LIVE_MAGIC 0x44475845u  /* "EXGD" */
-#define LIVE_VERSION 7u
+#define LIVE_VERSION 8u
 #define LIVE_SLOTS 8
 #define LIVE_EVENTS 16
-#define LIVE_FILE_SIZE 4096
+#define LIVE_FILE_SIZE 8192
 #define LIVE_CONTROL_OFFSET 3072
 #define LIVE_JOIN_OFFSET 3584
+#define LIVE_BAGS_OFFSET 4096
+#define LIVE_BAGS 12
+/* Posted (notify_post) after each bag, so the app wakes at once instead of on its next timer tick. */
+#define LIVE_BAG_NOTIFICATION "local.exalt.clientmac.bag"
 
 /* Result of the latest settings change sent from the app. */
 enum { CONTROL_NONE = 0, CONTROL_APPLIED = 1, CONTROL_REJECTED = 2 };
@@ -97,6 +102,25 @@ typedef struct {
     LiveJoinData data;
 } LiveJoin;
 
+/* A bag as its object arrives: its first status holds the contents and their enchantments. */
+typedef struct {
+    uint64_t ns;                  /* CLOCK_MONOTONIC when the guard saw it */
+    double epoch;
+    int32_t id, type;
+    int32_t items[8];             /* item type per slot, -1 empty */
+    char enchants[192];           /* stat 80: one base64url part per slot, comma-separated */
+} LiveBag;
+/* count: bags since the guard loaded; the newest is bags[(count - 1) % LIVE_BAGS]. */
+typedef struct {
+    uint32_t count, reserved;
+    LiveBag bags[LIVE_BAGS];
+} LiveBagsData;
+typedef struct {
+    _Atomic uint32_t seq;
+    uint32_t reserved;
+    LiveBagsData data;
+} LiveBags;
+
 typedef struct {
     uint32_t magic, version;
     _Atomic uint32_t seq;
@@ -112,7 +136,8 @@ typedef struct {
 
 _Static_assert(sizeof(LiveState) <= LIVE_CONTROL_OFFSET, "live state must end before the control block");
 _Static_assert(LIVE_CONTROL_OFFSET + sizeof(LiveControl) <= LIVE_JOIN_OFFSET, "control block must end before the join block");
-_Static_assert(LIVE_JOIN_OFFSET + sizeof(LiveJoin) <= LIVE_FILE_SIZE, "join block must fit");
+_Static_assert(LIVE_JOIN_OFFSET + sizeof(LiveJoin) <= LIVE_BAGS_OFFSET, "join block must end before the bags");
+_Static_assert(LIVE_BAGS_OFFSET + sizeof(LiveBags) <= LIVE_FILE_SIZE, "bags block must fit");
 
 static inline void seqlock_write(_Atomic uint32_t *seq, void *dst, const void *src, size_t size) {
     uint32_t value = atomic_load_explicit(seq, memory_order_relaxed);
@@ -135,6 +160,7 @@ static inline uint32_t seqlock_read(const _Atomic uint32_t *seq, void *dst, cons
 
 static inline LiveControl *live_control(void *file) { return (LiveControl *)((char *)file + LIVE_CONTROL_OFFSET); }
 static inline LiveJoin *live_join(void *file) { return (LiveJoin *)((char *)file + LIVE_JOIN_OFFSET); }
+static inline LiveBags *live_bags(void *file) { return (LiveBags *)((char *)file + LIVE_BAGS_OFFSET); }
 
 static inline void live_publish(LiveState *state, const LiveData *data) {
     seqlock_write(&state->seq, &state->data, data, sizeof *data);
@@ -156,5 +182,11 @@ static inline void join_write(LiveJoin *join, const LiveJoinData *data) {
 }
 static inline int join_read(const LiveJoin *join, LiveJoinData *out) {
     return seqlock_read(&join->seq, out, (const void *)&join->data, sizeof *out) != 0;
+}
+static inline void bags_write(LiveBags *bags, const LiveBagsData *data) {
+    seqlock_write(&bags->seq, &bags->data, data, sizeof *data);
+}
+static inline int bags_read(const LiveBags *bags, LiveBagsData *out) {
+    return seqlock_read(&bags->seq, out, (const void *)&bags->data, sizeof *out) != 0;
 }
 #endif
