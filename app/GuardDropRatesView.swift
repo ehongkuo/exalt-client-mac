@@ -96,11 +96,16 @@ struct DropRatesView: View {
                 Divider()
             }
             HSplitView {
-                dungeonList.frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
+                // Each pane redraws only when what it shows changes: the list and the grid stay put on other clicks.
+                Keyed([model.drawn, dungeon?.name, model.search, model.item]) { dungeonList }.equatable()
+                    .frame(minWidth: 180, idealWidth: 240, maxWidth: 420)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Welcome(live: model.live)
-                        if let dungeon { dropsPane(dungeon) }
+                        if let dungeon {
+                            Keyed([model.drawn, dungeon.name, model.mob, model.item, model.group, drops.bagSprites.count]) { dropsPane(dungeon) }
+                                .equatable()
+                        }
                     }
                     .padding(16)
                 }
@@ -782,6 +787,15 @@ struct MobPage: View {
         Text(text).font(.caption).padding(.horizontal, 8).padding(.vertical, 2)
             .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
     }
+}
+
+/// `content`, redrawn only when `key` changes (issue #81). The key lists everything the content reads that can change.
+struct Keyed<Content: View>: View, Equatable {
+    let key: [AnyHashable?]
+    let content: () -> Content
+    init(_ key: [AnyHashable?], @ViewBuilder _ content: @escaping () -> Content) { self.key = key; self.content = content }
+    var body: some View { content() }
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
 }
 
 /// A base rate with yours beside it (issue #58). Its own view: yours follows the game each second, and only these redraw.

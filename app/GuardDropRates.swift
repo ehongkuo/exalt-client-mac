@@ -1228,8 +1228,10 @@ final class DropRatesModel: ObservableObject {
     @Published private(set) var index = DropIndex()
     let live = DropLive()
     var health: CaptureHealth { live.health }
-    @Published private(set) var sprites: [Int: CGImage] = [:]
-    @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
+    @Published private(set) var sprites: [Int: CGImage] = [:] { didSet { drawn += 1 } }
+    /// Counts new reports, sprites and icons: a view keyed on it redraws when what it draws from changes (issue #81).
+    private(set) var drawn = 0
+    @Published private(set) var collectionIcons: [String: CGImage] = [:] { didSet { drawn += 1 } }   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
     private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
     /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
@@ -1254,6 +1256,7 @@ final class DropRatesModel: ObservableObject {
     func update(_ report: DropReport, index: DropIndex? = nil) {
         self.report = report
         self.index = index ?? DropIndex(report)
+        drawn += 1
         if !iconsAsked {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
