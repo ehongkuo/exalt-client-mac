@@ -968,8 +968,12 @@ struct RateView: View {
             .monospacedDigit()
             .contentShape(Rectangle())
             .onHover { hover.on = $0 }
-            .popover(isPresented: $hover.on, arrowEdge: .bottom) {
-                RateCard(rate: rate, axis: scale ?? RateAxis([rate]), caption: rate.caption(unit, copies: copies, verb: verb), yours: yours)
+            .background {   // the popover exists only while hovered: a page builds hundreds of rates (#81)
+                if hover.on {
+                    Color.clear.popover(isPresented: $hover.on, arrowEdge: .bottom) {
+                        RateCard(rate: rate, axis: scale ?? RateAxis([rate]), caption: rate.caption(unit, copies: copies, verb: verb), yours: yours)
+                    }
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(rate.percent), \(rate.likely), \(rate.caption(unit, copies: copies, verb: verb))")
