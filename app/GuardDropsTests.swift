@@ -74,6 +74,23 @@ enum DropTests {
         let ring = DropRules.alerts(for: drop(1295, [LootItem(id: 7, name: "T7 sword", enchants: 3), LootItem(id: 8, name: "ST ring", enchants: 1)]),
                                     settings: orange, shiny: [], nowMs: now)
         check(ring.map(\.rarity) == [.legendary, .uncommon] && ring[1].item == "ST ring", "an Uncommon ring next to a Legendary stays Uncommon")
+        // A white bag alerts only for the item that made it white, not for lesser items riding along.
+        let malphas = RuleCatalog(items: [7456: .init(slot: 7, tier: nil, bag: .white), 28684: .init(slot: 3, tier: nil, bag: .purple),
+                                          2651: .init(slot: 4, tier: nil, bag: .cyan), 7719: .init(slot: 10, tier: nil, bag: .purple)])
+        var white = DropAlertSettings(); white.bags = [.white]; white.shiny = false
+        let whiteBag = drop(1296, [LootItem(id: 7456, name: "Berserker's Breastplate", enchants: 0), LootItem(id: 28684, name: "Gilded Longbow", enchants: 1),
+                                   LootItem(id: 2651, name: "Tome of Divine Favor", enchants: 1), LootItem(id: 7719, name: "Mark of Malphas", enchants: 0)])
+        check(DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now).map(\.item) == ["Berserker's Breastplate"],
+              "a chosen bag alerts for its own item only")
+        white.bags = [.white, .purple]
+        check(DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now).map(\.item) == ["Berserker's Breastplate"],
+              "a purple item in a white bag is not a purple bag")
+        white.bags = []; white.shiny = true
+        check(DropRules.alerts(for: whiteBag, settings: white, shiny: [2651], catalog: malphas, nowMs: now).map(\.item) == ["Tome of Divine Favor"],
+              "a shiny alerts whatever bag it rides in")
+        white.shiny = false; white.rules = confirmed(ItemRule(names: ["mark of"]))
+        check(DropRules.alerts(for: whiteBag, settings: white, shiny: [], catalog: malphas, nowMs: now).map(\.item) == ["Mark of Malphas"],
+              "a rule alerts whatever bag it rides in")
         // The stack: oldest on top, each up for its own time, a burst past the limit waits its turn.
         func alert(_ name: String) -> DropAlert { DropAlert(item: name, bag: .red, rarity: .common, shiny: false, mob: "", dungeon: "") }
         var stack = DropStack()

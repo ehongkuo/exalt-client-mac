@@ -191,7 +191,11 @@ extension ItemRule {
 
 /// What item rules look up: each item's type and tier from the item catalog (issue #40), and enchantment names.
 struct RuleCatalog: Equatable {
-    struct Item: Equatable { var slot: Int?, tier: Int? }
+    struct Item: Equatable {
+        var slot: Int?, tier: Int?
+        /// The bag this item makes a drop (its <BagType>), nil when the catalog has none.
+        var bag: DropBag? = nil
+    }
     var items: [Int: Item] = [:]
     var enchants: [Int: String] = [:]
     /// Item names to suggest while typing a rule, sorted.
@@ -216,10 +220,9 @@ struct RuleCatalog: Equatable {
     /// Reads the catalog's items and RealmHound's enchantments.xml (call it off the main thread).
     static func load(_ store: DropRateStore, xml: URL) -> RuleCatalog {
         var catalog = RuleCatalog()
-        store.run("SELECT type, slot_type, tier FROM items WHERE slot_type IS NOT NULL") { s in
-            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(
-                slot: Int(sqlite3_column_int64(s, 1)),
-                tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
+        store.run("SELECT type, slot_type, tier, bag_type FROM items WHERE slot_type IS NOT NULL OR bag_type IS NOT NULL") { s in
+            func int(_ i: Int32) -> Int? { sqlite3_column_type(s, i) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, i)) }
+            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(slot: int(1), tier: int(2), bag: int(3).flatMap(DropBag.init(bagType:)))
         }
         store.run("SELECT DISTINCT coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
             if let t = sqlite3_column_text(s, 0) { catalog.names.append(String(cString: t)) }
@@ -294,7 +297,8 @@ enum DropRules {
     /// How long the popup stays up.
     static let shown = 10.0
 
-    /// An item alerts when its bag is chosen and it is at least the chosen rarity, when it is shiny and
+    /// An item alerts when it is what made its bag a chosen colour (its own bag type is the drop's) and it is
+    /// at least the chosen rarity, when it is shiny and
     /// shiny alerts are on, or when an item rule matches it (in any bag). Every matching item gets its
     /// own alert, in bag order, each with its own rarity.
     static func alerts(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
@@ -303,6 +307,9 @@ enum DropRules {
         let bag = DropBag(id: drop.bag)
         let bagChosen = bag.map(settings.bags.contains) ?? false
         return drop.items.compactMap { item in
+            // Lesser items ride along in the bag; an item missing from the catalog still alerts, as before #76.
+            let ownBag = catalog.items[item.id]?.bag
+            let bagChosen = bagChosen && (ownBag == nil || ownBag == bag)
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
             let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
             guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
