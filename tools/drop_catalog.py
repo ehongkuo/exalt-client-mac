@@ -160,6 +160,16 @@ def dungeon_list(html):
     return list(dict.fromkeys((slug, htmllib.unescape(name).strip()) for slug, name in found))
 
 
+def dungeon_sections(html):
+    """(title, body) of each section of RealmEye's dungeon list; a subsection (Advanced Wormholes) counts in its section."""
+    parts, out = re.split(r'<h([23])[^>]*>(.*?)</h[23]>', wiki(html)), []
+    for level, heading, body in zip(parts[1::3], parts[2::3], parts[3::3]):
+        title = htmllib.unescape(re.sub('<[^>]+>', '', heading)).strip().replace('’', "'")
+        if level == '3' and out: out[-1] = (out[-1][0], out[-1][1] + body)
+        else: out.append((title, body))
+    return out
+
+
 def image_links(html):
     """(slug, name) of each image link, the way mobs are shown: the name is the image's alt text, else the
     caption after it (a boss's image may have no alt)."""
@@ -359,6 +369,18 @@ def build(fetch, game, sprites=SPRITES):
                                                      (('encounter', 'encounters'), ('hero', 'heroes'), ('guardian', 'guardians'))})
                                              for title, found in biomes]
         if p and not game.objects[p]['texture']: portal_sprites.append((p, name, html))
+    # RealmEye's dungeon categories, and which mobs drop each dungeon's portal (its Drops From column) (issue #69).
+    by_dungeon, out['categories'] = {d['name']: d for d in out['dungeons']}, []
+    for title, body in dungeon_sections(listing):
+        found = []
+        for row in body.split('<tr')[1:]:
+            listed = dungeon_list(row)
+            game_name = names.get(key(listed[0][1])) if listed else None
+            if game_name not in by_dungeon: continue
+            found.append(game_name)
+            types = {t for s, _ in image_links(row) if s in mobs for t in mobs[s]['types'] or []}
+            if types: by_dungeon[game_name]['dropped_by'] = list(map(hexid, sorted(types)))
+        if found: out['categories'].append(dict(name=title, dungeons=list(dict.fromkeys(found))))
     need_sprite, no_item = list(portal_sprites), {}
     places = set(names) | {key(n) for _, n in pages}   # a mob dropping a portal: a place, not loot
     for entry in sorted(mobs.values(), key=lambda e: key(e['name'])):
@@ -471,8 +493,8 @@ def self_test():
         assert f.raw('/s/a/img/wiki/d/Enemies/Lord Ruthven.png') == b'<html>page</html>' and asked[-1][0].endswith('/Enemies/Lord%20Ruthven.png'), asked[-1]
 
     # Made-up pages in RealmEye's layout.
-    listing = ('<div class="wiki-page"><table><tr><td rowspan="3"><a href="/wiki/test-den">Test Den</a><a id="test-den"></a></td>'
-               '<td><a href="/wiki/test-den"><img alt="Test Den" src="/s/x.png"></a></td></tr>'
+    listing = ('<div class="wiki-page"><h2 id="realm-dungeons">Realm Dungeons</h2><table><tr><td rowspan="3"><a href="/wiki/test-den">Test Den</a><a id="test-den"></a></td>'
+               '<td><a href="/wiki/test-den"><img alt="Test Den" src="/s/x.png"></a></td><td><a href="/wiki/den-rat"><img alt="Den Rat" src="/s/r.png"></a></td></tr>'
                '<tr><td><a href="/wiki/oryx-s-nook">Oryx’s Nook</a><a id="nook"></a></td></tr></table></div>')
     realm = ('<div class="wiki-page"><a href="/wiki/beach-enemies">Beach Enemies</a><a href="/wiki/mid-desert-enemies">Mid Desert Enemies</a>'
              '<a href="/wiki/beach-enemies">Beach Enemies</a></div><div class="wiki-sidebar"><a href="/wiki/x-enemies">X Enemies</a></div>')
@@ -541,6 +563,8 @@ def self_test():
         assert c['dungeons'][0]['biomes'] == [dict(name='Beach', tier='Rookie', mobs=['0x0013'], encounters=['0x0013'], heroes=[], guardians=[])], c['dungeons'][0]
         assert 'biomes' not in den_entry
         assert den_entry['icon'] == 42, den_entry
+        assert c['categories'] == [dict(name='Realm Dungeons', dungeons=['Test Den'])] and den_entry['dropped_by'] == ['0x0013'], (c['categories'], den_entry)
+        assert dungeon_sections('<h2>Wormholes</h2>a<h3>Advanced Wormholes</h3>b<h2>Memories</h2>c') == [('Wormholes', 'ab'), ('Memories', 'c')]
         assert c['mobs'][0] == dict(name='Den King', types=['0x0011'], realmeye='den-king', tiers={'ring': [3], 'weapon': [7, 8]},
                                     drops=['0x0020']), c['mobs'][0]
         assert {(e['kind'], e['realmeye']) for e in c['unmatched']} == {('dungeon', 'Oryx’s Nook'), ('drop', 'Pet Eggs')}, c['unmatched']

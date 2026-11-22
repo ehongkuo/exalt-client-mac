@@ -403,12 +403,13 @@ enum DropRateTests {
         // mob's tier groups and named drops.
         let catalogFile = folder.appendingPathComponent("drop_catalog.json")
         try! """
-            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]},
+            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"], "dropped_by": ["0x0901"]},
                           {"name": "Realm of the Mad God", "mobs": ["0x0901", "0x0902", "0x090a"],
                            "biomes": [{"name": "Floral Escape", "tier": "Veteran", "mobs": ["0x0901", "0x0902", "0x090a"], "encounters": ["0x0902"], "guardians": ["0x090a"]},
                                       {"name": "Beach", "tier": "Rookie", "mobs": ["0x0901", "0x090a"], "heroes": ["0x090a"]}]}],
+             "categories": [{"name": "Realm Dungeons", "dungeons": ["New Den", "Missing Den"]}],
              "mobs": [{"name": "Den Rat", "types": ["0x0003"], "tiers": {"weapon": [12], "armor": [12, 13], "wand": [1]},
-                       "drops": ["0x02bc"]}]}
+                       "drops": ["0x02bc"]}, {"name": "Malphas Flamer", "types": ["0x0901"], "drops": ["0x02bc"]}]}
             """.write(to: catalogFile, atomically: false, encoding: .utf8)
         check(GameNames.dropCatalog(Data("[]".utf8)) == nil, "not a catalog")
         check(GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile), "catalog file loaded with the game catalog")
@@ -426,10 +427,23 @@ enum DropRateTests {
         // Mob search and the Realm's biomes (issue #69), both built once per report.
         let realmMob = { DropReport.Mob(type: $0, dungeon: DropReport.realm) }
         check(cataloged.biomes == [
-            DropReport.Biome(name: "Beach", tier: "Rookie", regular: [realmMob(0x0901)], heroes: [realmMob(0x090a)], encounters: [], guardians: []),
+            DropReport.Biome(name: "Beach", tier: "Rookie", regular: [realmMob(0x0901)], heroes: [realmMob(0x090a)], encounters: [], guardians: [],
+                             dungeons: ["New Den"], drops: [700]),
             DropReport.Biome(name: "Floral Escape", tier: "Veteran", regular: [realmMob(0x0901)], heroes: [], encounters: [realmMob(0x0902)],
-                             guardians: [realmMob(0x090a)]),
-        ], "the Realm by tier, then biome, in RealmEye's sections; a mob in each of its biomes")
+                             guardians: [realmMob(0x090a)], dungeons: ["New Den"], drops: [700]),
+        ], "the Realm by tier, then biome, in RealmEye's sections; a mob in each of its biomes; the dungeons and named drops of its mobs")
+        check(cataloged.categories == [DropReport.Category(name: "Realm Dungeons", dungeons: ["New Den"])],
+              "RealmEye's dungeon categories, with only the dungeons the report lists")
+        let browsing = DropRatesModel()
+        browsing.pick(biome: cataloged.biomes[1])
+        check(browsing.dungeon == DropReport.realm && browsing.biome == "Floral Escape" && browsing.realmTier == "Veteran" && browsing.browse == .dungeons,
+              "a biome opens the Realm with its page and its tier's tab")
+        browsing.pick(mob: realmMob(0x0901)); browsing.back()
+        check(browsing.mob == nil && browsing.biome == "Floral Escape", "esc from a mob on a biome page goes back to the biome")
+        browsing.back()
+        check(browsing.biome == nil && browsing.dungeon == DropReport.realm, "esc from a biome goes back to the Realm")
+        browsing.pick(biome: cataloged.biomes[0]); browsing.select(dungeon: "New Den")
+        check(browsing.biome == nil && browsing.realmTier == "Rookie", "picking a dungeon closes the biome; the tier tab stays")
         check(cataloged.mobs(matching: " MALPHAS ") == [realmMob(0x090a), realmMob(0x0901)] && cataloged.mobs(matching: "brute") == [realmMob(0x0902)]
               && cataloged.mobs(matching: "  ").isEmpty && cataloged.mobs(matching: "nobody").isEmpty,
               "the search finds mobs by any part of their name, case and spaces aside, with their dungeon, by name")
@@ -453,7 +467,7 @@ enum DropRateTests {
         check(guild.dungeons == ["Guild Hall"] && guild.mobs == cataloged.uncataloged.mobs, "a map with kills the catalog lacks; a cataloged mob isn't listed")
         check(rates.exec("INSERT INTO maps(id, session, generation, name) VALUES (91, 1, 91, 'Realm of the Mad God'); INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by) VALUES (91, 60, 2308, 10, 0, 0, 'hit')"),
               "a Realm kill of a mob on no biome page")
-        check(DropReport.load(rates).biomes.last == DropReport.Biome(name: "Other", tier: "", regular: [realmMob(0x0904)], heroes: [], encounters: [], guardians: []),
+        check(DropReport.load(rates).biomes.last == DropReport.Biome(name: "Other", tier: "", regular: [realmMob(0x0904)], heroes: [], encounters: [], guardians: [], kills: 1),
               "a Realm mob on no biome page is listed last, under Other")
         check(rates.exec("UPDATE objects SET name = 'Malphas Flamer', display_name = NULL WHERE type = 2306"), "two types, one name")
         check(DropReport.load(rates).biomes.first { $0.name == "Floral Escape" }.map { $0.regular.isEmpty && $0.encounters == [realmMob(0x0902)] } == true,

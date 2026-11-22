@@ -25,6 +25,15 @@
     "0x0e1d",
     "0xb4e4"
    ],
+   "dropped_by": [
+    "0x0651",
+    "0x0668",
+    "0x4546",
+    "0x5588",
+    "0x5589",
+    "0xc1e2",
+    "0xc2eb"
+   ],
    "icon": 133
   },
   {
@@ -91,6 +100,9 @@
     "0xd1ce",
     "0xd1cf"
    ],
+   "dropped_by": [
+    "0xc783"
+   ],
    "icon": 19
   },
   {
@@ -113,6 +125,19 @@
     "0x70ea",
     "0x70eb",
     "0x70f3"
+   ],
+   "dropped_by": [
+    "0x0646",
+    "0x0649",
+    "0x5557",
+    "0x555a",
+    "0x557f",
+    "0x748f",
+    "0x86db",
+    "0x86f9",
+    "0xc1de",
+    "0xc1e1",
+    "0xc2f1"
    ],
    "icon": 121
   },
@@ -179,6 +204,9 @@
     "0x5e47",
     "0x5e48"
    ],
+   "dropped_by": [
+    "0x5e49"
+   ],
    "icon": 135
   },
   {
@@ -195,6 +223,13 @@
     "0x5e3c",
     "0x5e3d",
     "0x5e4a"
+   ],
+   "dropped_by": [
+    "0x091a",
+    "0x5587",
+    "0x86c3",
+    "0xc0bf",
+    "0xc2ed"
    ]
   },
   {
@@ -214,6 +249,10 @@
     "0x09f7",
     "0x09f8"
    ],
+   "dropped_by": [
+    "0x7219",
+    "0xc0bd"
+   ],
    "icon": 149
   },
   {
@@ -223,6 +262,10 @@
    "mobs": [
     "0xc05b",
     "0xc061"
+   ],
+   "dropped_by": [
+    "0x2008",
+    "0xb531"
    ]
   },
   {
@@ -262,6 +305,13 @@
     "0xb2a2",
     "0xb2a3"
    ],
+   "dropped_by": [
+    "0xb290",
+    "0xb291",
+    "0xb292",
+    "0xb293",
+    "0xb297"
+   ],
    "icon": 12
   },
   {
@@ -292,6 +342,9 @@
     "0xb154",
     "0xb156"
    ],
+   "dropped_by": [
+    "0xb010"
+   ],
    "icon": 16
   },
   {
@@ -320,6 +373,13 @@
     "0xab9d",
     "0xaba9"
    ],
+   "dropped_by": [
+    "0x0656",
+    "0x45ee",
+    "0x5582",
+    "0xc108",
+    "0xc2ea"
+   ],
    "icon": 130
   },
   {
@@ -338,6 +398,11 @@
     "0x0e48",
     "0x0e50",
     "0x6da1"
+   ],
+   "dropped_by": [
+    "0x6da1",
+    "0x7231",
+    "0x86d7"
    ],
    "icon": 138
   },
@@ -375,6 +440,11 @@
     "0xb5a0",
     "0xb604",
     "0xb91b"
+   ],
+   "dropped_by": [
+    "0x2665",
+    "0x55c4",
+    "0xaabf"
    ],
    "icon": 141
   },
@@ -417,6 +487,12 @@
     "0x0dd2",
     "0x0dd3"
    ],
+   "dropped_by": [
+    "0x0204",
+    "0x062f",
+    "0x553a",
+    "0x5556"
+   ],
    "icon": 125
   },
   {
@@ -430,6 +506,35 @@
     "0x5e61",
     "0x5e62",
     "0x5e63"
+   ],
+   "dropped_by": [
+    "0x0609",
+    "0x060d",
+    "0x0614",
+    "0x0617",
+    "0x061a",
+    "0x061f",
+    "0x065a",
+    "0x06c9",
+    "0x06d1",
+    "0x0946",
+    "0x1656",
+    "0x1658",
+    "0x1659",
+    "0x165a",
+    "0x165b",
+    "0x165d",
+    "0x5507",
+    "0x5514",
+    "0x5517",
+    "0x5518",
+    "0x551a",
+    "0x551b",
+    "0x551e",
+    "0x5521",
+    "0x554c",
+    "0x5554",
+    "0x55be"
    ],
    "icon": 126
   },
@@ -507,6 +612,21 @@
     "0xb51c",
     "0xb51d"
    ],
+   "dropped_by": [
+    "0x4227",
+    "0x424c",
+    "0x8698",
+    "0x8699",
+    "0x869a",
+    "0x869b",
+    "0x86a3",
+    "0x86a4",
+    "0x86a5",
+    "0x86aa",
+    "0x86fe",
+    "0x8703",
+    "0xb28f"
+   ],
    "icon": 11
   },
   {
@@ -561,6 +681,11 @@
     "0x6006",
     "0x6007",
     "0x600c"
+   ],
+   "dropped_by": [
+    "0x426c",
+    "0x55c3",
+    "0x5e9f"
    ],
    "icon": 134
   },
@@ -618,6 +743,9 @@
     "0x3d7b",
     "0x3d7c"
    ],
+   "dropped_by": [
+    "0x7b15"
+   ],
    "icon": 147
   },
   {
@@ -660,6 +788,10 @@
     "0x9d12",
     "0x9d13"
    ],
+   "dropped_by": [
+    "0x7b14",
+    "0x86d6"
+   ],
    "icon": 151
   },
   {
@@ -681,6 +813,10 @@
     "0x7fb5",
     "0x7fb6",
     "0x7fd0"
+   ],
+   "dropped_by": [
+    "0x0f1f",
+    "0x1fee"
    ]
   },
   {
@@ -759,6 +895,9 @@
     "0xd1ce",
     "0xd1cf"
    ],
+   "dropped_by": [
+    "0xc783"
+   ],
    "icon": 19
   },
   {
@@ -807,6 +946,11 @@
     "0xb261",
     "0xb262"
    ],
+   "dropped_by": [
+    "0x2662",
+    "0x397a",
+    "0x7303"
+   ],
    "icon": 150
   },
   {
@@ -819,6 +963,10 @@
     "0x6e09",
     "0x741b",
     "0x7428"
+   ],
+   "dropped_by": [
+    "0x7b94",
+    "0xc3d3"
    ],
    "icon": 148
   },
@@ -899,6 +1047,14 @@
     "0xb13b",
     "0xb14b"
    ],
+   "dropped_by": [
+    "0x425e",
+    "0x4260",
+    "0x4261",
+    "0x5682",
+    "0x8715",
+    "0xb030"
+   ],
    "icon": 15
   },
   {
@@ -913,6 +1069,13 @@
     "0x0982",
     "0x0983",
     "0x5e1c"
+   ],
+   "dropped_by": [
+    "0x0657",
+    "0x4548",
+    "0x45ea",
+    "0x5583",
+    "0x870a"
    ],
    "icon": 131
   },
@@ -964,6 +1127,14 @@
     "0x0879",
     "0x087a",
     "0x087b"
+   ],
+   "dropped_by": [
+    "0x0655",
+    "0x0b5b",
+    "0x454a",
+    "0x45ef",
+    "0x5585",
+    "0xc2f2"
    ]
   },
   {
@@ -1003,6 +1174,10 @@
     "0x1737",
     "0x1738"
    ],
+   "dropped_by": [
+    "0xc1dc",
+    "0xc3d2"
+   ],
    "icon": 132
   },
   {
@@ -1023,6 +1198,9 @@
     "0xbef4",
     "0xbef5",
     "0xbef6"
+   ],
+   "dropped_by": [
+    "0xbf00"
    ]
   },
   {
@@ -1034,6 +1212,10 @@
     "0x4fe3",
     "0x4fe4",
     "0x500d"
+   ],
+   "dropped_by": [
+    "0x265c",
+    "0x4267"
    ],
    "icon": 94
   },
@@ -1055,6 +1237,10 @@
     "0xaae0",
     "0xaae1",
     "0xab18"
+   ],
+   "dropped_by": [
+    "0x2663",
+    "0x2667"
    ],
    "icon": 145
   },
@@ -1223,6 +1409,11 @@
     "0xbdfc",
     "0xbdfd",
     "0xbdfe"
+   ],
+   "dropped_by": [
+    "0x0409",
+    "0x7230",
+    "0x7302"
    ]
   },
   {
@@ -1325,6 +1516,9 @@
     "0xb1e0",
     "0xb22d"
    ],
+   "dropped_by": [
+    "0x0932"
+   ],
    "icon": 18
   },
   {
@@ -1385,6 +1579,10 @@
     "0xb3bb",
     "0xbf00"
    ],
+   "dropped_by": [
+    "0x7225",
+    "0x7b90"
+   ],
    "icon": 144
   },
   {
@@ -1406,6 +1604,21 @@
     "0x068e",
     "0x068f",
     "0x0927"
+   ],
+   "dropped_by": [
+    "0x0600",
+    "0x0601",
+    "0x0613",
+    "0x06c4",
+    "0x06c7",
+    "0x5502",
+    "0x5503",
+    "0x5504",
+    "0x5508",
+    "0x5509",
+    "0x550a",
+    "0x550b",
+    "0x5516"
    ],
    "icon": 119
   },
@@ -1471,6 +1684,19 @@
     "0x448f",
     "0x449a"
    ],
+   "dropped_by": [
+    "0x10b6",
+    "0x10b7",
+    "0x10b8",
+    "0x10ba",
+    "0x10bb",
+    "0x10bc",
+    "0x10d8",
+    "0x10f6",
+    "0x445f",
+    "0x4485",
+    "0xc786"
+   ],
    "icon": 13
   },
   {
@@ -1492,6 +1718,10 @@
     "0x74a1",
     "0x74a5",
     "0x74a6"
+   ],
+   "dropped_by": [
+    "0x7b93",
+    "0x86cd"
    ],
    "icon": 142
   },
@@ -1518,6 +1748,14 @@
     "0xb3a3",
     "0xe07a"
    ],
+   "dropped_by": [
+    "0x06d8",
+    "0x4549",
+    "0x45eb",
+    "0x5580",
+    "0x8728",
+    "0xc1df"
+   ],
    "icon": 129
   },
   {
@@ -1529,6 +1767,10 @@
     "0x0597",
     "0x0598",
     "0x059b"
+   ],
+   "dropped_by": [
+    "0x089f",
+    "0x0f1e"
    ]
   },
   {
@@ -3619,6 +3861,10 @@
     "0x36ca",
     "0x36cb"
    ],
+   "dropped_by": [
+    "0x265b",
+    "0x2666"
+   ],
    "icon": 146
   },
   {
@@ -3637,6 +3883,16 @@
     "0x0918",
     "0x0919",
     "0x0e26"
+   ],
+   "dropped_by": [
+    "0x0640",
+    "0x0654",
+    "0x4263",
+    "0x45ed",
+    "0x5562",
+    "0x5581",
+    "0xc0bc",
+    "0xc106"
    ],
    "icon": 118
   },
@@ -3722,6 +3978,14 @@
     "0xad6e",
     "0xad6f"
    ],
+   "dropped_by": [
+    "0x86bd",
+    "0x86be",
+    "0x86bf",
+    "0x86c0",
+    "0x86c1",
+    "0x86c2"
+   ],
    "icon": 103
   },
   {
@@ -3774,6 +4038,19 @@
     "0xcdd1",
     "0xcdd2"
    ],
+   "dropped_by": [
+    "0x0622",
+    "0x062c",
+    "0x0637",
+    "0x0950",
+    "0x0955",
+    "0x5525",
+    "0x5539",
+    "0x5546",
+    "0x5548",
+    "0x5552",
+    "0x5555"
+   ],
    "icon": 122
   },
   {
@@ -3796,6 +4073,9 @@
     "0xc066",
     "0xc067"
    ],
+   "dropped_by": [
+    "0xc32f"
+   ],
    "icon": 117
   },
   {
@@ -3806,6 +4086,10 @@
     "0xbbe1",
     "0xbbe2",
     "0xbbf5"
+   ],
+   "dropped_by": [
+    "0x2008",
+    "0xb531"
    ]
   },
   {
@@ -3842,6 +4126,16 @@
     "0x663f",
     "0x7fd8"
    ],
+   "dropped_by": [
+    "0x265d",
+    "0x265e",
+    "0x2661",
+    "0x427b",
+    "0x5644",
+    "0xc76f",
+    "0xc770",
+    "0xc772"
+   ],
    "icon": 143
   },
   {
@@ -3867,6 +4161,13 @@
     "0x707f",
     "0x708a"
    ],
+   "dropped_by": [
+    "0x55c5",
+    "0x7312",
+    "0x7b91",
+    "0x86b1",
+    "0xc4d9"
+   ],
    "icon": 139
   },
   {
@@ -3882,13 +4183,22 @@
     "0x0d45",
     "0x0e46"
    ],
+   "dropped_by": [
+    "0x0947",
+    "0x094a",
+    "0x5540",
+    "0x5543"
+   ],
    "icon": 123
   },
   {
    "name": "The Inner Workings",
    "portal": "0xc500",
    "realmeye": "the-inner-workings",
-   "mobs": []
+   "mobs": [],
+   "dropped_by": [
+    "0xabd5"
+   ]
   },
   {
    "name": "The Machine",
@@ -3896,6 +4206,14 @@
    "realmeye": "the-machine",
    "mobs": [
     "0xabd5"
+   ],
+   "dropped_by": [
+    "0x0905",
+    "0x0906",
+    "0x0907",
+    "0x09ba",
+    "0x09bb",
+    "0x09bc"
    ]
   },
   {
@@ -3954,6 +4272,19 @@
     "0x3647",
     "0x445f",
     "0x4485"
+   ],
+   "dropped_by": [
+    "0x10b6",
+    "0x10b7",
+    "0x10b8",
+    "0x10ba",
+    "0x10bb",
+    "0x10bc",
+    "0x10d8",
+    "0x10f6",
+    "0x445f",
+    "0x4485",
+    "0xc786"
    ],
    "icon": 13
   },
@@ -4077,6 +4408,11 @@
     "0xb6c1",
     "0xb6c2"
    ],
+   "dropped_by": [
+    "0x513f",
+    "0x55c7",
+    "0x734d"
+   ],
    "icon": 14
   },
   {
@@ -4114,6 +4450,9 @@
     "0x456d",
     "0x456e",
     "0x456f"
+   ],
+   "dropped_by": [
+    "0x776d"
    ],
    "icon": 155
   },
@@ -4218,6 +4557,13 @@
     "0xbb19",
     "0xbb1a"
    ],
+   "dropped_by": [
+    "0x7232",
+    "0x7373",
+    "0x86b0",
+    "0x86b5",
+    "0x86b6"
+   ],
    "icon": 136
   },
   {
@@ -4233,6 +4579,12 @@
     "0xb151",
     "0xb152",
     "0xb153"
+   ],
+   "dropped_by": [
+    "0xb011",
+    "0xb05c",
+    "0xb0c5",
+    "0xb0c6"
    ],
    "icon": 17
   },
@@ -4283,6 +4635,10 @@
     "0x0d3b",
     "0x0d3c"
    ],
+   "dropped_by": [
+    "0x776f",
+    "0x7b95"
+   ],
    "icon": 153
   },
   {
@@ -4311,6 +4667,14 @@
     "0xb551",
     "0xb552",
     "0xb553"
+   ],
+   "dropped_by": [
+    "0x0658",
+    "0x4547",
+    "0x5584",
+    "0x870d",
+    "0xc0be",
+    "0xc2ec"
    ],
    "icon": 124
   },
@@ -4358,6 +4722,15 @@
     "0x77a4",
     "0x77a5",
     "0x77a6"
+   ],
+   "dropped_by": [
+    "0x0659",
+    "0x45ec",
+    "0x5586",
+    "0x86d3",
+    "0xc1db",
+    "0xc2e8",
+    "0xc2ee"
    ],
    "icon": 128
   },
@@ -4505,6 +4878,25 @@
     "0x0df1",
     "0x0df2"
    ],
+   "dropped_by": [
+    "0x054f",
+    "0x06dc",
+    "0x0932",
+    "0x0d46",
+    "0x1740",
+    "0x713d",
+    "0x718e",
+    "0xb01a",
+    "0xb096",
+    "0xb133",
+    "0xb1dc",
+    "0xb1dd",
+    "0xb1de",
+    "0xb1e9",
+    "0xb395",
+    "0xb3aa",
+    "0xb3ab"
+   ],
    "icon": 154
   },
   {
@@ -4532,6 +4924,13 @@
     "0xcdb2",
     "0xcdb3",
     "0xcdb4"
+   ],
+   "dropped_by": [
+    "0x55c6",
+    "0x79be",
+    "0x7b92",
+    "0x872b",
+    "0xc4da"
    ],
    "icon": 140
   }
@@ -36810,6 +37209,134 @@
     "0x08ea",
     "0x0f37",
     "0x1091"
+   ]
+  }
+ ],
+ "categories": [
+  {
+   "name": "Realm Dungeons",
+   "dungeons": [
+    "Pirate Cave",
+    "Forest Maze",
+    "Spider Den",
+    "Forbidden Jungle",
+    "The Hive",
+    "Snake Pit",
+    "Sprite World",
+    "Cave of A Thousand Treasures",
+    "Ancient Ruins",
+    "Magic Woods",
+    "Candyland Hunting Grounds",
+    "Undead Lair",
+    "Puppet Master's Theatre",
+    "Toxic Sewers",
+    "Cursed Library",
+    "Mad Lab",
+    "Abyss of Demons",
+    "Manor of the Immortals",
+    "Haunted Cemetery",
+    "The Machine",
+    "The Inner Workings",
+    "Davy Jones' Locker",
+    "Ocean Trench",
+    "The Crawling Depths",
+    "Woodland Labyrinth",
+    "Deadwater Docks",
+    "Puppet Master's Encore",
+    "Cnidarian Reef",
+    "Parasite Chambers",
+    "The Tavern",
+    "Sulfurous Wetlands",
+    "Mountain Temple",
+    "Lair of Draconis",
+    "Tomb of the Ancients",
+    "The Third Dimension",
+    "Lair of Shaitan",
+    "Secluded Thicket",
+    "High Tech Terror",
+    "Ice Citadel",
+    "Moonlight Village"
+   ]
+  },
+  {
+   "name": "Realm Event Dungeons",
+   "dungeons": [
+    "Beachzone",
+    "The Nest",
+    "Cultist Hideout",
+    "Fungal Cavern",
+    "Crystal Cavern",
+    "Spectral Penitentiary",
+    "Kogbold Steamworks",
+    "Lost Halls",
+    "The Void",
+    "The Shatters"
+   ]
+  },
+  {
+   "name": "Advanced Dungeons",
+   "dungeons": [
+    "Plagued Nest",
+    "Advanced Kogbold Steamworks"
+   ]
+  },
+  {
+   "name": "Oryx's Castle",
+   "dungeons": [
+    "Court of Oryx",
+    "Oryx's Castle",
+    "Oryx's Chamber",
+    "Wine Cellar",
+    "Oryx's Sanctuary"
+   ]
+  },
+  {
+   "name": "Wormholes",
+   "dungeons": [
+    "Malogia",
+    "Untaris",
+    "Katalund",
+    "Forax",
+    "Neo Malogia",
+    "Neo Untaris",
+    "Neo Katalund",
+    "Neo Forax"
+   ]
+  },
+  {
+   "name": "Legacy Heroic Dungeons",
+   "dungeons": [
+    "Legacy Heroic Undead Lair",
+    "Legacy Heroic Abyss of Demons"
+   ]
+  },
+  {
+   "name": "Memories",
+   "dungeons": [
+    "Memory of the Infected",
+    "Stoneborn Memory"
+   ]
+  },
+  {
+   "name": "Special Event Dungeons",
+   "dungeons": [
+    "Rainbow Road",
+    "Battle for the Nexus",
+    "Time Chamber",
+    "Belladonna's Garden",
+    "Queen Bunny Chamber",
+    "Ice Tomb",
+    "White Snake Invasion I",
+    "Hidden Interregnum",
+    "White Snake Invasion II",
+    "White Snake Invasion III"
+   ]
+  },
+  {
+   "name": "Other Dungeons",
+   "dungeons": [
+    "Chess",
+    "Admin Arena"
    ]
   }
  ],
