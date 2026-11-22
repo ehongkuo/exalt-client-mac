@@ -10,12 +10,14 @@ private let boostBlue = Color(red: 0.35, green: 0.64, blue: 1)
 
 struct LootProfileView: View {
     @ObservedObject var model: DropRatesModel
+    @ObservedObject private var live: DropLive   // model.now lives here (issue #81)
     var bar = false
+    init(model: DropRatesModel, bar: Bool = false) { self.model = model; _live = ObservedObject(wrappedValue: model.live); self.bar = bar }
 
     var body: some View {
         // Each second, so the potion timers count down.
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = model.now, s = now?.state(at: context.date.timeIntervalSince1970)
+            let now = live.now, s = now?.state(at: context.date.timeIntervalSince1970)
             if bar {
                 lootBar(now, s)
             } else {
