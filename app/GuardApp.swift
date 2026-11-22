@@ -1280,6 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     let drops = DropAlerts()
     let rates = DropRatesModel()
     private var ratesLoaded = -Double.infinity
+    private var lastReport: DropReport?   // the last one loadRates loaded; on lootQueue
     private var ratesWatch: AnyCancellable?
     private var guardFrame: NSRect?, statsFrame: NSRect?
     var joinPopups: [NSPanel] = []
@@ -1368,7 +1369,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             let xml = (try? FileManager.default.contentsOfDirectory(atPath: RealmHoundPaths.xml.path)) ?? []
             let problem = report.dungeons.isEmpty && xml.isEmpty
                 ? "No game data yet: RealmHound extracts it when it opens. Open RealmHound once, then come back." : nil
-            DispatchQueue.main.async { self.rates.update(report); self.rates.problem = problem }
+            // Compared and indexed here, off the main thread; an unchanged report redraws nothing (issue #81).
+            let index = report != self.lastReport ? DropIndex(report) : nil
+            self.lastReport = report
+            DispatchQueue.main.async { if let index { self.rates.update(report, index: index) }; self.rates.problem = problem }
         }
     }
     /// The loot numbers from the game's XML, read once (issue #58). On lootQueue.
@@ -1448,6 +1452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
         state.showCompact = { [weak self] in self?.showCompact() }
         // After the view switched, so the narrow guard view's frame is not held at the stats views' minimum width.
+        ClickTiming.start(rates)
         ratesWatch = rates.$tab.map { $0 != .guardTab }.dropFirst().removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] in self?.showStats($0) }
         // Join popup: one copy at the top centre of every monitor. They share the call, so Join or ✕ on any closes all.
         popupWatch = alerts.$popup.receive(on: DispatchQueue.main).sink { [weak self] call in

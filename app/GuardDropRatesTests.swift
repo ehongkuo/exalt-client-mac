@@ -339,6 +339,30 @@ enum DropRateTests {
               "kills with at least one: the sword and its shiny in one kill count once; a bag or group counts a kill once")
         check(tiled.tiles(of: minion) == [.white: [.item(588)]] && tiled.tiles(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
               "a minion's own drops; an unknown mob has none")
+        // The precomputed lookups (issue #81) give what the report's functions give; ties in kills go by name.
+        var tie = DropReport()
+        tie.dungeons = ["A", "B", "C"].map { DropReport.Dungeon(name: $0, portal: nil, codes: []) }
+        tie.kills = [DropReport.Mob(type: 1, dungeon: "C"): 5, DropReport.Mob(type: 2, dungeon: "B"): 5]
+        tie.names = [800: "Sword", 801: "sword of b", 802: "Axe"]; tie.origins = [800: ",X,", 801: ",X,", 802: ",X,"]
+        for r in [tiled, stacked, tie] {
+            let index = DropIndex(r)
+            func kills(_ d: String) -> Int { r.mobs(in: d).reduce(0) { $0 + (r.kills[$1] ?? 0) } }
+            check(index.dungeons == r.dungeons.sorted { (kills($0.name), $1.name) > (kills($1.name), $0.name) }
+                  && index.dungeons.first == r.dungeons.max { kills($0.name) < kills($1.name) }, "the dungeon list and the default dungeon")
+            for d in r.dungeons {
+                check(index.mobs(in: d.name) == r.mobs(in: d.name) && index.kills(in: d.name) == kills(d.name)
+                      && index.possible[d.name] == r.possibleDrops(d) && index.tiles[d.name]! == r.tiles(r.possibleDrops(d)), "a dungeon's lookups: \(d.name)")
+            }
+            let all = Set(r.origins.keys).union(r.items).union(r.names.keys)
+            check(all.allSatisfy { item in (index.possibleIn[item] ?? []) == r.dungeons.filter { r.possibleDrops($0).contains(item) }.map(\.name) },
+                  "where an item can drop")
+            for q in ["s", "SWORD", "x", "zzz"] {
+                let old = Array(Set(Set(r.origins.keys).union(r.items).map(r.base)).filter { r.name($0).localizedCaseInsensitiveContains(q) }
+                    .sorted { r.name($0) < r.name($1) }.prefix(30))
+                check(index.search(q).map(r.name) == old.map(r.name), "search \(q)")
+            }
+        }
+        check(DropIndex(tie).dungeons.map(\.name) == ["B", "C", "A"] && DropIndex(tie).search("sword") == [800, 801], "ties: by name")
         check(DropRate(count: 9, of: 20).percent == "45%" && DropRate(count: 1, of: 20).percent == "5%" &&
               DropRate(count: 9, of: 20).percent == "45%", "percent")
         // Range and caption text (issue #67): a range at any count, never capped at 100%.
