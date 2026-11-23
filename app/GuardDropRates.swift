@@ -241,6 +241,12 @@ final class DropRateStore {
     }
     var lastID: Int64 { sqlite3_last_insert_rowid(db) }
     /// Every portal object type in the game catalog (Portal, ArenaPortal, ...), for the guard to record (issue #64).
+    /// Player classes, so the traffic capture never counts a player leaving as a kill (issue #61).
+    func playerTypes() -> [Int] {
+        var types: [Int] = []
+        run("SELECT type FROM objects WHERE class = 'Player'") { types.append(Int(sqlite3_column_int64($0, 0))) }
+        return types
+    }
     func portalTypes() -> [Int] {
         var types: [Int] = []
         run("SELECT type FROM objects WHERE class LIKE '%Portal' ORDER BY type") { types.append(Int(sqlite3_column_int64($0, 0))) }
