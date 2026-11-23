@@ -293,6 +293,21 @@ enum DropRateTests {
         check(tiled.runsWith("The Void", tiled.variants(800)) == 1 && tiled.runsWith("The Void", [800, 801, 802]) == 2,
               "any-of: a run with the sword and its shiny, or with two of a group, counts once")
         let row = tiled.tiles([9, 800, 801, 802, 803])
+        // The Items list (issue #68): categories, then types in family order; untiered, then set tier, then best tier.
+        var book = DropReport()
+        book.names = [1: "Doom Bow", 2: "Bow of Covert Havens", 3: "Coral Bow", 4: "Ring of Paramount Attack", 5: "Potion of Life", 6: "Dirk",
+                      7: "Mark of Malphas", 8: "Bee Pet Skin", 9: "Ninja Skin", 10: "Bow of the Ranger"]
+        book.slots = [1: 3, 2: 3, 3: 3, 4: 9, 5: 10, 6: 2, 7: 10, 8: 10, 9: 10, 10: 3]
+        book.tiers = [2: 10, 3: 14, 4: 6]
+        book.labels = [1: ["UT"], 10: ["ST"], 5: ["CONSUMABLE", "STATPOTION"], 7: ["MARK"], 8: [], 9: []]
+        book.itemCategories = book.categories(Set(1...10))
+        check(book.itemCategories.map(\.title) == ["Weapons", "Rings", "Potions", "Marks", "Skins"], "categories in the wiki's order")
+        check(book.itemCategories[0].types == [.init(title: "Dagger", items: [6]), .init(title: "Bow", items: [1, 10, 3, 2])],
+              "weapons by type; UT, then ST, then best tier")
+        check(book.itemCategories[4].types.map(\.title) == ["Character skins", "Pet skins"] && book.kind(1) == "UT" && book.kind(10) == "ST" && book.kind(3) == "T14",
+              "skins split; kinds")
+        check(book.itemSections(matching: " bow ") == [.init(title: "Weapons · Bow", items: [1, 10, 3, 2])] && book.itemSections(matching: "zzz").isEmpty
+              && book.itemSections(matching: "mark") == [.init(title: "Marks", items: [7])], "searching an item's name finds it")
         var gold = DropReport()
         gold.names = [1: "Zed Key", 2: "Ninja Skin", 3: "Amber Pet Stone", 4: "Blueprint_7", 5: "Assassin Skin", 6: "Bee Pet Skin"]
         for item in 1...6 { gold.bags[item] = .gold }
@@ -324,6 +339,30 @@ enum DropRateTests {
               "kills with at least one: the sword and its shiny in one kill count once; a bag or group counts a kill once")
         check(tiled.tiles(of: minion) == [.white: [.item(588)]] && tiled.tiles(of: DropReport.Mob(type: 9, dungeon: "x")).isEmpty,
               "a minion's own drops; an unknown mob has none")
+        // The precomputed lookups (issue #81) give what the report's functions give; ties in kills go by name.
+        var tie = DropReport()
+        tie.dungeons = ["A", "B", "C"].map { DropReport.Dungeon(name: $0, portal: nil, codes: []) }
+        tie.kills = [DropReport.Mob(type: 1, dungeon: "C"): 5, DropReport.Mob(type: 2, dungeon: "B"): 5]
+        tie.names = [800: "Sword", 801: "sword of b", 802: "Axe"]; tie.origins = [800: ",X,", 801: ",X,", 802: ",X,"]
+        for r in [tiled, stacked, tie] {
+            let index = DropIndex(r)
+            func kills(_ d: String) -> Int { r.mobs(in: d).reduce(0) { $0 + (r.kills[$1] ?? 0) } }
+            check(index.dungeons == r.dungeons.sorted { (kills($0.name), $1.name) > (kills($1.name), $0.name) }
+                  && index.dungeons.first == r.dungeons.max { kills($0.name) < kills($1.name) }, "the dungeon list and the default dungeon")
+            for d in r.dungeons {
+                check(index.mobs(in: d.name) == r.mobs(in: d.name) && index.kills(in: d.name) == kills(d.name)
+                      && index.possible[d.name] == r.possibleDrops(d) && index.tiles[d.name]! == r.tiles(r.possibleDrops(d)), "a dungeon's lookups: \(d.name)")
+            }
+            let all = Set(r.origins.keys).union(r.items).union(r.names.keys)
+            check(all.allSatisfy { item in (index.possibleIn[item] ?? []) == r.dungeons.filter { r.possibleDrops($0).contains(item) }.map(\.name) },
+                  "where an item can drop")
+            for q in ["s", "SWORD", "x", "zzz"] {
+                let old = Array(Set(Set(r.origins.keys).union(r.items).map(r.base)).filter { r.name($0).localizedCaseInsensitiveContains(q) }
+                    .sorted { r.name($0) < r.name($1) }.prefix(30))
+                check(index.search(q).map(r.name) == old.map(r.name), "search \(q)")
+            }
+        }
+        check(DropIndex(tie).dungeons.map(\.name) == ["B", "C", "A"] && DropIndex(tie).search("sword") == [800, 801], "ties: by name")
         check(DropRate(count: 9, of: 20).percent == "45%" && DropRate(count: 1, of: 20).percent == "5%" &&
               DropRate(count: 9, of: 20).percent == "45%", "percent")
         // Range and caption text (issue #67): a range at any count, never capped at 100%.
@@ -364,9 +403,13 @@ enum DropRateTests {
         // mob's tier groups and named drops.
         let catalogFile = folder.appendingPathComponent("drop_catalog.json")
         try! """
-            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"]}],
+            {"dungeons": [{"name": "The Void", "mobs": ["0x0001", "0x0003"]}, {"name": "New Den", "mobs": ["0x0003"], "dropped_by": ["0x0901"]},
+                          {"name": "Realm of the Mad God", "mobs": ["0x0901", "0x0902", "0x090a"],
+                           "biomes": [{"name": "Floral Escape", "tier": "Veteran", "mobs": ["0x0901", "0x0902", "0x090a"], "encounters": ["0x0902"], "guardians": ["0x090a"]},
+                                      {"name": "Beach", "tier": "Rookie", "mobs": ["0x0901", "0x090a"], "heroes": ["0x090a"]}]}],
+             "categories": [{"name": "Realm Dungeons", "dungeons": ["New Den", "Missing Den"]}],
              "mobs": [{"name": "Den Rat", "types": ["0x0003"], "tiers": {"weapon": [12], "armor": [12, 13], "wand": [1]},
-                       "drops": ["0x02bc"]}]}
+                       "drops": ["0x02bc"]}, {"name": "Malphas Flamer", "types": ["0x0901"], "drops": ["0x02bc"]}]}
             """.write(to: catalogFile, atomically: false, encoding: .utf8)
         check(GameNames.dropCatalog(Data("[]".utf8)) == nil, "not a catalog")
         check(GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile), "catalog file loaded with the game catalog")
@@ -381,6 +424,33 @@ enum DropRateTests {
               "a cataloged mob shows with no kills")
         let den = cataloged.dungeons.first { $0.name == "New Den" }
         check(den.map(cataloged.possibleDrops) == [700, 800, 801, 803, 2560], "a dungeon never run is listed with its mobs' drops")
+        // Mob search and the Realm's biomes (issue #69), both built once per report.
+        let realmMob = { DropReport.Mob(type: $0, dungeon: DropReport.realm) }
+        check(cataloged.biomes == [
+            DropReport.Biome(name: "Beach", tier: "Rookie", regular: [realmMob(0x0901)], heroes: [realmMob(0x090a)], encounters: [], guardians: [],
+                             dungeons: ["New Den"], drops: [700]),
+            DropReport.Biome(name: "Floral Escape", tier: "Veteran", regular: [realmMob(0x0901)], heroes: [], encounters: [realmMob(0x0902)],
+                             guardians: [realmMob(0x090a)], dungeons: ["New Den"], drops: [700]),
+        ], "the Realm by tier, then biome, in RealmEye's sections; a mob in each of its biomes; the dungeons and named drops of its mobs")
+        check(cataloged.categories == [DropReport.Category(name: "Realm Dungeons", dungeons: ["New Den"])],
+              "RealmEye's dungeon categories, with only the dungeons the report lists")
+        let browsing = DropRatesModel()
+        browsing.pick(biome: cataloged.biomes[1])
+        check(browsing.dungeon == DropReport.realm && browsing.biome == "Floral Escape" && browsing.realmTier == "Veteran" && browsing.browse == .dungeons,
+              "a biome opens the Realm with its page and its tier's tab")
+        browsing.pick(mob: realmMob(0x0901)); browsing.back()
+        check(browsing.mob == nil && browsing.biome == "Floral Escape", "esc from a mob on a biome page goes back to the biome")
+        browsing.back()
+        check(browsing.biome == nil && browsing.dungeon == DropReport.realm, "esc from a biome goes back to the Realm")
+        browsing.pick(biome: cataloged.biomes[0]); browsing.select(dungeon: "New Den")
+        check(browsing.biome == nil && browsing.realmTier == "Rookie", "picking a dungeon closes the biome; the tier tab stays")
+        check(cataloged.mobs(matching: " MALPHAS ") == [realmMob(0x090a), realmMob(0x0901)] && cataloged.mobs(matching: "brute") == [realmMob(0x0902)]
+              && cataloged.mobs(matching: "  ").isEmpty && cataloged.mobs(matching: "nobody").isEmpty,
+              "the search finds mobs by any part of their name, case and spaces aside, with their dungeon, by name")
+        let found = DropRatesModel()
+        found.dungeon = "The Void"; found.item = 800; found.show(mob: realmMob(0x0901)); found.show(mob: realmMob(0x0901))
+        check(found.dungeon == DropReport.realm && found.mob == realmMob(0x0901) && found.item == nil,
+              "a found mob opens its dungeon and its page, and stays open when picked again")
         // Sprites up front: the first report holds every catalog mob and drop with a sprite, so the tab cuts them in one batch.
         var drawn: Set<Int> = []
         rates.run("""
@@ -395,6 +465,13 @@ enum DropRateTests {
               "a kill in a map the catalog lacks")
         let guild = DropReport.load(rates).uncataloged
         check(guild.dungeons == ["Guild Hall"] && guild.mobs == cataloged.uncataloged.mobs, "a map with kills the catalog lacks; a cataloged mob isn't listed")
+        check(rates.exec("INSERT INTO maps(id, session, generation, name) VALUES (91, 1, 91, 'Realm of the Mad God'); INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by) VALUES (91, 60, 2308, 10, 0, 0, 'hit')"),
+              "a Realm kill of a mob on no biome page")
+        check(DropReport.load(rates).biomes.last == DropReport.Biome(name: "Other", tier: "", regular: [realmMob(0x0904)], heroes: [], encounters: [], guardians: [], kills: 1),
+              "a Realm mob on no biome page is listed last, under Other")
+        check(rates.exec("UPDATE objects SET name = 'Malphas Flamer', display_name = NULL WHERE type = 2306"), "two types, one name")
+        check(DropReport.load(rates).biomes.first { $0.name == "Floral Escape" }.map { $0.regular.isEmpty && $0.encounters == [realmMob(0x0902)] } == true,
+              "one chip per name in a biome: the first in the Realm's order (the boss)")
         try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
         check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
               DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")
