@@ -262,7 +262,7 @@ subtract its expected drain until the next update from the projection.
 | Effect | Rate | Can kill | Detection |
 |---|---|---|---|
 | Bleeding | 20 HP/s, and stops regeneration from VIT; captures show about 3 HP per update | No | Condition word 0 bit `0x8000` (captured) |
-| Frostbite (Blizzard, Ice Citadel) | "Rapid" once the meter is full; clean updates lose 10–15 HP (60–70 HP/s); one capture also has five 33–34 HP updates with no report | Assume yes | Frostbite meter at player `+0x530` reaches its maximum |
+| Frostbite (Blizzard, Ice Citadel) | Once the meter is full: 16–20 HP per 200 ms update (about 90 HP/s), 13–15 with a heal-over-time status (condition bit `0x20000`), the same at 790 and 840 max HP; two drains can land in one update (33–39 HP); worst clean update 39 HP | Assume yes | Frostbite meter at player `+0x530` reaches its maximum |
 | Suffocation (Ocean Trench) | 17–20 HP per 200 ms update (about 90 HP/s at 930 max HP), starting 0.2–0.6 s after breath reaches 0; two drains can land in one update (36–40 HP); worst clean update 48 HP | Yes | Breath meter at player `+0x52c` reaches 0 |
 
 Use the published rate where it is stated (bleeding: 4 HP per 200 ms update) and the measured worst
@@ -272,8 +272,9 @@ a status effect on players and needs no handling.
 **Shipped ([#27](https://github.com/ehongkuo/exalt-client-mac/issues/27)).** Production reads condition
 word 0, the breath meter and the frostbite meter before every hit decision; the probe build already
 read them. `fatal_drain` in `probe/fatal_policy_v10.h` sets the drain to the active rates times the
-measured update interval, rounded up: bleeding (`0x8000`) 20 HP/s, frostbite at 100 or more 170 HP/s
-(34 per update), breath at 0 100 HP/s. At 200 ms that is 4, 34 and 20 HP. Each leans high: an
+measured update interval, rounded up: bleeding (`0x8000`) 20 HP/s, frostbite at 100 or more 195 HP/s
+(39 per update), breath at 0 240 HP/s (48 per update). At 200 ms that is 4, 39 and 48 HP: the worst
+clean update captured for each (22 November). Each leans high: an
 underestimate can miss an escape, an overestimate only escapes early within the excess. The projection subtracts it
 on every hit and update. A missing field drops only its drain, logged in `damage_context_ready`.
 Drain alone, with no hit pending, does not escape: the escape still happens only on a hit. 
@@ -288,11 +289,15 @@ existing captures (12 November):
 | `guard-42155` (F01) | Frostbite | 47 | 10 / 12 / 13 | 60 |
 | `guard-88966` (D06) | Frostbite | 28 | 13 / 14 / 34 | 70 |
 | `SYNC-20261105T154122Z` | Bleeding | 4 | 3 / 3 / 3 | 15 |
+| Ocean Trench, normal play (21 November) | Suffocation | 119 | 7 / 18 / 48 | 89 |
+| Ice Citadel, normal play (22 November) | Frostbite | 176 | 1 / 16 / 39 | 80 |
+| Ice Citadel, normal play (22 November) | Bleeding | 24 | 2 / 3 / 4 | 15 |
 
 Limits: a heal without text (regeneration) in the same update hides part of a drain, which
-understates it; damage the client never reports overstates it. The five 33–34 HP updates are about
-14 HP of frostbite plus about 19 HP from an unknown source, so 34 covers them but may lean about
-19 HP high. Captures to settle the rates, with the observation build, away from enemies, healers,
+understates it; damage the client never reports overstates it. The 33–39 HP updates are two drains
+landing in one update, as with suffocation's 36–40. A client stall that delivers several updates at
+once lags the HP read (one 118 HP update followed a 1.1 s stall), so the report skips any update whose
+client arrival gap differs from its server gap by more than 100 ms, and the update after it. Captures to settle the rates, with the observation build, away from enemies, healers,
 pets and warmth, noting each character's DEF and VIT: suffocation (3–5 s at breath 0), frostbite
 (about 10 s with a full meter), each on two characters with different DEF if possible, to see whether
 defense reduces the drain. Then set each rate to the highest clean rate, rounded up to a whole HP
@@ -307,8 +312,7 @@ text in this build, so heals in the same update go unexcluded: read the highest 
 median.
 
 Open:
-- Suffocation (captured 2026-11-21, one character): breath 0 means no oxygen; whether the rate scales with max HP is not known.
-- Where the 33–34 HP frostbite updates come from.
+- Settled (21–22 November): breath 0 means no oxygen; suffocation was captured on one character only, so whether it scales with max HP is not known (frostbite does not, between 790 and 840).
 - Whether drain alone should escape (suffocation can kill with no hit) is not decided.
 
 ### Damage modifiers (C)

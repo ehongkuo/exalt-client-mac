@@ -187,8 +187,8 @@ static void burst(void *unused) {
 #if FATAL_ENVIRONMENT==6 || FATAL_ENVIRONMENT==7
  /* Incoming nonlethal HP loss is not a local damage calculation. The next
   * covered hits still use that authoritative baseline and the shared latch. */
- next_stats_hp=186;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
- assert(assigned_hp==186 && !nexus_calls);
+ next_stats_hp=199;stats_fixture((void*)70,(void*)40,(void*)3,1,(void*)0x5678);
+ assert(assigned_hp==199 && !nexus_calls);
  for(int i=0;i<3;++i){
   assert(damage_fixture(DAMAGE_ARGUMENT,50.5f,(void*)0x5678)==50);
   incoming_fixture((void*)70,4000000000u,7,(void*)0x5678);

@@ -95,12 +95,12 @@ static inline int fatal_server_tick(FatalPolicy *p,uint64_t entry_ns,uint32_t ti
  if(p->have_hp)p->projected=(int64_t)p->last_hp-p->pending-p->drain;
  return cleared;
 }
-/* Phase 3 G rates in HP per second, leaning high: bleeding 4 per 200 ms update (RealmEye 20/s;
- * captures 3), frostbite 34 per update (worst Ice Citadel update; clean ones lose 10-15),
- * suffocation about 100/s (RealmEye, approximate until captured). */
+/* Phase 3 G rates in HP per second, the worst clean 200 ms update in captures, leaning high:
+ * bleeding 4 (RealmEye 20/s; captures 3), frostbite 39 and suffocation 48 (single drains lose
+ * 13-20; two can land in one update). */
 #define FATAL_BLEED_HP_S 20
-#define FATAL_FROSTBITE_HP_S 170
-#define FATAL_SUFFOCATION_HP_S 100
+#define FATAL_FROSTBITE_HP_S 195
+#define FATAL_SUFFOCATION_HP_S 240
 #define FATAL_BLEEDING 0x8000u  /* condition word 0 */
 #define FATAL_FROSTBITE_FULL 100
 /* Sets the drain expected over one update interval from the player's condition word 0 and the

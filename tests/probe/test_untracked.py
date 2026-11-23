@@ -114,6 +114,16 @@ class UntrackedTests(unittest.TestCase):
         self.assertEqual(result['effects']['bleeding']['loss_max'], 4)
         self.assertEqual([s['loss'] for s in result['unattributed']], [5])
 
+    def test_drain_skips_a_client_stall_burst(self):
+        def row(ms, tick, hp, build):
+            return (f'drain_sample\tms={ms}\ttick={tick}\tserver_time={build}\thp={hp}\tmax=840\t'
+                    f'conditions=0x0\tbreath=-1\tfrostbite=101\thit_age_ms=-1\n')
+        text = ''.join([row(1000, 1, 840, 1000), row(1200, 2, 822, 1200),       # Clean: 18.
+                        row(2300, 3, 822, 1400), row(2300, 4, 822, 1600),       # Stall: delivered together.
+                        row(2400, 5, 704, 1800), row(2600, 6, 686, 2000)])      # 118 right after: skipped; 18 clean.
+        sample = untracked.drain_samples(text)['effects']['frostbite']
+        self.assertEqual((sample['updates'], sample['loss_max']), (2, 18))
+
 
 if __name__ == '__main__':
     unittest.main()

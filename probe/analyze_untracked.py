@@ -217,7 +217,7 @@ def drain_samples(text, max_age_ms=1500):
     effect or its meter is present). Consecutive ticks only, the same effects at both ends, and no hit
     reported in the max_age_ms before. The normal guard records no heal text, so a heal in the same
     update hides part of the drain: use the highest clean rate, not the median."""
-    out, unattributed, regen_hp, regen_ms, previous = {}, [], 0, 0, None
+    out, unattributed, regen_hp, regen_ms, previous, burst = {}, [], 0, 0, None, False
     lines = [dict(field.split('=', 1) for field in line.split('\t')[1:])
              for line in text.splitlines() if line.startswith('drain_sample\t')]
     for row in lines:
@@ -227,7 +227,9 @@ def drain_samples(text, max_age_ms=1500):
         if not prev or s['tick'] != prev['tick'] + 1 or s['max'] != prev['max'] or s['effects'] != prev['effects']:
             continue
         gap = (s['server_time'] - prev['server_time']) & 0xffffffff
-        if not 0 < gap <= 1000 or 0 <= s['hit_age_ms'] <= max_age_ms:
+        # A client stall delivers several updates at once and the HP read lags: skip the burst and the update after.
+        was_burst, burst = burst, abs((s['ms'] - prev['ms']) - gap) > 100
+        if not 0 < gap <= 1000 or burst or was_burst or 0 <= s['hit_age_ms'] <= max_age_ms:
             continue
         change, active = s['hp'] - prev['hp'], s['effects']
         if change > 0 and not active and s['hp'] < s['max'] and change <= 10:
