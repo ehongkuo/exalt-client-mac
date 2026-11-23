@@ -74,9 +74,9 @@ enum ClickTiming {
             }
         }
     }
-    private static let pickNames = ["tab", "browse", "type", "dungeon", "mob", "group", "item", "bag", "tierGroup", "search", "details", "help"]
+    private static let pickNames = ["tab", "browse", "type", "dungeon", "mob", "group", "item", "bag", "tierGroup", "search", "details", "help", "biome", "tier"]
     private static func picks(_ m: DropRatesModel) -> [String] {
-        [m.tab, m.browse, m.itemType as Any, m.dungeon as Any, m.mob as Any, m.group as Any, m.item as Any, m.openBags, m.openGroups, m.search, m.lootDetails, m.rateHelp as Any]
+        [m.tab, m.browse, m.itemType as Any, m.dungeon as Any, m.mob as Any, m.group as Any, m.item as Any, m.openBags, m.openGroups, m.search, m.lootDetails, m.rateHelp as Any, m.biome as Any, m.realmTier]
             .map { String(describing: $0) }
     }
 }
@@ -106,7 +106,10 @@ struct DropRatesView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Welcome(live: model.live)
                         if let dungeon {
-                            Keyed([model.drawn, dungeon.name, model.mob, model.item, model.group, drops.bagSprites.count]) { dropsPane(dungeon) }
+                            Keyed([model.drawn, dungeon.name, model.mob, model.item, model.group, model.biome, drops.bagSprites.count]) {
+                                if dungeon.name == DropReport.realm, let b = report.biomes.first(where: { $0.name == model.biome }) { biomePane(b) }
+                                else { dropsPane(dungeon) }
+                            }
                                 .equatable()
                         }
                     }
@@ -191,7 +194,7 @@ extension DropRatesView {
     /// One search box over Items | Dungeons (issue #68).
     private var leftPanel: some View {
         VStack(spacing: 0) {
-            TextField("Search items or dungeons", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
+            TextField("Search items, dungeons or mobs", text: $model.search).textFieldStyle(.roundedBorder).padding([.horizontal, .top], 8)
             Picker("", selection: $model.browse) {
                 Text("Items").tag(DropRatesModel.Browse.items)
                 Text("Dungeons").tag(DropRatesModel.Browse.dungeons)
@@ -201,7 +204,7 @@ extension DropRatesView {
                 // The list redraws only when what it shows changes. Row order and "new" marks come from `stable`, which
                 // must see every pick, so it runs here, outside the key (issue #81).
                 let rows = dungeonRows
-                Keyed([model.drawn, dungeon?.name, model.search, model.item, rows.map(\.row.name), rows.map(\.grew)]) { dungeonList(rows) }
+                Keyed([model.drawn, dungeon?.name, model.search, model.item, model.biome, model.realmTier, rows.map(\.row.name), rows.map(\.grew)]) { dungeonList(rows) }
                     .equatable()
             }
         }
@@ -304,10 +307,11 @@ extension DropRatesView {
         let q = model.search.trimmingCharacters(in: .whitespaces)
         let index = index, picked = dungeon?.name
         let items = q.isEmpty ? [] : index.search(q)
+        let mobs = report.mobs(matching: q).prefix(30)   // the mob index is built once per report (issue #69)
         return VStack(spacing: 0) {
             // A lazy stack, not a List: a List re-measures every row it inserts, which made each keystroke and pick slow (issue #81).
             ScrollView { LazyVStack(alignment: .leading, spacing: 0) {
-                if !q.isEmpty && items.isEmpty && rows.isEmpty {
+                if !q.isEmpty && items.isEmpty && rows.isEmpty && mobs.isEmpty {
                     Text("Nothing matches “\(q)”.").foregroundStyle(.secondary).modifier(ListRowInsets())
                 }
                 if !items.isEmpty {
@@ -320,6 +324,22 @@ extension DropRatesView {
                         }
                     }
                 }
+                if !mobs.isEmpty {
+                    listSection("Mobs") {
+                        ForEach(mobs, id: \.self) { mob in
+                            let name = report.name(mob.type)
+                            listRow(model.mob == mob, { model.show(mob: mob) }) {
+                                SpriteIcon(image: model.sprites[mob.type], size: 24)
+                                Text(name).lineLimit(1)
+                                Spacer()
+                                Text(mob.dungeon).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .help("\(name) in \(mob.dungeon)")
+                            .accessibilityLabel("\(name), in \(mob.dungeon)")
+                        }
+                    }
+                }
+                if q.isEmpty && !report.categories.isEmpty { dungeonBrowser(picked: picked) } else {
                 listSection("Dungeons") {
                     ForEach(rows, id: \.row.name) { d, grew in
                         let n = index.kills(in: d.name)
@@ -337,8 +357,59 @@ extension DropRatesView {
                         .equatable()
                     }
                 }
+                }
                 if q.isEmpty { uncatalogedSection }
             }.padding(.vertical, 6) }
+        }
+    }
+
+    /// The Dungeons view with no search (issue #69): the Realm as tier tabs over its biomes, by name, then RealmEye's
+    /// dungeon categories as portal grids, then any other dungeon you played.
+    @ViewBuilder func dungeonBrowser(picked: String?) -> some View {
+        let byName = Dictionary(report.dungeons.map { ($0.name, $0) }) { a, _ in a }
+        if let realm = byName[DropReport.realm], !report.biomes.isEmpty {
+            listRow(picked == realm.name && model.biome == nil, { model.select(dungeon: realm.name) }) {
+                SpriteIcon(image: realm.portal.flatMap { model.sprites[$0] }, size: 24)
+                Text("The Realm").font(.headline)
+                Spacer()
+                let n = index.kills(in: realm.name)
+                if n > 0 { Text(n.formatted()).monospacedDigit().foregroundStyle(.secondary) }
+            }
+            .padding(.top, 4)
+            let tiers = DropReport.tiers.filter { t in report.biomes.contains { $0.tier == t } }
+            Picker("", selection: $model.realmTier) { ForEach(tiers, id: \.self) { Text($0).tag($0) } }
+                .pickerStyle(.segmented).labelsHidden().padding(.horizontal, 8).padding(.vertical, 4)
+            ForEach(report.biomes.filter { $0.tier == model.realmTier }, id: \.name) { b in
+                listRow(model.biome == b.name, { model.pick(biome: b) }) {
+                    SpriteIcon(image: b.icon.flatMap { model.sprites[$0.type] }, size: 24)
+                    Text(b.name).lineLimit(1)
+                    Spacer()
+                    if b.kills > 0 { Text(b.kills.formatted()).monospacedDigit().foregroundStyle(.secondary) }
+                }
+                .opacity(b.kills > 0 ? 1 : 0.5)
+                .accessibilityLabel("\(b.name), \(b.kills) kills")
+            }
+        }
+        ForEach(report.categories, id: \.name) { c in
+            listSection(c.name) { portalGrid(c.dungeons.compactMap { byName[$0] }, picked: picked).padding(.horizontal, 8).padding(.vertical, 6) }
+        }
+        let listed = Set(report.categories.flatMap(\.dungeons) + [DropReport.realm])
+        let more = index.dungeons.filter { !listed.contains($0.name) && index.kills(in: $0.name) > 0 }
+        if !more.isEmpty { listSection("More") { portalGrid(more, picked: picked).padding(.horizontal, 8).padding(.vertical, 6) } }
+    }
+    /// Dungeons as portal sprites; dimmed: no kills there yet. The name and kills show on hover.
+    private func portalGrid(_ dungeons: [DropReport.Dungeon], picked: String?) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 4) {
+            ForEach(dungeons, id: \.name) { d in
+                let n = index.kills(in: d.name), selected = picked == d.name && model.biome == nil
+                Button { model.select(dungeon: d.name) } label: {
+                    SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 28).opacity(n > 0 ? 1 : 0.35).padding(6).background(tileBackground(selected))
+                }
+                .buttonStyle(.plain).frame(width: 40, height: 40)
+                .help(n > 0 ? "\(d.name) · \(n.formatted()) kills" : d.name)
+                .accessibilityLabel("\(d.name), \(n) kills")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
         }
     }
 
@@ -410,6 +481,78 @@ extension DropRatesView {
         }
     }
 
+    /// A Realm biome's page (issue #69): the dungeons its mobs drop, its mobs in RealmEye's sections as sprites (names on
+    /// hover), then its drops of interest by bag.
+    func biomePane(_ b: DropReport.Biome) -> some View {
+        let byName = Dictionary(report.dungeons.map { ($0.name, $0) }) { a, _ in a }
+        let cols = [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)]
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Button { model.biome = nil; model.mob = nil } label: { Text("The Realm").font(.title3.weight(.semibold)) }.buttonStyle(.plain)
+                chevron
+                SpriteIcon(image: b.icon.flatMap { model.sprites[$0.type] }, size: 24)
+                Text(b.name).font(.title3.weight(.semibold))
+                Text(b.tier).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("esc steps back").font(.caption).foregroundStyle(.tertiary)
+            }
+            if !b.dungeons.isEmpty {
+                paneRow("DUNGEONS DROPPED") { portalGrid(b.dungeons.compactMap { byName[$0] }, picked: nil) }
+            }
+            ForEach([("REGULAR ENEMIES", b.regular), ("HEROES OF ORYX", b.heroes), ("ENCOUNTERS", b.encounters), ("BEACON GUARDIAN", b.guardians)], id: \.0) { title, mobs in
+                if !mobs.isEmpty {
+                    paneRow(title) {
+                        LazyVGrid(columns: cols, alignment: .leading, spacing: 4) {
+                            ForEach(mobs, id: \.self) { mob in
+                                let n = report.kills[mob] ?? 0, name = report.name(mob.type)
+                                Button { model.pick(mob: mob) } label: {
+                                    SpriteIcon(image: model.sprites[mob.type], size: 28).opacity(n > 0 ? 1 : 0.35).padding(6).background(tileBackground(model.mob == mob))
+                                }
+                                .buttonStyle(.plain).frame(width: 40, height: 40)
+                                .help("\(name) · \(n.formatted()) kills")
+                                .accessibilityLabel("\(name), \(n) kills")
+                            }
+                        }
+                    }
+                }
+            }
+            if !b.drops.isEmpty {
+                paneRow("DROPS OF INTEREST") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(DropBag.allCases.reversed().map(Optional.some) + [nil], id: \.self) { bag in
+                            let items = b.drops.filter { report.bags[$0] == bag }
+                            if !items.isEmpty {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Group {
+                                        if let bag { BagIcon(bag: bag, sprite: drops.bagSprites[bag], size: 28).help(bag.name).accessibilityLabel(bag.name) }
+                                        else { Image(systemName: "questionmark.square.dashed").font(.system(size: 22)).foregroundStyle(.secondary).help("No bag in the game data") }
+                                    }
+                                    .frame(width: 36, height: 36)
+                                    LazyVGrid(columns: cols, alignment: .leading, spacing: 6) {
+                                        ForEach(items, id: \.self) { item in
+                                            Button { model.group = nil; model.item = model.item == item ? nil : item } label: {
+                                                SpriteIcon(image: model.sprites[item], size: 32).padding(4).background(tileBackground(model.item == item))
+                                            }
+                                            .buttonStyle(.plain).frame(width: 40, height: 40)
+                                            .help(report.name(item)).accessibilityLabel(report.name(item))
+                                        }
+                                    }
+                                }
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private func paneRow<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            content()
+        }
+    }
+
     /// The game's collection icon for the dungeon's items (from its sheet), beside the dungeon's name.
     @ViewBuilder private func collectionIcon(_ d: DropReport.Dungeon) -> some View {
         if let icon = model.collectionIcons[d.name] {
@@ -441,13 +584,28 @@ extension DropRatesView {
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
-    /// The bosses and the minions killed here, each in their own row. Clicking one opens its page on the right;
-    /// clicking it again, the breadcrumb or Esc closes it.
-    private func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
-        let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
-        return VStack(alignment: .leading, spacing: 6) {
-            if !bosses.isEmpty { mobRow("BOSSES", bosses) }
-            if !minions.isEmpty { mobRow("MINIONS", minions) }
+    /// The bosses and the minions killed here, each in their own row; the Realm's by tier and biome, in RealmEye's sections
+    /// (issue #69). Clicking one opens its page on the right; clicking it again, the breadcrumb or Esc closes it.
+    @ViewBuilder func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
+        if mobs.first?.dungeon == DropReport.realm && !report.biomes.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(report.biomes.enumerated()), id: \.element.name) { i, biome in
+                    if biome.tier != (i > 0 ? report.biomes[i - 1].tier : nil), !biome.tier.isEmpty {
+                        Text("\(biome.tier) biomes").font(.title3.weight(.semibold)).padding(.top, i > 0 ? 12 : 0)
+                    }
+                    Text(biome.name).font(.headline).padding(.top, 4)
+                    if !biome.regular.isEmpty { mobRow("REGULAR ENEMIES", biome.regular) }
+                    if !biome.heroes.isEmpty { mobRow("HEROES OF ORYX", biome.heroes) }
+                    if !biome.encounters.isEmpty { mobRow("ENCOUNTERS", biome.encounters) }
+                    if !biome.guardians.isEmpty { mobRow("BEACON GUARDIAN", biome.guardians) }
+                }
+            }
+        } else {
+            let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
+            VStack(alignment: .leading, spacing: 6) {
+                if !bosses.isEmpty { mobRow("BOSSES", bosses) }
+                if !minions.isEmpty { mobRow("MINIONS", minions) }
+            }
         }
     }
     private func mobRow(_ title: String, _ mobs: [DropReport.Mob]) -> some View {
