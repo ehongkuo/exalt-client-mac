@@ -214,6 +214,13 @@ Phase 1 runs in Dry Run once item 1 shows no early clears (done), and is armed a
      send hook records both only for the connection's socket.
    - **Processing order:** the server handles a connection's messages in arrival order. Assumed.
    - **Lag:** a laggy capture checks the proof when round trips go well beyond 866 ms.
+   - **Traffic probe ([#28](https://github.com/ehongkuo/exalt-client-mac/issues/28)).**
+     `probe/traffic.py record OUT.pcap` records TCP port 2050 with tcpdump, started before the game;
+     `analyze OUT.pcap guard-N.tsv` decodes it (a Python port of RealmHound's RC4 keys, framing and
+     NewTick, Move and PlayerHit layouts) next to a sync capture. It fits which earlier reply the
+     round-trip field tracks, times hook to wire for replies and hit reports (sync phases 41 and 42),
+     and bounds upload delay by the server's TCP acknowledgement of each hit report. Not yet run on a
+     live capture. The pcap holds the login exchange: keep it outside the repository, never publish it.
 3. **Set c** from the same replays: the smallest value with no early clear, plus one update interval
    (200 ms from item 1's results).
 4. **Monitoring.** Run `probe/analyze_proof.py` on every new sync capture. Any early clear keeps
