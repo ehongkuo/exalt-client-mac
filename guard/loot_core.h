@@ -10,7 +10,7 @@
 #include <string.h>
 
 #define LOOT_FORMAT 5   /* 4: player_stat lines may carry text (stat 80); 5: portal lines (issue #64) */
-enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP, LOOT_PORTAL };
+enum { LOOT_KILL = 1, LOOT_BAG, LOOT_BAG_STAT, LOOT_MAP, LOOT_MAP_INFO, LOOT_PLAYER_STAT, LOOT_DROP, LOOT_PORTAL, LOOT_HIT };
 /* Who dealt a hit. The first three are you; "other" is anyone else, from a Damage message. A kill
  * is the server removing a mob someone hit, so every kill is "removed". */
 enum { LOOT_PROJECTILE, LOOT_PROJECTILE_ALT, LOOT_ABILITY, LOOT_YOURS, LOOT_OTHER = LOOT_YOURS, LOOT_UNKNOWN, LOOT_REMOVED };
@@ -151,6 +151,20 @@ static inline int loot_tick_end(LootTicks *t, LootSpot *bags, int32_t *killers) 
     return n;
 }
 
+/* The latest kills' facts, so a portal linked to one a tick later can carry them to the app (issue #74). Killers come
+ * from the last tick only, so the newest match is the one. */
+#define LOOT_RECENT 64
+typedef struct { int32_t id, type; float pos[2]; int32_t damage, since_hit_ms; } LootKillFacts;
+typedef struct { LootKillFacts kills[LOOT_RECENT]; uint32_t next; } LootRecent;
+static inline void loot_recent_add(LootRecent *r, LootKillFacts f) { r->kills[r->next++ % LOOT_RECENT] = f; }
+static inline const LootKillFacts *loot_recent_find(const LootRecent *r, int32_t id) {
+    for (uint32_t i = 0; i < LOOT_RECENT && i < r->next; ++i) {
+        const LootKillFacts *k = &r->kills[(r->next - 1 - i) % LOOT_RECENT];
+        if (k->id == id) return k;
+    }
+    return 0;
+}
+
 /* Loot bag object types, as in the app's DropBag (RealmHound's ids; 17xx are boosted bags). */
 static inline int loot_is_bag(uint16_t type) {
     switch (type) {
@@ -192,6 +206,8 @@ static inline void loot_gear_parts(char *text) {
 static inline int loot_format(const LootEvent *e, double epoch, char *out, size_t size) {
     const int32_t *v = e->v;
     switch (e->kind) {
+    case LOOT_HIT:   /* your projectile damage, for the app's traffic capture (issue #61); goes to the hits file */
+        return snprintf(out, size, "hit\t%.3f\t%d\t%u\t%d\n", epoch, e->id, e->source, v[0]);
     case LOOT_KILL:
         return snprintf(out, size, "kill\t%.3f\t%u\t%d\t%u\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%s\t%d\t%d\n",
                         epoch, e->map, e->id, e->type, e->pos[0], e->pos[1], e->pos[2], v[0], v[1], v[2], v[3],

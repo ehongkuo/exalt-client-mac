@@ -61,6 +61,8 @@ struct DropAlertSettings: Equatable {
     var shiny = true
     /// Item rules (issue #47) alert in any bag, alongside the filters above.
     var rules: [ItemRule] = []
+    /// Dungeons whose portal alerts when a mob drops it (issue #74), by name.
+    var portals: Set<String> = []
 }
 
 extension DropAlertSettings {
@@ -71,6 +73,7 @@ extension DropAlertSettings {
         if let v = defaults.object(forKey: "dropAlertRarity") as? Int, let r = DropRarity(rawValue: v) { minRarity = r }
         if let v = defaults.object(forKey: "dropAlertShiny") as? Bool { shiny = v }
         if let v = defaults.data(forKey: "dropAlertRules"), let r = try? JSONDecoder().decode([ItemRule].self, from: v) { rules = r }
+        if let v = defaults.stringArray(forKey: "dropAlertPortals") { portals = Set(v) }
     }
     func save(to defaults: UserDefaults) {
         defaults.set(enabled, forKey: "dropAlerts")
@@ -79,7 +82,18 @@ extension DropAlertSettings {
         defaults.set(minRarity.rawValue, forKey: "dropAlertRarity")
         defaults.set(shiny, forKey: "dropAlertShiny")
         defaults.set(try? JSONEncoder().encode(rules), forKey: "dropAlertRules")
+        defaults.set(portals.sorted(), forKey: "dropAlertPortals")
     }
+}
+
+extension DropAlertSettings {
+    /// "Alert me" on an item's page (issue #68): a confirmed rule for the item's name, with alerts turned on. A second
+    /// click adds nothing.
+    mutating func alert(on item: String) {
+        enabled = true
+        if !alerts(on: item) { rules.append(ItemRule(title: item, confirmed: true, names: [item])) }
+    }
+    func alerts(on item: String) -> Bool { rules.contains { $0.confirmed && $0.names == [item] } }
 }
 
 /// An item rule (issue #47): every part that is set must match. Blank text, nil and Common mean any part;
@@ -191,9 +205,15 @@ extension ItemRule {
 
 /// What item rules look up: each item's type and tier from the item catalog (issue #40), and enchantment names.
 struct RuleCatalog: Equatable {
-    struct Item: Equatable { var slot: Int?, tier: Int? }
+    struct Item: Equatable {
+        var slot: Int?, tier: Int?
+        /// The bag this item makes a drop (its <BagType>), nil when the catalog has none.
+        var bag: DropBag? = nil
+    }
     var items: [Int: Item] = [:]
     var enchants: [Int: String] = [:]
+    /// Item names by type, for the guard's bags (issue #75).
+    var itemNames: [Int: String] = [:]
     /// Item names to suggest while typing a rule, sorted.
     var names: [String] = []
 
@@ -216,15 +236,14 @@ struct RuleCatalog: Equatable {
     /// Reads the catalog's items and RealmHound's enchantments.xml (call it off the main thread).
     static func load(_ store: DropRateStore, xml: URL) -> RuleCatalog {
         var catalog = RuleCatalog()
-        store.run("SELECT type, slot_type, tier FROM items WHERE slot_type IS NOT NULL") { s in
-            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(
-                slot: Int(sqlite3_column_int64(s, 1)),
-                tier: sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, 2)))
+        store.run("SELECT type, slot_type, tier, bag_type FROM items WHERE slot_type IS NOT NULL OR bag_type IS NOT NULL") { s in
+            func int(_ i: Int32) -> Int? { sqlite3_column_type(s, i) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(s, i)) }
+            catalog.items[Int(sqlite3_column_int64(s, 0))] = Item(slot: int(1), tier: int(2), bag: int(3).flatMap(DropBag.init(bagType:)))
         }
-        store.run("SELECT DISTINCT coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
-            if let t = sqlite3_column_text(s, 0) { catalog.names.append(String(cString: t)) }
+        store.run("SELECT type, coalesce(display_name, name) FROM items WHERE slot_type IS NOT NULL") { s in
+            if let t = sqlite3_column_text(s, 1) { catalog.itemNames[Int(sqlite3_column_int64(s, 0))] = String(cString: t) }
         }
-        catalog.names.sort()
+        catalog.names = Set(catalog.itemNames.values).sorted()
         if let data = try? Data(contentsOf: xml.appendingPathComponent("enchantments.xml")) {
             catalog.enchants = enchantNames(inXML: String(decoding: data, as: UTF8.self))
         }
@@ -275,9 +294,15 @@ struct DropAlert: Equatable {
     var dungeon: String
     /// The title of the item rule that matched, if any.
     var rule = ""
+    /// A dungeon portal a mob dropped (issue #74): `item` names it, `dungeon` picks its sprite.
+    var portal = false
+
+    /// The popup's headline: the rule's title, or the item's name when no titled rule matched.
+    var title: String { rule.isEmpty ? item : rule }
 
     var detail: String {
-        var parts = [bag?.name ?? "Bag"]
+        var parts = rule.isEmpty ? [] : [item]
+        parts.append(portal ? "Portal" : bag?.name ?? "Bag")
         if rarity != .common { parts.append(rarity.name) }
         if !mob.isEmpty { parts.append(mob) }
         return parts.joined(separator: " · ")
@@ -287,26 +312,116 @@ struct DropAlert: Equatable {
 enum DropRules {
     /// Drops older than this are not announced (an import or a catch-up after a pause, not a live drop).
     static let freshness: Int64 = 120_000
-    /// How long the popup stays up.
-    static let shown = 10.0
+    /// How long each popup stays up.
+    static let shown = 5.0
 
-    /// An item alerts when its bag is chosen and it is at least the chosen rarity, when it is shiny and
-    /// shiny alerts are on, or when an item rule matches it (in any bag). The popup names the best matching
-    /// item, a rule's item first.
-    static func alert(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
-                      nowMs: Int64) -> DropAlert? {
-        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return nil }
+    /// An item alerts when it is what made its bag a chosen colour (its own bag type is the drop's) and it is
+    /// at least the chosen rarity, when it is shiny and
+    /// shiny alerts are on, or when an item rule matches it (in any bag). Every matching item gets its
+    /// own alert, in bag order, each with its own rarity and bag.
+    static func alerts(for drop: LootDrop, settings: DropAlertSettings, shiny: Set<Int>, catalog: RuleCatalog = RuleCatalog(),
+                       nowMs: Int64) -> [DropAlert] {
+        guard settings.enabled, nowMs - drop.epochMs <= freshness else { return [] }
         let bag = DropBag(id: drop.bag)
         let bagChosen = bag.map(settings.bags.contains) ?? false
-        let matches = drop.items.compactMap { item -> (ruled: Bool, alert: DropAlert)? in
+        return drop.items.compactMap { item in
+            // Lesser items ride along in the bag; an item missing from the catalog still alerts, as before #76.
+            let ownBag = catalog.items[item.id]?.bag
+            let bagChosen = bagChosen && (ownBag == nil || ownBag == bag)
             let rarity = DropRarity(enchants: item.enchants), isShiny = shiny.contains(item.id)
             let rule = settings.rules.first { $0.matches(item, catalog: catalog) }
             guard rule != nil || (bagChosen && rarity.rawValue >= settings.minRarity.rawValue) || (settings.shiny && isShiny) else { return nil }
-            return (rule != nil, DropAlert(item: item.name, bag: bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
-                                           rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? ""))
+            // The popup shows the item's own bag: a blue potion riding in a white bag shows blue.
+            return DropAlert(item: item.name, bag: ownBag ?? bag, rarity: rarity, shiny: isShiny, mob: drop.mob, dungeon: drop.dungeon,
+                             rule: rule?.title.trimmingCharacters(in: .whitespaces) ?? "")
         }
-        func rank(_ m: (ruled: Bool, alert: DropAlert)) -> (Int, Int, Int) { (m.ruled ? 1 : 0, m.alert.shiny ? 1 : 0, m.alert.rarity.rawValue) }
-        return matches.max { rank($0) < rank($1) }?.alert
+    }
+
+    /// A portal the guard linked to a kill alerts when the kill died on the portal's spot (the rule the drop rates count
+    /// portals by: `DropReport.died` for a kill the server removed, and `portalSpot`) and its dungeon is chosen (issue #74).
+    static func alert(for portal: LivePortal, names: PortalNames, settings: DropAlertSettings, nowMs: Int64) -> DropAlert? {
+        let dx = Double(portal.pos.0 - portal.mob_pos.0), dy = Double(portal.pos.1 - portal.mob_pos.1)
+        guard settings.enabled, portal.damage > 0, portal.since_hit_ms <= 1000, dx * dx + dy * dy <= DropReport.portalSpot,
+              let dungeon = names.dungeons[Int(portal.type)], settings.portals.contains(dungeon),
+              nowMs - Int64(portal.epoch * 1000) <= freshness else { return nil }
+        return DropAlert(item: "\(dungeon) portal", bag: nil, rarity: .common, shiny: false, mob: names.mobs[Int(portal.mob)] ?? "",
+                         dungeon: dungeon, portal: true)
+    }
+}
+
+/// The drop popups on screen, oldest on top, and those waiting for room. A popup's time starts when it
+/// shows, so a burst past the limit waits instead of being missed.
+struct DropStack: Equatable {
+    struct Entry: Equatable {
+        var id: Int
+        var alert: DropAlert
+        /// When it showed (seconds, any clock); nil while it waits for room.
+        var shownAt: Double?
+    }
+    /// How many popups show at once: five 64 pt cards fit under the Join popup on a laptop screen.
+    static let limit = 5
+    private(set) var entries: [Entry] = []
+    private var nextId = 0
+
+    /// The popups on screen, top to bottom.
+    var visible: [Entry] { entries.filter { $0.shownAt != nil } }
+
+    mutating func push(_ alerts: [DropAlert], now: Double) {
+        for alert in alerts { entries.append(Entry(id: nextId, alert: alert)); nextId += 1 }
+        fill(now: now)
+    }
+    /// Closes popups whose time is up and shows waiting ones in their place.
+    mutating func expire(now: Double, after shown: Double = DropRules.shown) {
+        entries.removeAll { $0.shownAt.map { now - $0 >= shown } ?? false }
+        fill(now: now)
+    }
+    /// A click closes one popup; an id already gone (a popup still fading out) does nothing.
+    mutating func dismiss(_ id: Int, now: Double) {
+        entries.removeAll { $0.id == id }
+        fill(now: now)
+    }
+    private mutating func fill(now: Double) {
+        for i in entries.indices.prefix(Self.limit) where entries[i].shownAt == nil { entries[i].shownAt = now }
+    }
+
+}
+
+/// Portals straight from the guard (issue #74): the live file keeps the latest `LIVE_PORTALS` it linked to a kill.
+enum GuardPortals {
+    /// The portals after `seen`, oldest first; the first look at a guard session only sets the starting point.
+    static func new(_ data: LivePortalsData, pid: Int32, seen: inout GuardBags.Seen?) -> [LivePortal] {
+        defer { seen = GuardBags.Seen(pid: pid, count: data.count) }
+        guard let last = seen, last.pid == pid, data.count > last.count else { return [] }
+        let first = max(last.count, data.count > UInt32(LIVE_PORTALS) ? data.count - UInt32(LIVE_PORTALS) : 0)
+        return withUnsafeBytes(of: data.portals) { raw in
+            let portals = raw.bindMemory(to: LivePortal.self)
+            return (first..<data.count).map { portals[Int($0 % UInt32(LIVE_PORTALS))] }
+        }
+    }
+}
+
+/// What portal alerts need from the game catalog (issue #74), loaded off the main thread with the drop-rate catalog.
+struct PortalNames: Equatable {
+    /// Dungeons with a portal, by name, and each one's portal texture, for the settings list.
+    var list: [String] = []
+    var textures: [String: GameTexture] = [:]
+    /// Portal type → dungeon. shortcut: only each dungeon's lowest portal type (`dungeons.portal`); every mob-dropped
+    /// portal in the drop database so far is one, add the other types if a variant shows up.
+    var dungeons: [Int: String] = [:]
+    var mobs: [Int: String] = [:]
+
+    static func load(_ store: DropRateStore) -> PortalNames {
+        var n = PortalNames()
+        func text(_ s: OpaquePointer, _ i: Int32) -> String { String(cString: sqlite3_column_text(s, i)) }
+        store.run("SELECT name, portal, texture_file, texture_index FROM dungeons WHERE portal IS NOT NULL ORDER BY name") {
+            let name = text($0, 0)
+            n.list.append(name); n.dungeons[Int(sqlite3_column_int64($0, 1))] = name
+            if sqlite3_column_type($0, 2) != SQLITE_NULL { n.textures[name] = GameTexture(file: text($0, 2), index: Int(sqlite3_column_int64($0, 3))) }
+        }
+        store.run("SELECT type, coalesce(display_name, name) FROM objects WHERE class = 'Character'") {
+            if sqlite3_column_type($0, 1) != SQLITE_NULL { n.mobs[Int(sqlite3_column_int64($0, 0))] = text($0, 1) }
+        }
+        return n
     }
 }
 
@@ -515,68 +630,61 @@ enum RealmHoundPaths {
     static var xml: URL { assets.appendingPathComponent("xml") }
 }
 
-/// Polls the loot logs for drops newer than the last one seen. A log seen for the first time only
-/// sets the starting point, so old drops are never replayed.
-final class LootLog {
-    let accounts: URL
-    private var last: [String: Int64] = [:]
-    private(set) var logs = 0
-    init(accounts: URL) { self.accounts = accounts }
+/// Bags straight from the guard's hook (issue #75): the live file keeps the latest `LIVE_BAGS`, with a running count.
+enum GuardBags {
+    struct Bag: Equatable { var ns: UInt64, epoch: Double, id: Int32, type: Int, items: [Int], enchants: String }
+    struct Seen: Equatable { var pid: Int32, count: UInt32 }
 
-    func poll() -> [LootDrop] {
-        let folders = (try? FileManager.default.contentsOfDirectory(at: accounts, includingPropertiesForKeys: nil)) ?? []
-        let paths = folders.map { $0.appendingPathComponent("databases/loot_history.db").path }
-            .filter { FileManager.default.fileExists(atPath: $0) }
-        logs = paths.count
-        var found: [LootDrop] = []
-        for path in paths {
-            // Opened per poll and read-only: RealmHound writes in WAL mode, so reading never blocks it,
-            // and a log it recreates is picked up.
-            var db: OpaquePointer?
-            defer { sqlite3_close(db) }
-            guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { continue }
-            sqlite3_busy_timeout(db, 200)
-            guard let top = Self.maxID(db) else { continue }
-            guard let seen = last[path], top >= seen else { last[path] = top; continue }  // first sight, or a reset log
-            guard top > seen else { continue }
-            found += Self.drops(db, after: seen, through: top)
-            last[path] = top
+    /// The bags after `seen`, oldest first. The first look at a guard session only sets the starting point, so
+    /// nothing is replayed.
+    static func new(_ data: LiveBagsData, pid: Int32, seen: inout Seen?) -> [Bag] {
+        defer { seen = Seen(pid: pid, count: data.count) }
+        guard let last = seen, last.pid == pid, data.count > last.count else { return [] }
+        let first = max(last.count, data.count > UInt32(LIVE_BAGS) ? data.count - UInt32(LIVE_BAGS) : 0)
+        return withUnsafeBytes(of: data.bags) { raw in
+            let bags = raw.bindMemory(to: LiveBag.self)
+            return (first..<data.count).map { bag(bags[Int($0 % UInt32(LIVE_BAGS))]) }
         }
-        return found
     }
-
-    private static func maxID(_ db: OpaquePointer?) -> Int64? {
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT coalesce(max(id), 0) FROM loot_drops", -1, &statement, nil) == SQLITE_OK,
-              sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        return sqlite3_column_int64(statement, 0)
+    static func bag(_ b: LiveBag) -> Bag {
+        var b = b
+        let items = withUnsafeBytes(of: &b.items) { Array($0.bindMemory(to: Int32.self)).map(Int.init) }
+        let enchants = withUnsafeBytes(of: &b.enchants) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return Bag(ns: b.ns, epoch: b.epoch, id: b.id, type: Int(b.type), items: items, enchants: enchants)
     }
-
-    private static func drops(_ db: OpaquePointer?, after: Int64, through: Int64) -> [LootDrop] {
-        let sql = """
-            SELECT d.id, d.timestamp, d.dungeon, d.mob_name, d.bag_type, i.item_id, i.item_name, i.enchant_count, i.enchant_ids
-            FROM loot_drops d LEFT JOIN loot_items i ON i.drop_id = d.id
-            WHERE d.id > ? AND d.id <= ? ORDER BY d.id, i.slot
-            """
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_int64(statement, 1, after); sqlite3_bind_int64(statement, 2, through)
-        func text(_ column: Int32) -> String { sqlite3_column_text(statement, column).map { String(cString: $0) } ?? "" }
-        var drops: [LootDrop] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let id = sqlite3_column_int64(statement, 0)
-            if drops.last?.id != id {
-                drops.append(LootDrop(id: id, epochMs: sqlite3_column_int64(statement, 1), dungeon: text(2), mob: text(3),
-                                      bag: Int(sqlite3_column_int(statement, 4)), items: []))
-            }
-            if sqlite3_column_type(statement, 5) != SQLITE_NULL {
-                drops[drops.count - 1].items.append(LootItem(id: Int(sqlite3_column_int(statement, 5)), name: text(6),
-                                                             enchants: Int(sqlite3_column_int(statement, 7)),
-                                                             enchantIds: text(8).split(separator: ",").compactMap { Int($0) }))
-            }
+    /// What the alert rules see. The mob is not known yet: the guard links a bag to its kill a tick later.
+    static func drop(_ bag: Bag, catalog: RuleCatalog, dungeon: String) -> LootDrop {
+        let enchants = Enchantments.ids(bag.enchants)
+        let items = bag.items.enumerated().filter { $0.element >= 0 }.map { slot, id -> LootItem in
+            let ids = slot < enchants.count ? enchants[slot] ?? [] : []
+            return LootItem(id: id, name: catalog.itemNames[id] ?? "Item \(id)", enchants: ids.count, enchantIds: ids)
         }
-        return drops
+        return LootDrop(id: Int64(bag.id), epochMs: Int64(bag.epoch * 1000), dungeon: dungeon, mob: "", bag: bag.type, items: items)
+    }
+}
+
+/// One line per bag the guard handed over, so a slow popup shows where the time went (issue #75). Times are ms after
+/// the guard saw the bag: when the app woke (empty when the 0.1 s timer found it), when the main thread took it,
+/// when the popup was set and when its panel was up. The timer's latest gap shows whether ticks are being held back.
+/// `popup` names the item a bag alerted for.
+enum DropDelayLog {
+    static let header = "drop_epoch_ms\twake_ms\tmain_ms\tshown_ms\tpanel_ms\ttick_gap_ms\tpopup\tbag\n"
+    static func file(logs: URL, pid: Int32 = getpid()) -> URL { logs.appendingPathComponent("drops-\(pid).tsv") }
+    static func lines(_ bags: [GuardBags.Bag], wakeNs: UInt64?, mainNs: UInt64, shownNs: UInt64, panelNs: UInt64,
+                      tickGapMs: Double, popups: [String]) -> String {
+        func ms(_ ns: UInt64, _ bag: GuardBags.Bag) -> String { String(format: "%.1f", Double(Int64(bitPattern: ns &- bag.ns)) / 1e6) }
+        return bags.indices.map { i in
+            let bag = bags[i]
+            return [String(Int64(bag.epoch * 1000)), wakeNs.map { ms($0, bag) } ?? "", ms(mainNs, bag), ms(shownNs, bag), ms(panelNs, bag),
+                    String(format: "%.0f", tickGapMs), i < popups.count ? popups[i] : "", String(bag.type)].joined(separator: "\t") + "\n"
+        }.joined()
+    }
+    static func append(_ text: String, to file: URL) {
+        if !FileManager.default.fileExists(atPath: file.path) {
+            FileManager.default.createFile(atPath: file.path, contents: Data(header.utf8), attributes: [.posixPermissions: 0o600])
+        }
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd(); try? handle.write(contentsOf: Data(text.utf8))
     }
 }

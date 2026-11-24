@@ -63,6 +63,16 @@ static void test_ticks(void) {
     assert(t.overflow == 1);
 }
 
+static void test_recent(void) {
+    static LootRecent r;
+    assert(!loot_recent_find(&r, 5));
+    loot_recent_add(&r, (LootKillFacts){5, 3340, {1, 2}, 900, 10});
+    loot_recent_add(&r, (LootKillFacts){5, 3341, {3, 4}, 50, 20});   /* the same id again: the newest wins */
+    assert(loot_recent_find(&r, 5)->type == 3341 && loot_recent_find(&r, 5)->damage == 50);
+    for (int i = 0; i < LOOT_RECENT; ++i) loot_recent_add(&r, (LootKillFacts){100 + i, 1, {0, 0}, 1, 0});
+    assert(!loot_recent_find(&r, 5) && loot_recent_find(&r, 100 + LOOT_RECENT - 1));   /* overwritten */
+}
+
 static void test_source(void) {
     enum { HIT = 0x100, ALT = 0x200, MESSAGE = 0x300 };
     assert(loot_source(HIT, HIT, ALT, MESSAGE, 0, 5) == LOOT_PROJECTILE);
@@ -95,6 +105,9 @@ static void test_format(void) {
     LootEvent drop = {.id = 1002, .map = 3, .kind = LOOT_DROP, .v = {1001}};
     loot_format(&drop, 1763300000.5, line, sizeof line);
     assert(!strcmp(line, "drop\t1763300000.500\t3\t1002\t1001\n"));
+    LootEvent hit = {.id = 1001, .map = 3, .kind = LOOT_HIT, .source = LOOT_PROJECTILE_ALT, .v = {85}};
+    loot_format(&hit, 1763300000.5, line, sizeof line);
+    assert(!strcmp(line, "hit\t1763300000.500\t1001\t1\t85\n"));
     LootEvent bag = {.id = 1002, .map = 3, .type = 1295, .kind = LOOT_BAG, .pos = {12.5f, 30.25f},
                      .v = {2856, 2856, -1, -1, -1, -1, -1, -1}};
     loot_format(&bag, 1763300000.5, line, sizeof line);
@@ -148,6 +161,7 @@ int main(void) {
     test_hits();
     test_seen();
     test_ticks();
+    test_recent();
     test_source();
     test_types();
     test_format();

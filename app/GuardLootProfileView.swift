@@ -10,12 +10,14 @@ private let boostBlue = Color(red: 0.35, green: 0.64, blue: 1)
 
 struct LootProfileView: View {
     @ObservedObject var model: DropRatesModel
+    @ObservedObject private var live: DropLive   // model.now lives here (issue #81)
     var bar = false
+    init(model: DropRatesModel, bar: Bool = false) { self.model = model; _live = ObservedObject(wrappedValue: model.live); self.bar = bar }
 
     var body: some View {
         // Each second, so the potion timers count down.
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = model.now, s = now?.state(at: context.date.timeIntervalSince1970)
+            let now = live.now, s = now?.state(at: context.date.timeIntervalSince1970)
             if bar {
                 lootBar(now, s)
             } else {
@@ -51,12 +53,7 @@ struct LootProfileView: View {
                 totals(s, big: 22, small: 15)
                 barDivider
                 HStack(spacing: 6) {
-                    slot(LootNow.potionSprite, size: 34, sprite: 24, border: s.potion > 0 ? boostBlue : nil).opacity(s.potion > 0 ? 1 : 0.5)
-                    VStack(alignment: .leading, spacing: 0) {
-                        (Text("Potion ") + Text(s.potion > 0 ? "×" + LootMath.times(LootMath.potion) : "off").foregroundColor(s.potion > 0 ? lootGold : .secondary))
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(s.potion > 0 ? LootMath.clock(s.potion) + " left" : "not running").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
-                    }
+                    small(LootNow.potionSprite, on: s.potion > 0, "Loot Drop Potion" + (s.potion > 0 ? ": ×\(LootMath.times(LootMath.potion)), \(LootMath.clock(s.potion)) left" : ": off"))
                     small(LootNow.tierSprite, on: s.tier > 0, "Loot Tier Potion" + (s.tier > 0 ? ": \(LootMath.clock(s.tier)) left" : ": off"))
                     small(LootNow.crucibleSprite, on: s.crucible == true, "Crucible: " + (s.crucible == nil ? "unknown until your first portal" : s.crucible! ? "on, ×" + LootMath.times(LootMath.crucible) : "off"))
                     small(LootNow.ritualSprite, on: s.ritual > 0, "Blood Ritual: " + (s.ritual > 0 ? "−\(s.ritual * 5)% HP, ×" + LootMath.times(LootMath.ritual(s.ritual)) : "off"))

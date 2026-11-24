@@ -147,6 +147,13 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_mobs(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_tiers(mob INTEGER NOT NULL, family TEXT NOT NULL, tier INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS catalog_drops(mob INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- The Realm's biomes (issue #69), from RealmEye's biome pages: tier (Rookie, Adept, Veteran, Seasonal), rank in
+        -- RealmEye's order, and kind, the page's section (encounter, hero, guardian, regular). A mob on several biome
+        -- pages has a row in each.
+        CREATE TABLE IF NOT EXISTS catalog_biomes(biome TEXT NOT NULL, tier TEXT NOT NULL, rank INTEGER NOT NULL, mob INTEGER NOT NULL, kind TEXT NOT NULL);
+        -- RealmEye's dungeon categories in its order (issue #69), and the mobs it lists as dropping each dungeon's portal.
+        CREATE TABLE IF NOT EXISTS catalog_categories(category TEXT NOT NULL, rank INTEGER NOT NULL, dungeon TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS catalog_portal_drops(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
         CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
@@ -234,6 +241,12 @@ final class DropRateStore {
     }
     var lastID: Int64 { sqlite3_last_insert_rowid(db) }
     /// Every portal object type in the game catalog (Portal, ArenaPortal, ...), for the guard to record (issue #64).
+    /// Player classes, so the traffic capture never counts a player leaving as a kill (issue #61).
+    func playerTypes() -> [Int] {
+        var types: [Int] = []
+        run("SELECT type FROM objects WHERE class = 'Player'") { types.append(Int(sqlite3_column_int64($0, 0))) }
+        return types
+    }
     func portalTypes() -> [Int] {
         var types: [Int] = []
         run("SELECT type FROM objects WHERE class LIKE '%Portal' ORDER BY type") { types.append(Int(sqlite3_column_int64($0, 0))) }
@@ -463,14 +476,55 @@ struct DropRate: Equatable {
         return (x == 0 ? 0 : mean(x - 1, 0.975), mean(x, 0.025))
     }
 
+    /// "likely 3.6% to 6.5%": the 95% range; "likely under 1.2%" with none yet. Shown at any count, not capped at 100%:
+    /// the caption's counts say how much data it rests on (issue #67).
+    var likely: String {
+        count == 0 ? "likely under \(Self.percent(range.upperBound))" : "likely \(Self.percent(range.lowerBound)) to \(Self.percent(range.upperBound))"
+    }
+    /// What the counts are: every copy reads "dropped 4 times in 300 kills"; a share of kills or runs reads
+    /// "dropped in 50 of 1,020 runs" (`verb` for portals and shinies).
+    func caption(_ unit: String, copies: Bool = false, verb: String = "dropped") -> String {
+        let n = count.formatted(), of = self.of.formatted()
+        if !copies { return "\(verb) in \(count == 0 ? "none" : n) of \(of) \(unit)" }
+        return count == 0 ? "not \(verb) in \(of) \(unit)" : "\(verb) \(count == 1 ? "once" : "\(n) times") in \(of) \(unit)"
+    }
     /// "1 in 41"; "none yet" for 0 and "every time" from 1 up.
-    /// "±44%": the 95% range's half-width; nil under 4 drops (too few to say).
-    var plusMinus: String? { precision.map { "±\(Int(($0 * 100).rounded()))%" } }
     /// "45%", "0.33%": drops per kill or run as a percentage, two significant digits.
     var percent: String { Self.percent(rate) }
     static func percent(_ rate: Double) -> String { (rate * 100).formatted(.number.precision(.significantDigits(1...2))) + "%" }
     static func oneIn(_ rate: Double) -> String {
         rate <= 0 ? "none yet" : rate >= 1 ? "every time" : "1 in \(Int((1 / rate).rounded()).formatted())"
+    }
+}
+
+/// A log axis that a list of rates shares (issue #67). On it a band's width is how sure a rate is: one drop's band spans
+/// a factor of about 200, a hundred drops' about 1.5, at 0.1% as at 50%, and rare and common drops fit one bar. It runs
+/// from under the lowest range start to over the highest end, at least a factor of 10 wide. A rate with none yet starts
+/// its band at the axis's start.
+struct RateAxis: Equatable {
+    var low: Double, high: Double
+    init(_ rates: [DropRate]) {
+        let seen = rates.filter { $0.of > 0 }
+        var low = max((seen.map { $0.count > 0 ? $0.range.lowerBound : $0.range.upperBound / 10 }.min() ?? 0.01) / 1.5, 1e-6)
+        var high = max((seen.map(\.range.upperBound).max() ?? 1) * 1.5, low)
+        if high / low < 10 { let mid = (low * high).squareRoot(); low = mid / 10.0.squareRoot(); high = mid * 10.0.squareRoot() }
+        self.low = low; self.high = high
+    }
+    /// Where `v` sits, 0...1; at or below the start, 0.
+    func position(_ v: Double) -> Double { v <= low ? 0 : min(log(v / low) / log(high / low), 1) }
+    /// Where the card puts the rate's and yours' labels: over their ticks, pushed apart when they'd overlap, inside the card.
+    static func apart(_ rate: Double, _ yours: Double?, width w: Double, half: Double = 24) -> (Double, Double) {
+        let inside = { (v: Double) in min(max(v, half), w - half) }
+        guard let yours else { return (inside(rate), 0) }
+        var (l, r) = (min(rate, yours), max(rate, yours))
+        if r - l < 2 * half { let mid = (l + r) / 2; (l, r) = (mid - half, mid + half) }
+        let shift = max(half - l, 0) - max(r - (w - half), 0)   // slide the pair back inside
+        (l, r) = (l + shift, r + shift)
+        return rate <= yours ? (l, r) : (r, l)
+    }
+    /// The powers of ten inside it (0.001, 0.01, …): the card's gridlines.
+    var decades: [Double] {
+        stride(from: ceil(log10(low)), through: floor(log10(high)), by: 1).map { pow(10, $0) }
     }
 }
 
@@ -513,6 +567,10 @@ struct DropReport: Equatable {
     /// kills, mobs that can drop (by the dungeon they were killed in), and untiered drops (tiers cover tiered loot).
     struct Uncataloged: Equatable { var dungeons: [String] = [], mobs: [Mob] = [], items: [Int] = [] }
     var uncataloged = Uncataloged()
+    /// The Items list (issue #68): every catalog item by category, then type, worked out once per report.
+    struct ItemSection: Hashable { var title: String, items: [Int] }
+    struct ItemCategory: Hashable { var title: String, types: [ItemSection] }
+    var itemCategories: [ItemCategory] = []
     var subtypes: Set<Int> = []                     // a slot's alternate weapon (flail, blades, tachi, …): label SUBTYPE
     /// Every item of each tier group in the catalog, in rotation order: what a group tile cycles through, dropped or not.
     var members: [Group: [Int]] = [:]
@@ -531,11 +589,31 @@ struct DropReport: Equatable {
     var textures: [Int: GameTexture] = [:]
     /// Portals (issue #64): mob → portal type → its kills that dropped one, as seen (loot boosts not taken out).
     var portals: [Mob: [Int: Int]] = [:]
+    /// The Realm's mobs by biome (issue #69), as RealmEye sorts them: by tier (Rookie, Adept, Veteran, Seasonal), then
+    /// each biome's regular enemies, Heroes of Oryx, encounters and beacon guardians, one mob per name. Mobs on no biome
+    /// page (killed, not in the catalog) close the list under "Other". Empty: the catalog has no biomes.
+    /// `dungeons`: the dungeons its mobs drop, by RealmEye's Drops From lists and the portals seen drop from them, by name.
+    /// `drops`: its mobs' named drops (RealmEye's drops of interest), best bag first, then by name.
+    struct Biome: Hashable {
+        var name: String, tier: String, regular: [Mob], heroes: [Mob], encounters: [Mob], guardians: [Mob]
+        var dungeons: [String] = [], drops: [Int] = [], kills = 0
+        /// The mob that stands for it in the list: its first hero, else encounter, else regular enemy.
+        var icon: Mob? { heroes.first ?? encounters.first ?? regular.first }
+    }
+    /// RealmEye's dungeon categories (issue #69), in its order, each with its listed dungeons.
+    struct Category: Hashable { var name: String, dungeons: [String] }
+    var categories: [Category] = []
+    var biomes: [Biome] = []
+    /// Every listed dungeon's mobs by folded name, then dungeon (issue #69): what the search matches mob names in.
+    struct NamedMob: Hashable { var key: String, mob: Mob }
+    var mobIndex: [NamedMob] = []
 
     /// A mob you damaged, removed soon after the last hit: a death. A later removal is usually a mob
     /// that left your view.
     // shortcut: 1 s is a guess from tick and round-trip time; set it from staging run 2's removals
     // that left a bag.
+    /// How far from its kill a portal may be to count as the kill's drop, squared (1.5 tiles).
+    static let portalSpot = 2.25
     static let died = """
         (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
         AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
@@ -645,7 +723,7 @@ struct DropReport: Equatable {
         // portal that came into view during a fight is linked too. shortcut: 1.5 tiles is a guess; set it from live drops.
         store.run("""
             SELECT k.mob_type, coalesce(m.name, ''), p.portal_type, count(DISTINCT k.id) FROM portals p JOIN kills k ON k.id = p.kill
-            JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= 2.25 GROUP BY 1, 2, 3
+            JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= \(portalSpot) GROUP BY 1, 2, 3
             """) { r.portals[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][int($0, 2)] = int($0, 3) }
         store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
         let row = { (stmt: OpaquePointer) in
@@ -663,7 +741,7 @@ struct DropReport: Equatable {
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
             WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) OR type IN (SELECT portal_type FROM portals)
             UNION ALL
-            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
+            SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, labels FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
                 OR (tier IS NOT NULL AND name NOT LIKE '% (SB)')
                 OR name || ' Shiny' IN (SELECT name FROM items WHERE type IN (SELECT item_type FROM bag_items) OR origin IS NOT NULL)
@@ -703,7 +781,7 @@ struct DropReport: Equatable {
             .union(r.shinyOf.filter { r.names[$0.value] != nil }.keys).filter { r.names[$0] == nil }
         if !missing.isEmpty {
             store.run("""
-                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, NULL FROM items
+                SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, labels FROM items
                 WHERE type IN (\(missing.map(String.init).joined(separator: ",")))
                 """, row: row)
         }
@@ -713,6 +791,9 @@ struct DropReport: Equatable {
             if let g = r.group(item) { r.members[g, default: []].append(item) }
         }
         r.members = r.members.mapValues { r.kinds($0).flatMap { $0 } }
+        let catalogItems = Set(r.tiers.keys).union(r.slots.keys).union(r.bags.keys).union(r.origins.keys)
+            .union(r.mobDrops.values.joined()).union(r.copies.values.flatMap(\.keys)).map(r.base)
+        r.itemCategories = r.categories(Set(catalogItems).filter { r.names[$0] != nil && !r.name($0).hasSuffix(" (SB)") && !Self.notLoot.contains(r.name($0)) })
         // Drop tags are the template labels that some item carries as its origin.
         let tags = Set(r.origins.values.flatMap { $0.split(separator: ",").map(String.init) })
         var listed: [String: Dungeon] = [:]
@@ -725,7 +806,59 @@ struct DropReport: Equatable {
             }
         }
         for name in r.kills.keys.map(\.dungeon) + r.catalogMobs.keys where listed[name] == nil { listed[name] = Dungeon(name: name, portal: nil, codes: []) }
+        // The Realm has no dungeon row: it shows the plain Realm Portal, the arch dungeons use (issue #66).
+        if listed[Self.realm]?.portal == nil {
+            store.run("SELECT type, texture_file, texture_index FROM objects WHERE name = 'Realm Portal' AND texture_file IS NOT NULL") {
+                r.textures[int($0, 0)] = GameTexture(file: text($0, 1), index: int($0, 2)); listed[Self.realm]?.portal = int($0, 0)
+            }
+        }
         r.dungeons = listed.values.sorted { $0.name < $1.name }
+        // Built once per report (issue #69), so the search and the Realm's list cost nothing per render.
+        var byPlace: [String: [Mob]] = [:]
+        for d in r.dungeons { byPlace[d.name] = r.mobs(in: d.name) }
+        // One row per name and dungeon (Den King and Heroic Den King may share one): the first in the dungeon's order.
+        var seen: Set<[String]> = []
+        r.mobIndex = byPlace.flatMap { place, mobs in
+            mobs.filter { r.names[$0.type] != nil }.map { NamedMob(key: Self.fold(r.name($0.type)), mob: $0) }.filter { seen.insert([$0.key, place]).inserted }
+        }.sorted { ($0.key, $0.mob.dungeon) < ($1.key, $1.mob.dungeon) }
+        var biomes: [(name: String, tier: String, kinds: [Int: String])] = []
+        store.run("SELECT biome, tier, mob, kind FROM catalog_biomes ORDER BY rank") {
+            if biomes.last?.name != text($0, 0) { biomes.append((text($0, 0), text($0, 1), [:])) }
+            biomes[biomes.count - 1].kinds[int($0, 2)] = text($0, 3)
+        }
+        var droppedBy: [String: Set<Int>] = [:]
+        store.run("SELECT dungeon, mob FROM catalog_portal_drops") { droppedBy[text($0, 0), default: []].insert(int($0, 1)) }
+        let byPortal = Dictionary(r.dungeons.compactMap { d in d.portal.map { ($0, d.name) } }) { a, _ in a }
+        var categories: [Category] = []
+        store.run("SELECT category, dungeon FROM catalog_categories ORDER BY rank, rowid") {
+            if categories.last?.name != text($0, 0) { categories.append(Category(name: text($0, 0), dungeons: [])) }
+            categories[categories.count - 1].dungeons.append(text($0, 1))
+        }
+        let listedNames = Set(r.dungeons.map(\.name))
+        r.categories = categories.map { Category(name: $0.name, dungeons: $0.dungeons.filter(listedNames.contains)) }.filter { !$0.dungeons.isEmpty }
+        if !biomes.isEmpty {
+            let realm = byPlace[Self.realm] ?? []
+            let placed = biomes.reduce(into: Set<Int>()) { $0.formUnion($1.kinds.keys) }
+            let tiers = Self.tiers
+            biomes = biomes.enumerated().sorted { (tiers.firstIndex(of: $0.element.tier) ?? 4, $0.offset) < (tiers.firstIndex(of: $1.element.tier) ?? 4, $1.offset) }.map(\.element)
+            biomes.append(("Other", "", Dictionary(uniqueKeysWithValues: Set(realm.map(\.type)).subtracting(placed).map { ($0, "regular") })))
+            r.biomes = biomes.compactMap { b in
+                // One chip per name (several game types often share a RealmEye name): the first in the Realm's order,
+                // so the one with the most kills.
+                var names: Set<String> = []
+                let mobs = realm.filter { b.kinds[$0.type] != nil && names.insert(r.name($0.type)).inserted }
+                guard !mobs.isEmpty else { return nil }
+                func kind(_ k: String) -> [Mob] { mobs.filter { b.kinds[$0.type] == k } }
+                let types = Set(b.kinds.keys)
+                // shortcut: a seen portal counts by the dungeon's lowest portal type only; map every portal type if some go missing.
+                let seen = Set(realm.filter { types.contains($0.type) }.flatMap { (r.portals[$0] ?? [:]).keys }.compactMap { byPortal[$0] })
+                let rank = { (i: Int) in r.bags[i].flatMap { DropBag.allCases.firstIndex(of: $0) } ?? -1 }
+                return Biome(name: b.name, tier: b.tier, regular: kind("regular"), heroes: kind("hero"), encounters: kind("encounter"), guardians: kind("guardian"),
+                             dungeons: r.dungeons.map(\.name).filter { seen.contains($0) || !(droppedBy[$0] ?? []).isDisjoint(with: types) },
+                             drops: Set(types.flatMap { r.mobDrops[$0] ?? [] }).sorted { (rank($0), r.name($1)) > (rank($1), r.name($0)) },
+                             kills: realm.filter { types.contains($0.type) }.reduce(0) { $0 + (r.kills[$1] ?? 0) })
+            }
+        }
         if !r.catalogMobs.isEmpty {   // no catalog loaded: everything would be missing, which says nothing
             r.uncataloged.dungeons = Set(r.kills.keys.map(\.dungeon)).subtracting(r.catalogMobs.keys).sorted()
             store.run("""
@@ -745,6 +878,71 @@ struct DropReport: Equatable {
     }
 
     func name(_ type: Int) -> String { names[type] ?? String(format: "#0x%04x", type) }
+    static func fold(_ text: String) -> String { text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+    /// Mobs whose name holds the search, by name then dungeon (issue #69).
+    func mobs(matching search: String) -> [Mob] {
+        let q = Self.fold(search.trimmingCharacters(in: .whitespaces))
+        return q.isEmpty ? [] : mobIndex.filter { $0.key.contains(q) }.map(\.mob)
+    }
+    /// The Items list's categories in order, after RealmEye's wiki: equipment by slot family, then the rest by the
+    /// game's labels (skins by name, since they have none).
+    static let itemCategoryOrder = ["Weapons", "Abilities", "Armor", "Rings", "Potions", "Consumables", "Marks", "Materials",
+                                    "Blueprints", "Skins", "Pet eggs", "Emotes", "Other"]
+    /// An item's category and, for equipment and skins, its type.
+    func category(_ item: Int) -> (String, String?) {
+        let l = labels[item] ?? [], n = name(item)
+        if let slot = slots[item], let type = ItemRule.types.first(where: { $0.slot == slot && $0.slot != 26 })?.name, let family = Self.family(slot: slot) {
+            switch family {
+            case .weapons: return ("Weapons", type)
+            case .abilities: return ("Abilities", type)
+            case .armors: return ("Armor", type)
+            case .rings: return ("Rings", nil)
+            }
+        }
+        if slots[item] == 26 { return ("Pet eggs", nil) }
+        if l.contains("STATPOTION") { return ("Potions", nil) }
+        if l.contains("MARK") { return ("Marks", nil) }
+        if l.contains("UPGRADECORE") || unlocks[item] != nil || n.hasSuffix("Blueprint") { return ("Blueprints", nil) }
+        if l.contains("ARTIFACT") || l.contains("MATERIAL") { return ("Materials", nil) }
+        if n.hasSuffix(" Skin") { return ("Skins", n.hasSuffix("Pet Skin") ? "Pet skins" : "Character skins") }
+        if l.contains(where: { $0.hasSuffix("_EMOTE") }) { return ("Emotes", nil) }
+        if l.contains("CONSUMABLE") { return ("Consumables", nil) }
+        return ("Other", nil)
+    }
+    /// UT, ST or the tier ("T12"), shown beside an item; nil for the rest.
+    func kind(_ item: Int) -> String? {
+        if let tier = tiers[item] { return "T\(tier)" }
+        let l = labels[item] ?? []
+        return l.contains("ST") ? "ST" : l.contains("UT") ? "UT" : nil
+    }
+    /// Items in categories and types (a category with one type has one section), each untiered first, then set
+    /// tier, then best tier, then by name.
+    func categories(_ items: Set<Int>) -> [ItemCategory] {
+        func key(_ i: Int) -> (Int, Int, String) {
+            (tiers[i] != nil ? 2 : kind(i) == "ST" ? 1 : 0, -(tiers[i] ?? 0), name(i))
+        }
+        let typeOrder = Self.weaponSlots + Self.abilitySlots + Self.armorSlots
+        func typeKey(_ type: String) -> (Int, String) {
+            (typeOrder.firstIndex { s in ItemRule.types.first { $0.slot == s }?.name == type } ?? typeOrder.count, type)
+        }
+        let byCategory = Dictionary(grouping: items) { category($0).0 }
+        return Self.itemCategoryOrder.compactMap { title in
+            guard let inCategory = byCategory[title] else { return nil }
+            let byType = Dictionary(grouping: inCategory) { category($0).1 ?? title }
+            return ItemCategory(title: title, types: byType.keys.sorted { typeKey($0) < typeKey($1) }.map { type in
+                ItemSection(title: type, items: byType[type]!.sorted { key($0) < key($1) })
+            })
+        }
+    }
+    /// Search results: matching items by name, any case, in flat sections ("Weapons · Bow"); none for no query.
+    func itemSections(matching query: String) -> [ItemSection] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return itemCategories.flatMap { c in
+            c.types.map { t in ItemSection(title: c.types.count > 1 ? "\(c.title) · \(t.title)" : c.title,
+                                           items: t.items.filter { name($0).localizedCaseInsensitiveContains(q) }) }
+        }.filter { !$0.items.isEmpty }
+    }
     static func labelSet(_ labels: String) -> Set<String> { Set(labels.split(separator: ",").map(String.init)) }
     /// A mob's base rate per kill for `n` drops (copies, or kills with a bag) (issue #58).
     func perKill(_ mob: Mob, _ n: Int) -> DropRate { DropRate(count: n, of: kills[mob] ?? 0, exposure: weight[mob]) }
@@ -866,12 +1064,13 @@ struct DropReport: Equatable {
     }
     /// Items as tiles by bag (nil: no bag known). Shinies fold into their base. Sorted weapons, abilities, armors, rings,
     /// then everything else (potions, eggs, …); within each, untiered (UTs, STs) first, then best tier, then by name.
+    /// The gold bag goes by kind first: blueprints, skins, pets, then the rest (issue #66).
     func tiles(_ items: Set<Int>) -> [DropBag?: [Tile]] {
         let bases = Set(items.map(base))
-        func key(_ tile: Tile) -> (Int, Int, String) {
+        func key(_ tile: Tile) -> (Int, Int, Int, String) {
             let first = tile.items[0], tier = tiers[first]
             let family = slots[first].flatMap(Self.family)?.rawValue ?? Group.Family.allCases.count
-            return (family, tier.map { -$0 } ?? Int.min, name(first))
+            return (family, bag(first) == .gold ? goldKind(first) : 0, tier.map { -$0 } ?? Int.min, name(first))
         }
         return Dictionary(grouping: bases) { bag($0) }.mapValues { inBag in
             let byGroup = Dictionary(grouping: inBag) { group($0) }
@@ -882,6 +1081,16 @@ struct DropReport: Equatable {
             }
             return (groups + singles.map(Tile.item)).sorted { key($0) < key($1) }
         }
+    }
+
+    static let realm = "Realm of the Mad God"
+    static let tiers = ["Rookie", "Adept", "Veteran", "Seasonal"]   // the Realm's biome tiers, as RealmEye orders them
+    /// A gold bag item's kind, in display order. The game data has no kind for them, so it goes by the blueprint table and the name.
+    func goldKind(_ item: Int) -> Int {
+        let n = name(item)
+        if unlocks[item] != nil || n.contains("Blueprint") { return 0 }
+        if n.contains("Pet Stone") || n.contains("Pet Skin") { return 2 }
+        return n.contains(" Skin") ? 1 : 3
     }
 
     /// Where an item (or any of a set) dropped: one per dungeon, with its runs, runs with one, and copies per mob.
@@ -1059,28 +1268,52 @@ enum GameNames {
         for o in objects.values { for item in o.unlocks.compactMap({ itemByID[$0] }) {
             store.run("INSERT INTO blueprints(blueprint, item) VALUES (?, ?)", [o.type, item])
         } }
-        store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops")
+        store.exec("DELETE FROM catalog_mobs; DELETE FROM catalog_tiers; DELETE FROM catalog_drops; DELETE FROM catalog_biomes; DELETE FROM catalog_categories; DELETE FROM catalog_portal_drops")
         if let catalog, let data = try? Data(contentsOf: catalog) {
             guard let rows = dropCatalog(data) else { store.exec("ROLLBACK"); return false }   // a broken file keeps the last catalog
             for (dungeon, mob) in rows.mobs { store.run("INSERT INTO catalog_mobs(dungeon, mob) VALUES (?, ?)", [dungeon, mob]) }
             for (mob, family, tier) in rows.tiers { store.run("INSERT INTO catalog_tiers(mob, family, tier) VALUES (?, ?, ?)", [mob, family, tier]) }
             for (mob, item) in rows.drops { store.run("INSERT INTO catalog_drops(mob, item) VALUES (?, ?)", [mob, item]) }
+            for (rank, c) in rows.categories.enumerated() { for d in c.dungeons {
+                store.run("INSERT INTO catalog_categories(category, rank, dungeon) VALUES (?, ?, ?)", [c.name, rank, d])
+            } }
+            for (dungeon, mob) in rows.portalDrops { store.run("INSERT INTO catalog_portal_drops(dungeon, mob) VALUES (?, ?)", [dungeon, mob]) }
+            for (rank, b) in rows.biomes.enumerated() { for mob in b.mobs {
+                store.run("INSERT INTO catalog_biomes(biome, tier, rank, mob, kind) VALUES (?, ?, ?, ?, ?)", [b.name, b.tier, rank, mob, b.kinds[mob] ?? "regular"])
+            } }
         }
         store.run("INSERT INTO catalog_source(signature) VALUES (?)", [signature])
         guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; return false }
         return true
     }
 
+    /// A Realm biome in the drop catalog file (issue #69): its mobs, and each one's section on RealmEye's page unless regular.
+    struct CatalogBiome { var name: String, tier: String, mobs: [Int], kinds: [Int: String] }
     /// The rows of a drop catalog file (tools/drop_catalog.py writes it): ids are hex strings ("0x0d50"). nil when it
     /// isn't a catalog.
-    static func dropCatalog(_ data: Data) -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)])? {
+    static func dropCatalog(_ data: Data)
+        -> (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome],
+            categories: [DropReport.Category], portalDrops: [(String, Int)])? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dungeons = root["dungeons"] as? [[String: Any]], let mobs = root["mobs"] as? [[String: Any]] else { return nil }
         func ids(_ value: Any?) -> [Int] {
             ((value as? [String]) ?? []).compactMap { $0.hasPrefix("0x") ? Int($0.dropFirst(2), radix: 16) : nil }
         }
-        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)]) = ([], [], [])
-        for d in dungeons { if let name = d["name"] as? String { rows.mobs += ids(d["mobs"]).map { (name, $0) } } }
+        var rows: (mobs: [(String, Int)], tiers: [(Int, String, Int)], drops: [(Int, Int)], biomes: [CatalogBiome],
+                   categories: [DropReport.Category], portalDrops: [(String, Int)]) = ([], [], [], [], [], [])
+        for d in dungeons { if let name = d["name"] as? String {
+            rows.mobs += ids(d["mobs"]).map { (name, $0) }
+            rows.portalDrops += ids(d["dropped_by"]).map { (name, $0) }
+        } }
+        for c in (root["categories"] as? [[String: Any]]) ?? [] {
+            if let name = c["name"] as? String { rows.categories.append(DropReport.Category(name: name, dungeons: (c["dungeons"] as? [String]) ?? [])) }
+        }
+        for b in dungeons.compactMap({ $0["biomes"] as? [[String: Any]] }).joined() {
+            guard let name = b["name"] as? String else { continue }
+            var kinds: [Int: String] = [:]   // the first section wins: encounter, then hero, then guardian
+            for kind in ["guardian", "hero", "encounter"] { for mob in ids(b[kind == "hero" ? "heroes" : kind + "s"]) { kinds[mob] = kind } }
+            rows.biomes.append(CatalogBiome(name: name, tier: b["tier"] as? String ?? "", mobs: ids(b["mobs"]), kinds: kinds))
+        }
         for m in mobs {
             let tiers = (m["tiers"] as? [String: [Int]]) ?? [:]
             for type in ids(m["types"]) {
@@ -1111,10 +1344,59 @@ enum GameNames {
 /// The Drop rates tab of the main window (issues #41, #45), from all the data kept (DropReport has every query):
 /// dungeons on the left; the selected dungeon's drops in the middle, one row of tiles per bag; on the right the most
 /// specific thing picked: an item (a global page), a tier group, a mob's page (issue #50), or the dungeon.
+/// What the Drop rates pages look up on each click (issue #81), built once per report off the main thread, so a click
+/// only reads it. Each holds what the `DropReport` function of the same name returns.
+struct DropIndex {
+    var dungeonKills: [String: Int] = [:]                     // a dungeon's mobs' kills
+    var dungeons: [DropReport.Dungeon] = []                   // most kills first, then by name: the list's order
+    var mobs: [String: [DropReport.Mob]] = [:]                // `mobs(in:)`
+    var possible: [String: Set<Int>] = [:]                    // `possibleDrops(dungeon)`, by name
+    var tiles: [String: [DropBag?: [DropReport.Tile]]] = [:]  // `tiles(possibleDrops(dungeon))`
+    var possibleIn: [Int: [String]] = [:]                     // item → the dungeons that can drop it, by name
+    var searchable: [(item: Int, name: String)] = []          // every tagged or dropped item's base, by name
+
+    init() {}
+    init(_ r: DropReport) {
+        for d in r.dungeons {
+            let mobs = r.mobs(in: d.name), possible = r.possibleDrops(d)
+            self.mobs[d.name] = mobs
+            dungeonKills[d.name] = mobs.reduce(0) { $0 + (r.kills[$1] ?? 0) }
+            self.possible[d.name] = possible
+            tiles[d.name] = r.tiles(possible)
+            for item in possible { possibleIn[item, default: []].append(d.name) }
+        }
+        dungeons = r.dungeons.sorted { (kills(in: $0.name), $1.name) > (kills(in: $1.name), $0.name) }
+        searchable = Set(Set(r.origins.keys).union(r.items).map(r.base)).map { ($0, r.name($0)) }.sorted { ($0.name, $0.item) < ($1.name, $1.item) }
+    }
+    func kills(in dungeon: String) -> Int { dungeonKills[dungeon] ?? 0 }
+    func mobs(in dungeon: String) -> [DropReport.Mob] { mobs[dungeon] ?? [] }
+    /// Up to 30 items whose name holds `query`, by name.
+    func search(_ query: String) -> [Int] {
+        Array(searchable.lazy.filter { $0.name.localizedCaseInsensitiveContains(query) }.map(\.item).prefix(30))
+    }
+}
+
+/// What changes while you play, apart from what is picked: your loot factors and capture health. Only the views that show
+/// them observe it, so the game's updates each second don't redraw the whole window (issue #81).
+final class DropLive: ObservableObject {
+    @Published var now: LootNow?
+    @Published var health = CaptureHealth()
+}
+
 final class DropRatesModel: ObservableObject {
-    /// The main window shows the Drop rates tab instead of the Guard tab.
-    @Published var shown = false { didSet { resetOrders() } }
+    /// The main window's tab (issue #68 adds Drop alerts).
+    enum Tab { case guardTab, rates, alerts }
+    @Published var tab = Tab.guardTab { didSet { resetOrders() } }
+    /// The main window shows the Drop rates tab.
+    var shown: Bool { get { tab == .rates } set { tab = newValue ? .rates : .guardTab } }
+    /// The left panel's view (issue #68): the item encyclopedia or the dungeons.
+    enum Browse { case items, dungeons }
+    @Published var browse = Browse.items
     @Published var dungeon: String? { didSet { resetOrders(); lootDetails = false } }
+    /// The Realm biome whose page fills the middle pane (issue #69); nil: the picked dungeon's page.
+    @Published var biome: String? { didSet { resetOrders() } }
+    /// The Realm tier tab open in the Dungeons view (issue #69).
+    @Published var realmTier = "Rookie"
     @Published var mob: DropReport.Mob? { didSet { resetOrders(); if mob != nil { lootDetails = false } } }   // its page on the right; the grid stays dungeon-wide
     @Published var group: DropReport.Group? { didSet { resetOrders(); if group != nil { lootDetails = false } } }
     @Published var item: Int? { didSet { resetOrders(); if item != nil { lootDetails = false } } }
@@ -1122,22 +1404,30 @@ final class DropRatesModel: ObservableObject {
     @Published var lootDetails = false
     @Published var openGroups: Set<DropReport.Group> = []   // tier groups opened on the mob page
     @Published var openBags: Set<DropBag?> = []             // bags opened on the mob page (nil: no bag known)
-    @Published var search = "" { didSet { resetOrders() } }   // items and dungeons by name
+    @Published var search = "" { didSet { resetOrders(); shownItems = report.itemSections(matching: search) } }   // items, dungeons and mobs by name
+    /// The Items list's search results, worked out when the search or the report changes, not on each redraw.
+    private(set) var shownItems: [DropReport.ItemSection] = []
+    /// The item type picked in the Items view ("Weapons/Bow"), whose items fill the middle pane.
+    @Published var itemType: String? { didSet { resetOrders() } }
     @Published var rateHelp: String?   // which ⓘ shows the panel on how to read a rate
     /// Why the tab can't show data (no database, no game data); nil when it can.
     @Published var problem: String?
     @Published private(set) var report = DropReport()
-    @Published private(set) var health = CaptureHealth()
-    @Published private(set) var sprites: [Int: CGImage] = [:]
-    @Published private(set) var collectionIcons: [String: CGImage] = [:]   // by dungeon name: its items' collection icon
+    @Published private(set) var index = DropIndex()
+    let live = DropLive()
+    var health: CaptureHealth { live.health }
+    @Published private(set) var sprites: [Int: CGImage] = [:] { didSet { drawn += 1 } }
+    /// Counts new reports, sprites and icons: a view keyed on it redraws when what it draws from changes (issue #81).
+    private(set) var drawn = 0
+    @Published private(set) var collectionIcons: [String: CGImage] = [:] { didSet { drawn += 1 } }   // by dungeon name: its items' collection icon
     private var spritesAsked: Set<Int> = [], iconsAsked = false
     private var fallbacks: [Int: CGImage] = [:]   // RealmEye's sprites, which win over the game's for their types
     /// Your loot factors in the game running now (nil: none runs), for the loot bar and "yours" rates.
-    @Published private(set) var now: LootNow?
+    var now: LootNow? { live.now }
     var catalog = LootCatalog()
 
     func update(now: LootNow?) {
-        if now != self.now { self.now = now }
+        if now != live.now { live.now = now }
         if let now { cutSprites(now.textures) }
     }
     /// Your rate now: the base rate times your multiplier for this mob, and its dungeon's modifiers only while you're in
@@ -1148,9 +1438,14 @@ final class DropRatesModel: ObservableObject {
         return abs(m - 1) < 0.001 ? nil : rate.rate * m
     }
 
-    func update(health: CaptureHealth) { if health != self.health { self.health = health } }
-    func update(_ report: DropReport) {
-        if report != self.report { self.report = report }
+    func update(health: CaptureHealth) { if health != live.health { live.health = health } }
+    /// A new report and its lookups, set together. The caller compares reports off the main thread; without `index`, it
+    /// is built here.
+    func update(_ report: DropReport, index: DropIndex? = nil) {
+        self.report = report
+        self.index = index ?? DropIndex(report)
+        shownItems = report.itemSections(matching: search)
+        drawn += 1
         if !iconsAsked {
             iconsAsked = true
             DispatchQueue.global(qos: .utility).async {
@@ -1179,16 +1474,21 @@ final class DropRatesModel: ObservableObject {
     }
     /// A pick in the dungeon list starts fresh; a dungeon row on the item page keeps the item open.
     func select(dungeon: String, keepItem: Bool = false) {
-        self.dungeon = dungeon; mob = nil; group = nil
+        self.dungeon = dungeon; mob = nil; group = nil; biome = nil; browse = .dungeons
         if !keepItem { item = nil }
     }
     /// A mob chip: opens its page (closing an open item or group), or closes it when it is already open.
     func pick(mob: DropReport.Mob) {
         item = nil; group = nil; openGroups = []; openBags = []; self.mob = self.mob == mob ? nil : mob
     }
-    /// Esc: clears the search, else steps back out of the item, then the group, then the mob.
+    /// A Realm biome (issue #69): its page in the middle pane, its tier's tab open.
+    func pick(biome b: DropReport.Biome) { select(dungeon: DropReport.realm); biome = b.name; realmTier = b.tier }
+    /// A mob found by the search (issue #69): opens its dungeon and its page, even when it is open already.
+    func show(mob: DropReport.Mob) { select(dungeon: mob.dungeon); pick(mob: mob) }
+    /// Esc: clears the search, else steps back out of the item, then the group, then the mob, then the biome.
     func back() {
-        if !search.isEmpty { search = "" } else if lootDetails { lootDetails = false } else if item != nil { item = nil } else if group != nil { group = nil } else { mob = nil }
+        if !search.isEmpty { search = "" } else if lootDetails { lootDetails = false } else if item != nil { item = nil } else if group != nil { group = nil }
+        else if mob != nil { mob = nil } else { biome = nil }
     }
 
     // Live data reloads every 30 s while you look. Rows keep the order they were first shown in (new ones go last),

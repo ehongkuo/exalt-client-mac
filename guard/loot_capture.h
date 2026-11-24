@@ -1,6 +1,7 @@
 /* Drop-rate capture hooks (issue #38). Included by guard.c in the client build when the profile has
  * the loot hooks. Registers drops the way RealmHound does, for every bag type with no filter, into
- * loot-<started>-<pid>.tsv beside the guard log. A failure here turns capture off and is logged;
+ * hook-loot-<started>-<pid>.tsv beside the guard log (issue #61: the app imports drop rates from its traffic
+ * capture's loot-*.tsv; this file is kept for comparing the two). Your projectile hits go to hits-*.tsv for that capture. A failure here turns capture off and is logged;
  * it never stops the game.
  *
  *   A  damage method (base, enemies only): your hits, and each Damage message's hit on a mob
@@ -46,7 +47,7 @@ static LootSeen loot_seen[LOOT_SEEN];
 static LootTicks loot_ticks;
 static LootPortals loot_portals;
 static int loot_portal_types;   /* how many EXALT_PORTALS named: 0 records no portals, so the summary shows it */
-static FILE *loot_file;
+static FILE *loot_file, *loot_hits_file;   /* hits: your projectile damage, joined to the app's traffic kills (issue #61) */
 static const void *loot_methods[LOOT_HOOK_COUNT];
 static void *loot_id_field, *loot_shooter_field, *loot_type_field, *loot_status_field, *loot_status_id_field,
             *loot_pos_field, *loot_stats_field, *loot_x_field, *loot_y_field,
@@ -154,7 +155,12 @@ static void loot_hit(void *self, int damage, uintptr_t caller) {
     if (source > LOOT_OTHER || (source == LOOT_OTHER && damage <= 0)) return;
     int32_t id = 0;
     il2cpp_field_get_value(self, loot_id_field, &id);
-    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, monotonic_ns());
+    uint64_t now = monotonic_ns();
+    if (source <= LOOT_PROJECTILE_ALT) {   /* the one thing traffic can't tell (issue #61): what your own shots did */
+        LootEvent hit = {.ns = now, .id = id, .map = loot_map, .kind = LOOT_HIT, .source = (uint8_t)source, .v = {damage}};
+        loot_push(&loot_ring, &hit);
+    }
+    LootHit *h = loot_hit_add(&loot_hits, id, source, damage, now);
     if (h && !h->max) il2cpp_field_get_value(self, max_field, &h->max);
 }
 static int loot_live(void) {
@@ -182,6 +188,30 @@ static void loot_message_observed(void *self, void *message, void **target, cons
 static void loot_status_pos(void *status, float pos[2]) {
     void *p = read_reference(status, loot_pos_field);
     if (p) { il2cpp_field_get_value(p, loot_x_field, &pos[0]); il2cpp_field_get_value(p, loot_y_field, &pos[1]); }
+}
+/* Hands the bag to the app through the live file and wakes it, for drop alerts with no lag (issue #75). */
+static LootRecent loot_recent;
+/* Hands a portal linked to a kill to the app, with the kill's facts (issue #74). The caller posts the wake-up. */
+static void loot_announce_portal(uint64_t now, const LootType *portal, const LootKillFacts *kill) {
+    static LivePortalsData portals;
+    if (!live) return;
+    portals.portals[portals.count % LIVE_PORTALS] = (LivePortal){
+        .ns = now, .epoch = start_epoch + (double)(now - start_ns) / 1e9, .id = portal->id, .type = portal->type,
+        .pos = {portal->pos[0], portal->pos[1]}, .mob = kill->type, .mob_pos = {kill->pos[0], kill->pos[1]},
+        .damage = kill->damage, .since_hit_ms = kill->since_hit_ms};
+    ++portals.count;
+    portals_write(live_portals(live), &portals);
+}
+static void loot_announce(const LootEvent *bag, const char *enchants) {
+    static LiveBagsData bags;
+    if (!live) return;
+    LiveBag *b = &bags.bags[bags.count % LIVE_BAGS];
+    *b = (LiveBag){.ns = bag->ns, .epoch = start_epoch + (double)(bag->ns - start_ns) / 1e9, .id = bag->id, .type = bag->type};
+    for (int i = 0; i < 8; ++i) b->items[i] = bag->v[i];
+    snprintf(b->enchants, sizeof b->enchants, "%s", enchants);
+    ++bags.count;
+    bags_write(live_bags(live), &bags);
+    notify_post(LIVE_BAG_NOTIFICATION);
 }
 /* Reads the message, not the game object: a bag's first status (its contents) is in it. */
 static void loot_object(void *connection, void *data) {
@@ -214,6 +244,7 @@ static void loot_object(void *connection, void *data) {
     loot_tick_bag(&loot_ticks, id, pos);
     LootEvent extra[16];
     int extras = 0;
+    const char *enchants = "";
     void *const *stats = NULL;
     int32_t n = list_items(read_reference(status, loot_stats_field), "CGOECEPGBBG[]", &loot_stat_list, &stats);
     for (int32_t i = 0; i < n; ++i) {
@@ -227,7 +258,9 @@ static void loot_object(void *connection, void *data) {
         LootEvent *e = &extra[extras++];
         *e = (LootEvent){.ns = now, .id = id, .map = loot_map, .type = type, .kind = LOOT_BAG_STAT, .v = {stat, value}};
         read_text(read_reference(stats[i], loot_stat_text_field), e->text, sizeof e->text);
+        if (stat == 80) enchants = e->text;
     }
+    loot_announce(&bag, enchants);
     if (loot_push(&loot_ring, &bag)) atomic_fetch_add_explicit(&loot_bags, 1, memory_order_relaxed);
     for (int i = 0; i < extras; ++i) loot_push(&loot_ring, &extra[i]);
 }
@@ -287,6 +320,8 @@ static void loot_remove_observed(void *self, int32_t id, const void *info) {
                            .pos = {known->pos[0], known->pos[1]},
                            .v = {h.damage[0], h.damage[1], h.damage[2], h.max, (int32_t)((now - h.last_ns) / 1000000), h.others}};
             loot_tick_killed(&loot_ticks, id, known->pos);
+            loot_recent_add(&loot_recent, (LootKillFacts){id, known->type, {known->pos[0], known->pos[1]},
+                                                          h.damage[0] + h.damage[1] + h.damage[2], e.v[4]});
             if (loot_push(&loot_ring, &e)) atomic_fetch_add_explicit(&loot_kills, 1, memory_order_relaxed);
         }
     }
@@ -299,10 +334,15 @@ static void loot_newtick_observed(void *self, void *message, const void *info) {
     static LootSpot bags[LOOT_PENDING];
     static int32_t killers[LOOT_PENDING];
     uint64_t now = monotonic_ns();
+    int portals = 0;
     for (int i = 0, n = loot_tick_end(&loot_ticks, bags, killers); i < n; ++i) {
         LootEvent e = {.ns = now, .id = bags[i].id, .map = loot_map, .kind = LOOT_DROP, .v = {killers[i]}};
         loot_push(&loot_ring, &e);
+        const LootType *portal = killers[i] ? loot_type_find(loot_types, bags[i].id) : 0;
+        const LootKillFacts *kill = portal && loot_is_portal(&loot_portals, portal->type) ? loot_recent_find(&loot_recent, killers[i]) : 0;
+        if (kill) { loot_announce_portal(now, portal, kill); ++portals; }
     }
+    if (portals && live) notify_post(LIVE_BAG_NOTIFICATION);
 }
 
 /* Same rule as the death guard's hooks: install once, in the Nexus, on the main thread. */
@@ -407,12 +447,18 @@ static void loot_tick(void *player) {
 
 static void loot_open(const char *folder) {
     char path[PATH_MAX];
-    int n = snprintf(path, sizeof path, "%s/loot-%.0f-%d.tsv", folder, start_epoch, getpid());
+    int n = snprintf(path, sizeof path, "%s/hook-loot-%.0f-%d.tsv", folder, start_epoch, getpid());
     int fd = n > 0 && (size_t)n < sizeof path ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) : -1;
     loot_file = fd >= 0 ? fdopen(fd, "w") : NULL;
     if (!loot_file) { if (fd >= 0) close(fd); loot_refuse("file"); return; }
     fprintf(loot_file, "loot_session\t%d\t%s\t%.3f\t%d\n", LOOT_FORMAT, EXALT_GAME_SHA256, start_epoch, getpid());
     fflush(loot_file);
+    /* The app's traffic capture finds this by the game's pid and joins it to its kills. */
+    n = snprintf(path, sizeof path, "%s/hits-%.0f-%d.tsv", folder, start_epoch, getpid());
+    fd = n > 0 && (size_t)n < sizeof path ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) : -1;
+    loot_hits_file = fd >= 0 ? fdopen(fd, "w") : NULL;
+    if (!loot_hits_file && fd >= 0) close(fd);
+    if (loot_hits_file) { fprintf(loot_hits_file, "hits_session\t%s\t%.3f\t%d\n", EXALT_GAME_SHA256, start_epoch, getpid()); fflush(loot_hits_file); }
 }
 /* Writer thread. */
 static void loot_drain(int closing) {
@@ -427,7 +473,8 @@ static void loot_drain(int closing) {
     char line[512];
     while (loot_pop(&loot_ring, &e)) {
         int length = loot_format(&e, start_epoch + (double)(e.ns - start_ns) / 1e9, line, sizeof line);
-        if (length > 0) fwrite(line, 1, (size_t)length < sizeof line ? (size_t)length : sizeof line - 1, loot_file);
+        FILE *to = e.kind == LOOT_HIT ? loot_hits_file : loot_file;
+        if (length > 0 && to) fwrite(line, 1, (size_t)length < sizeof line ? (size_t)length : sizeof line - 1, to);
     }
     uint64_t lost = atomic_load(&loot_ring.lost);
     if (lost != lost_written) { fprintf(loot_file, "gap\t%.3f\t%llu\tring_full\n", epoch, (unsigned long long)(lost - lost_written)); lost_written = lost; }
@@ -440,6 +487,12 @@ static void loot_drain(int closing) {
                 (unsigned long long)loot_ticks.overflow, (unsigned long long)loot_hit_calls[0], (unsigned long long)loot_hit_calls[1],
                 (unsigned long long)loot_hit_calls[2], (unsigned long long)loot_hit_calls[3], (unsigned long long)loot_hit_calls[4],
                 (unsigned long long)loot_removals, (unsigned long long)loot_removals_hit, (unsigned long)loot_unknown_caller);
+    }
+    if (loot_hits_file) {   /* the app reads a refusal here: its projectile damage would read 0 */
+        static int hits_refusal_written;
+        if (why && !hits_refusal_written) { hits_refusal_written = 1; fprintf(loot_hits_file, "status\t%.3f\trefused\t%s\n", epoch, why); }
+        fflush(loot_hits_file);
+        if (closing) { fclose(loot_hits_file); loot_hits_file = NULL; }
     }
     if (closing) { fprintf(loot_file, "status\t%.3f\tcomplete\n", epoch); fclose(loot_file); loot_file = NULL; }
     else fflush(loot_file);
