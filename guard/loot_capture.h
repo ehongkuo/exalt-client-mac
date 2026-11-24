@@ -17,6 +17,7 @@
  * Once per map it also writes the map's info message raw (seed, strings such as modifiers).
  */
 #include "loot_core.h"
+#include "calendar_read.h"
 
 typedef void (*LootMessageFunction)(void *, void *, void **, const void *);
 typedef void (*LootObjectFunction)(void *, void *, const void *);
@@ -73,6 +74,7 @@ static void loot_refuse(const char *why) {
 }
 
 static void loot_prepare(const void *game) {
+    calendar_prepare(game);   /* issue #85: independent of the hooks below */
     void *character = il2cpp_class_from_name(game, ENEMY_DAMAGE_OFFSET_NAMESPACE, ENEMY_DAMAGE_OFFSET_OWNER);
     void *handler = il2cpp_class_from_name(game, DAMAGE_MESSAGE_OFFSET_NAMESPACE, DAMAGE_MESSAGE_OFFSET_OWNER);
     void *receiver = il2cpp_class_from_name(game, NEW_OBJECT_OFFSET_NAMESPACE, NEW_OBJECT_OFFSET_OWNER);
@@ -405,6 +407,7 @@ static void loot_install(void *player) {
 }
 
 static void loot_tick(void *player) {
+    if (ready) calendar_tick(monotonic_ns());
     if (!ready || !loot_prepared) return;
     loot_install(player);
     if (!loot_installed || !player) return;
@@ -446,6 +449,7 @@ static void loot_tick(void *player) {
 }
 
 static void loot_open(const char *folder) {
+    calendar_open(folder);
     char path[PATH_MAX];
     int n = snprintf(path, sizeof path, "%s/hook-loot-%.0f-%d.tsv", folder, start_epoch, getpid());
     int fd = n > 0 && (size_t)n < sizeof path ? open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) : -1;

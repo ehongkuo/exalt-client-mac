@@ -347,6 +347,7 @@ extension DropRatesView {
                             listRow(picked == d.name, { model.select(dungeon: d.name) }) {
                                 SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 24)
                                 Text(d.name).lineLimit(1).help(d.name)
+                                if report.running[d.name] != nil { eventMark }
                                 Spacer()
                                 if grew { newMark }
                                 if n > 0 { Text(n.formatted()).monospacedDigit().foregroundStyle(.secondary) }
@@ -402,12 +403,14 @@ extension DropRatesView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 40), spacing: 4)], alignment: .leading, spacing: 4) {
             ForEach(dungeons, id: \.name) { d in
                 let n = index.kills(in: d.name), selected = picked == d.name && model.biome == nil
+                let event = report.running[d.name]
                 Button { model.select(dungeon: d.name) } label: {
-                    SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 28).opacity(n > 0 ? 1 : 0.35).padding(6).background(tileBackground(selected))
+                    SpriteIcon(image: d.portal.flatMap { model.sprites[$0] }, size: 28).opacity(n > 0 || event != nil ? 1 : 0.35).padding(6).background(tileBackground(selected))
+                        .overlay(alignment: .topTrailing) { if event != nil { eventMark } }
                 }
                 .buttonStyle(.plain).frame(width: 40, height: 40)
-                .help(n > 0 ? "\(d.name) · \(n.formatted()) kills" : d.name)
-                .accessibilityLabel("\(d.name), \(n) kills")
+                .help((n > 0 ? "\(d.name) · \(n.formatted()) kills" : d.name) + (event.map { " · " + eventText($0) } ?? ""))
+                .accessibilityLabel("\(d.name), \(n) kills" + (event != nil ? ", event running" : ""))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -566,6 +569,11 @@ extension DropRatesView {
             Button { model.mob = nil; model.group = nil; model.item = nil } label: { Text(d.name).font(.title3.weight(.semibold)) }
                 .buttonStyle(.plain)
             collectionIcon(d)
+            if let event = report.running[d.name] {
+                Label("Event", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(.orange.opacity(0.15)))
+                    .help(eventText(event)).accessibilityLabel(eventText(event))
+            }
             if let mob = model.mob {
                 chevron
                 Button { model.group = nil; model.item = nil } label: { Text(report.name(mob.type)) }.buttonStyle(.plain)
@@ -581,6 +589,15 @@ extension DropRatesView {
             Spacer()
             Text("esc steps back").font(.caption).foregroundStyle(.tertiary)
         }
+    }
+    /// A dungeon with an event running in the game's calendar (issue #85).
+    private var eventMark: some View {
+        Image(systemName: "sparkles").font(.system(size: 9, weight: .bold)).foregroundStyle(.orange).accessibilityHidden(true)
+    }
+    private func eventText(_ e: DungeonEvent) -> String {
+        let boosts = [e.loot > 1.001 ? "loot ×\(LootMath.times(e.loot))" : nil, e.xp > 1.001 ? "XP ×\(LootMath.times(e.xp))" : nil].compactMap { $0 }
+        let ends = Date(timeIntervalSince1970: e.end).formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        return (["Event until \(ends)"] + boosts).joined(separator: " · ") + (e.chest.isEmpty ? "" : ". Its chest counts from the event's start.")
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
@@ -601,9 +618,11 @@ extension DropRatesView {
                 }
             }
         } else {
-            let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
+            let chests = mobs.filter { report.chests.contains($0.type) }   // issue #85: only while the event runs
+            let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) && !report.chests.contains($0.type) }
             VStack(alignment: .leading, spacing: 6) {
                 if !bosses.isEmpty { mobRow("BOSSES", bosses) }
+                if !chests.isEmpty { mobRow("EVENT CHEST", chests) }
                 if !minions.isEmpty { mobRow("MINIONS", minions) }
             }
         }

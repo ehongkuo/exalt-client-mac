@@ -156,6 +156,10 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_portal_drops(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
         CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- The game's calendar of dungeon events (issue #85), as the guard read it from the client: one row per dungeon
+        -- and start, kept after the event ends. `line` is the guard's line, raw, so a misread time can be read again.
+        CREATE TABLE IF NOT EXISTS dungeon_events(dungeon TEXT NOT NULL, start REAL NOT NULL, end REAL NOT NULL, chest TEXT,
+            loot_mul REAL, xp_mul REAL, title TEXT, line TEXT, seen REAL, UNIQUE(dungeon, start));
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -392,6 +396,78 @@ enum LootImport {
     }
 }
 
+/// One dungeon event in the game's events calendar (issue #85): while it runs, the dungeon has its boosts and its
+/// chest (`chest`, the calendar's quest object) appears after the boss. Times are seconds since 1970.
+struct DungeonEvent: Hashable {
+    var dungeon: String, start: Double, end: Double
+    var chest = "", loot = 1.0, xp = 1.0, title = ""
+    func running(at time: Double) -> Bool { start <= time && time < end }
+
+    /// A `dungeon_event` line of the guard's calendar file (guard/calendar_read.h). Nil without a dungeon or a time.
+    init?(line: Substring) {
+        let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        guard f.count >= 11, f[0] == "dungeon_event", !f[5].isEmpty,
+              let start = Self.time(f[1], data: UInt64(f[3]) ?? 0), let end = Self.time(f[2], data: UInt64(f[4]) ?? 0), end > start
+        else { return nil }
+        self.init(dungeon: f[5], start: start, end: end, chest: f[6], loot: Double(f[7]) ?? 1, xp: Double(f[8]) ?? 1,
+                  title: f[10...].joined(separator: " "))
+    }
+    init(dungeon: String, start: Double, end: Double, chest: String = "", loot: Double = 1, xp: Double = 1, title: String = "") {
+        (self.dungeon, self.start, self.end, self.chest, self.loot, self.xp, self.title) = (dungeon, start, end, chest, loot, xp, title)
+    }
+    /// The calendar's time text (ISO 8601, "yyyy-MM-dd HH:mm:ss" in UTC, or seconds or ms since 1970), else its DateTime
+    /// data: 100 ns ticks since year 1 in the low 62 bits, the kind (1 UTC, 2 local) in the top two.
+    // shortcut: the text's format is unseen until a live read; a text without a zone is taken as UTC.
+    static func time(_ text: String, data: UInt64) -> Double? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if let n = Double(t), n > 0 { return n > 1e11 ? n / 1000 : n }
+        let iso = ISO8601DateFormatter()
+        for options: ISO8601DateFormatter.Options in [[.withInternetDateTime], [.withInternetDateTime, .withFractionalSeconds]] {
+            iso.formatOptions = options
+            if let d = iso.date(from: t) { return d.timeIntervalSince1970 }
+        }
+        let plain = DateFormatter()
+        plain.locale = Locale(identifier: "en_US_POSIX"); plain.timeZone = TimeZone(identifier: "UTC")
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss.SSS", "M/d/yyyy h:mm:ss a", "M/d/yyyy HH:mm:ss"] {
+            plain.dateFormat = format
+            if let d = plain.date(from: t) { return d.timeIntervalSince1970 }
+        }
+        let ticks = data & 0x3FFF_FFFF_FFFF_FFFF
+        guard ticks > 621_355_968_000_000_000 else { return nil }
+        let seconds = Double(ticks - 621_355_968_000_000_000) / 1e7
+        return data >> 62 == 2 ? seconds - Double(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: seconds))) : seconds
+    }
+}
+
+/// The guard's calendar files (calendar-<started>-<pid>.tsv, rewritten whenever the calendar changes) into
+/// `dungeon_events`. A file is removed once its game has ended.
+enum CalendarImport {
+    @discardableResult
+    static func run(logs: URL, store: DropRateStore, alive: (Int) -> Bool = { kill(pid_t($0), 0) == 0 || errno == EPERM }) -> Int {
+        var stored = 0
+        for name in ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).sorted()
+        where name.hasPrefix("calendar-") && name.hasSuffix(".tsv") {
+            let url = logs.appendingPathComponent(name)
+            guard let pid = name.dropLast(4).split(separator: "-").last.flatMap({ Int($0) }),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let seen = text.split(separator: "\n").first.flatMap { $0.split(separator: "\t").dropFirst().first }.flatMap { Double($0) }
+            store.exec("BEGIN")
+            for line in text.split(separator: "\n") {
+                guard let e = DungeonEvent(line: line) else { continue }
+                store.run("""
+                    INSERT INTO dungeon_events(dungeon, start, end, chest, loot_mul, xp_mul, title, line, seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(dungeon, start) DO UPDATE SET end = excluded.end, chest = excluded.chest, loot_mul = excluded.loot_mul,
+                        xp_mul = excluded.xp_mul, title = excluded.title, line = excluded.line, seen = excluded.seen
+                    """, [e.dungeon, e.start, e.end, e.chest, e.loot, e.xp, e.title, String(line), seen])
+                stored += 1
+            }
+            guard !store.failed, store.exec("COMMIT") else { store.exec("ROLLBACK"); store.failed = false; continue }
+            if !alive(pid) { try? FileManager.default.removeItem(at: url) }
+        }
+        return stored
+    }
+}
+
 /// Capture health over all the data kept (issue #45): kills, bags and how many were linked to a kill, records lost,
 /// and whether the latest game refused capture. The drop rates sidebar and the guard's Drop rates row show it.
 struct CaptureHealth: Equatable {
@@ -589,6 +665,12 @@ struct DropReport: Equatable {
     var textures: [Int: GameTexture] = [:]
     /// Portals (issue #64): mob → portal type → its kills that dropped one, as seen (loot boosts not taken out).
     var portals: [Mob: [Int: Int]] = [:]
+    /// The game calendar's dungeon events (issue #85), by start; `running`: those on when the report was loaded, by
+    /// dungeon. `chests`: the event chests' types, whose kills count only in their dungeon's latest event.
+    var events: [DungeonEvent] = []
+    var running: [String: DungeonEvent] = [:]
+    var chests: Set<Int> = []
+    var runningChest: [String: Int] = [:]           // a running event's chest type, by dungeon: listed before it dies
     /// The Realm's mobs by biome (issue #69), as RealmEye sorts them: by tier (Rookie, Adept, Veteran, Seasonal), then
     /// each biome's regular enemies, Heroes of Oryx, encounters and beacon guardians, one mob per name. Mobs on no biome
     /// page (killed, not in the catalog) close the list under "Other". Empty: the catalog has no biomes.
@@ -618,6 +700,23 @@ struct DropReport: Equatable {
         (k.damage_projectile + k.damage_projectile_alt + k.damage_ability > 0 \
         AND (k.landed_by <> 'removed' OR k.since_hit_ms <= 1000))
         """
+
+    /// Event chests (issue #85): the calendar's quest objects, and objects labelled CHEST and EVENT ("Event Chest").
+    static let chestTypes = """
+        SELECT type FROM objects WHERE (labels LIKE '%,CHEST,%' AND labels LIKE '%,EVENT,%') \
+        OR name IN (SELECT chest FROM dungeon_events) OR display_name IN (SELECT chest FROM dungeon_events)
+        """
+    /// Added to `died`: an event chest's kill counts only inside its dungeon's latest event that has started, so each
+    /// event starts at zero. Earlier events' kills stay in the database, out of the rates.
+    // shortcut: a chest kill outside every known event (no calendar read that day) is left out silently; count it
+    // somewhere if the live test shows calendar reads missing.
+    static func eventChests(now: Double) -> String {
+        """
+         AND (k.mob_type NOT IN (\(chestTypes)) OR EXISTS (SELECT 1 FROM dungeon_events e JOIN maps em ON em.name = e.dungeon \
+        WHERE em.id = k.map AND k.time >= e.start AND k.time < e.end \
+        AND e.start = (SELECT max(start) FROM dungeon_events WHERE dungeon = e.dungeon AND start <= \(now))))
+        """
+    }
 
     /// Drop tags for dungeons whose template labels name them differently from the items' `ORG_*` tags (LOSTHALLS for
     /// LH; The Void reuses the Lost Halls template; Crystal Cavern's labels say FUNGAL), or that have no template.
@@ -651,9 +750,23 @@ struct DropReport: Equatable {
         DropBag(id: id).map { "WHEN \(id) THEN \(DropBag.allCases.firstIndex(of: $0)!)" }
     }.joined(separator: " ") + " END"
 
-    static func load(_ store: DropRateStore, catalog: LootCatalog = LootCatalog()) -> DropReport {
+    static func load(_ store: DropRateStore, catalog: LootCatalog = LootCatalog(), now: Double = Date().timeIntervalSince1970) -> DropReport {
         var r = DropReport()
-        let died = Self.died, rank = Self.rank
+        let died = Self.died + Self.eventChests(now: now), rank = Self.rank
+        store.run("SELECT dungeon, start, end, coalesce(chest, ''), coalesce(loot_mul, 1), coalesce(xp_mul, 1), coalesce(title, '') FROM dungeon_events ORDER BY start") {
+            r.events.append(DungeonEvent(dungeon: String(cString: sqlite3_column_text($0, 0)), start: sqlite3_column_double($0, 1),
+                                         end: sqlite3_column_double($0, 2), chest: String(cString: sqlite3_column_text($0, 3)),
+                                         loot: sqlite3_column_double($0, 4), xp: sqlite3_column_double($0, 5), title: String(cString: sqlite3_column_text($0, 6))))
+        }
+        for e in r.events where e.running(at: now) { r.running[e.dungeon] = e }
+        var chestNamed: [String: Int] = [:]   // by name, then display name
+        store.run("SELECT type, name, coalesce(display_name, '') FROM objects WHERE type IN (\(Self.chestTypes)) ORDER BY type") {
+            let type = Int(sqlite3_column_int64($0, 0))
+            r.chests.insert(type)
+            for i in [Int32(1), 2] { let n = String(cString: sqlite3_column_text($0, i)); if chestNamed[n] == nil { chestNamed[n] = type } }
+        }
+        // shortcut: an event with no quest object gets the plain "Event Chest", the only in-dungeon chest seen (Nov 2026).
+        for (d, e) in r.running { if let type = chestNamed[e.chest] ?? chestNamed["Event Chest"] { r.runningChest[d] = type } }
         let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
         func int(_ s: OpaquePointer, _ i: Int32) -> Int { Int(sqlite3_column_int64(s, i)) }
         func text(_ s: OpaquePointer, _ i: Int32) -> String { sqlite3_column_text(s, i).map { String(cString: $0) } ?? "" }
@@ -740,6 +853,7 @@ struct DropReport: Equatable {
         store.run("""
             SELECT type, coalesce(display_name, name), boss, texture_file, texture_index, NULL, NULL, NULL, NULL, labels FROM objects
             WHERE type IN (SELECT mob_type FROM kills) OR type IN (SELECT mob FROM catalog_mobs) OR type IN (SELECT portal_type FROM portals)
+                OR type IN (\(Self.chestTypes))
             UNION ALL
             SELECT type, coalesce(display_name, name), 0, texture_file, texture_index, bag_type, origin, tier, slot_type, labels FROM items
             WHERE type IN (SELECT item_type FROM bag_items) OR type IN (SELECT item FROM catalog_drops) OR origin IS NOT NULL
@@ -1122,9 +1236,12 @@ struct DropReport: Equatable {
         }.count
     }
 
-    /// A dungeon's mobs, killed or in the drop catalog: bosses first, then most kills.
+    /// A dungeon's mobs, killed or in the drop catalog: bosses first, then most kills. An event chest shows only while
+    /// its dungeon's event runs (issue #85).
     func mobs(in dungeon: String) -> [Mob] {
-        Set(kills.keys.filter { $0.dungeon == dungeon }).union((catalogMobs[dungeon] ?? []).map { Mob(type: $0, dungeon: dungeon) })
+        Set(kills.keys.filter { $0.dungeon == dungeon && (!chests.contains($0.type) || running[dungeon] != nil) })   // a chest: while its event runs
+            .union((catalogMobs[dungeon] ?? []).map { Mob(type: $0, dungeon: dungeon) })
+            .union(runningChest[dungeon].map { [Mob(type: $0, dungeon: dungeon)] } ?? [])
             .sorted { (bosses.contains($0.type) ? 1 : 0, kills[$0] ?? 0, $1.type) > (bosses.contains($1.type) ? 1 : 0, kills[$1] ?? 0, $0.type) }
     }
 }

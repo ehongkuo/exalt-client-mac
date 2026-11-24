@@ -1305,7 +1305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private func importLoot() {
         let logs = GuardPaths.logs(data: dataURL)
         // With no loot file and the health already shown, there is nothing to do.
-        let pending = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).contains { $0.hasPrefix("loot-") }
+        let pending = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).contains { $0.hasPrefix("loot-") || $0.hasPrefix("calendar-") }
         guard !lootBusy, pending || !healthLoaded else { return }
         lootBusy = true
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
@@ -1325,6 +1325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                     if !names.list.isEmpty { portalNames = names }
                 }
                 LootImport.run(logs: logs, store: store, appVersion: version)
+                CalendarImport.run(logs: logs, store: store)   // the game's dungeon events (issue #85)
                 health = CaptureHealth.load(store)
                 now = LootNow.load(store, realmHound: RealmHoundLive.read(accounts: RealmHoundPaths.accounts))
             }

@@ -475,5 +475,65 @@ enum DropRateTests {
         try! "{".write(to: catalogFile, atomically: false, encoding: .utf8)
         check(!GameNames.refreshCatalog(rates, folder: xmlFolder, catalog: catalogFile) &&
               DropReport.load(rates).catalogMobs["New Den"] == [3], "a broken catalog file keeps the last one")
+        events()
+    }
+
+    /// The game calendar's dungeon events and their chests (issue #85).
+    static func events() {
+        // Calendar lines as guard/calendar_read.h writes them: the text times win; the DateTime data is the fallback.
+        let line = "dungeon_event\t2026-11-24T10:00:00Z\t2026-12-01T10:00:00Z\t0\t0\tWoodland Labyrinth\tEvent Chest\t1.5\t1.5\t1\tFeature dungeon"
+        check(DungeonEvent(line: Substring(line)) == DungeonEvent(dungeon: "Woodland Labyrinth", start: 1795514400, end: 1796119200,
+                                                                    chest: "Event Chest", loot: 1.5, xp: 1.5, title: "Feature dungeon"), "calendar line")
+        let utcTicks = UInt64(621_355_968_000_000_000 + 1_795_514_400 * 10_000_000) | (1 << 62)
+        check(DungeonEvent.time("", data: utcTicks) == 1795514400, "DateTime data, UTC kind")
+        check(DungeonEvent.time("1795514400", data: 0) == 1795514400 && DungeonEvent.time("1795514400000", data: 0) == 1795514400,
+              "seconds or ms since 1970")
+        check(DungeonEvent.time("2026-11-24 10:00:00", data: 0) == 1795514400, "a time with no zone is UTC")
+        check(DungeonEvent.time("soon", data: 0) == nil && DungeonEvent(line: "dungeon_event\tx\ty\t0\t0\tNest\t\t1\t1\t1\t") == nil &&
+              DungeonEvent(line: Substring(line.replacingOccurrences(of: "Woodland Labyrinth", with: ""))) == nil, "no time or no dungeon: no event")
+
+        // Import: upserts by dungeon and start, keeps past events, removes the file once its game has ended.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("calendar-test-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = DropRateStore(path: folder.appendingPathComponent("rates.db").path)!
+        let week = 7 * 86400.0, first = 1795514400.0, second = first + week
+        func event(_ start: Double, _ dungeon: String = "Woodland Labyrinth") -> String {
+            "dungeon_event\t\(Int(start))\t\(Int(start + week))\t0\t0\t\(dungeon)\tEvent Chest\t1.5\t1.5\t1\tFeature dungeon"
+        }
+        let file = folder.appendingPathComponent("calendar-1795500000-4242.tsv")
+        try! "calendar_read\t1795500000.000\t2\n\(event(first))\n\(event(first, "Ice Tomb"))\n".write(to: file, atomically: false, encoding: .utf8)
+        check(CalendarImport.run(logs: folder, store: store, alive: { _ in true }) == 2 && FileManager.default.fileExists(atPath: file.path),
+              "a live game's calendar file stays")
+        try! "calendar_read\t1795600000.000\t1\n\(event(second))\n".write(to: file, atomically: false, encoding: .utf8)
+        check(CalendarImport.run(logs: folder, store: store, alive: { _ in false }) == 1 && !FileManager.default.fileExists(atPath: file.path),
+              "the next week's calendar; the file goes once the game ended")
+        var rows = 0
+        store.run("SELECT count(*) FROM dungeon_events") { rows = Int(sqlite3_column_int64($0, 0)) }
+        check(rows == 3, "past events are kept")
+
+        // The chest: its kills count only inside its dungeon's latest event, so each event starts at zero.
+        check(store.exec("""
+            INSERT INTO objects(type, name, display_name, boss, drop_source, labels) VALUES (29773, 'Event Chest', 'Event Chest', 0, 1, ',CHEST,LOOT,EVENT,'),
+                (5, 'Woodland Boss', NULL, 1, 1, ',BOSS,');
+            INSERT INTO maps(id, session, generation, name) VALUES (1, 1, 1, 'Woodland Labyrinth'), (2, 1, 2, 'Woodland Labyrinth'),
+                (3, 1, 3, 'Woodland Labyrinth');
+            -- map 1 in the first event, map 2 in the second, map 3 after both.
+            INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by, since_hit_ms) VALUES
+                (1, \(first + 100), 29773, 500, 0, 0, 'removed', 0), (1, \(first + 90), 5, 500, 0, 0, 'removed', 0),
+                (2, \(second + 100), 29773, 500, 0, 0, 'removed', 0), (2, \(second + 90), 5, 500, 0, 0, 'removed', 0),
+                (3, \(second + week + 100), 29773, 500, 0, 0, 'removed', 0);
+            """), "chest fixture rows")
+        let chest = DropReport.Mob(type: 29773, dungeon: "Woodland Labyrinth"), boss = DropReport.Mob(type: 5, dungeon: "Woodland Labyrinth")
+        let during = DropReport.load(store, now: second + 3600)
+        check(during.running["Woodland Labyrinth"]?.start == second && during.running["Ice Tomb"] == nil, "the second event runs; Ice Tomb's ended")
+        check(during.kills[chest] == 1 && during.kills[boss] == 2, "the chest counts this event only; the boss counts all")
+        check(during.mobs(in: "Woodland Labyrinth").contains(chest), "the chest is listed while its event runs")
+        let before = DropReport.load(store, now: first + 3600)
+        check(before.kills[chest] == 1 && before.running["Ice Tomb"] != nil, "during the first event, its own chest kill counts")
+        check(before.mobs(in: "Ice Tomb") == [DropReport.Mob(type: 29773, dungeon: "Ice Tomb")], "a running event's chest is listed before any kill")
+        let after = DropReport.load(store, now: second + week + 3600)
+        check(after.running.isEmpty && !after.mobs(in: "Woodland Labyrinth").contains(chest), "no event: the chest isn't listed")
+        check(after.kills[chest] == 1, "after the event, its chest kill stays its own; the one after it counts in none")
     }
 }
