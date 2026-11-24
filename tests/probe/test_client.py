@@ -97,6 +97,8 @@ class ClientInterventionTests(unittest.TestCase):
     self.assertFalse(any(e['phase']==20 for e in self.events))
     self.assertEqual(self.live['death_pending'],'0')
     self.assertFalse(any(e['phase']>=100 for e in self.events),'normal play keeps incident history in memory')
+    # Environment 2 starts on a map with a breath meter: the update records a drain sample (Phase 3 G).
+    self.assertEqual('drain_sample\t' in self.log,environment==2)
  def test_incident_history_wraps_and_dumps_once_on_incoming_zero(self):
   self.run_client('armed=1,potion=0,death=1',environment=17)
   history=[e for e in self.events if 100<=e['phase']<199]
