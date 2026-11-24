@@ -759,14 +759,15 @@ struct DropReport: Equatable {
                                          loot: sqlite3_column_double($0, 4), xp: sqlite3_column_double($0, 5), title: String(cString: sqlite3_column_text($0, 6))))
         }
         for e in r.events where e.running(at: now) { r.running[e.dungeon] = e }
-        var chestNamed: [String: Int] = [:]   // by name, then display name
+        var byName: [String: Int] = [:], byDisplay: [String: Int] = [:]   // an id wins over a shown name ("Maze Chest" shows as "Event Chest")
         store.run("SELECT type, name, coalesce(display_name, '') FROM objects WHERE type IN (\(Self.chestTypes)) ORDER BY type") {
             let type = Int(sqlite3_column_int64($0, 0))
             r.chests.insert(type)
-            for i in [Int32(1), 2] { let n = String(cString: sqlite3_column_text($0, i)); if chestNamed[n] == nil { chestNamed[n] = type } }
+            byName[String(cString: sqlite3_column_text($0, 1))] = byName[String(cString: sqlite3_column_text($0, 1))] ?? type
+            byDisplay[String(cString: sqlite3_column_text($0, 2))] = byDisplay[String(cString: sqlite3_column_text($0, 2))] ?? type
         }
         // shortcut: an event with no quest object gets the plain "Event Chest", the only in-dungeon chest seen (Nov 2026).
-        for (d, e) in r.running { if let type = chestNamed[e.chest] ?? chestNamed["Event Chest"] { r.runningChest[d] = type } }
+        for (d, e) in r.running { if let type = byName[e.chest] ?? byDisplay[e.chest] ?? byName["Event Chest"] { r.runningChest[d] = type } }
         let runs = "WITH runs AS (SELECT DISTINCT k.map FROM kills k JOIN objects o ON o.type = k.mob_type WHERE o.boss AND \(died))"
         func int(_ s: OpaquePointer, _ i: Int32) -> Int { Int(sqlite3_column_int64(s, i)) }
         func text(_ s: OpaquePointer, _ i: Int32) -> String { sqlite3_column_text(s, i).map { String(cString: $0) } ?? "" }

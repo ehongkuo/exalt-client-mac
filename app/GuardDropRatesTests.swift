@@ -515,6 +515,7 @@ enum DropRateTests {
         // The chest: its kills count only inside its dungeon's latest event, so each event starts at zero.
         check(store.exec("""
             INSERT INTO objects(type, name, display_name, boss, drop_source, labels) VALUES (29773, 'Event Chest', 'Event Chest', 0, 1, ',CHEST,LOOT,EVENT,'),
+                (616, 'Maze Chest', 'Event Chest', 0, 1, ',CHEST,'),
                 (5, 'Woodland Boss', NULL, 1, 1, ',BOSS,');
             INSERT INTO maps(id, session, generation, name) VALUES (1, 1, 1, 'Woodland Labyrinth'), (2, 1, 2, 'Woodland Labyrinth'),
                 (3, 1, 3, 'Woodland Labyrinth');
@@ -531,7 +532,8 @@ enum DropRateTests {
         check(during.mobs(in: "Woodland Labyrinth").contains(chest), "the chest is listed while its event runs")
         let before = DropReport.load(store, now: first + 3600)
         check(before.kills[chest] == 1 && before.running["Ice Tomb"] != nil, "during the first event, its own chest kill counts")
-        check(before.mobs(in: "Ice Tomb") == [DropReport.Mob(type: 29773, dungeon: "Ice Tomb")], "a running event's chest is listed before any kill")
+        check(before.mobs(in: "Ice Tomb") == [DropReport.Mob(type: 29773, dungeon: "Ice Tomb")],
+              "a running event's chest is listed before any kill, by its id over another chest's shown name")
         let after = DropReport.load(store, now: second + week + 3600)
         check(after.running.isEmpty && !after.mobs(in: "Woodland Labyrinth").contains(chest), "no event: the chest isn't listed")
         check(after.kills[chest] == 1, "after the event, its chest kill stays its own; the one after it counts in none")
