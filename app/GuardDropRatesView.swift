@@ -446,7 +446,7 @@ extension DropRatesView {
 
     // MARK: Bags and drops
 
-    private func dropsPane(_ d: DropReport.Dungeon) -> some View {
+    func dropsPane(_ d: DropReport.Dungeon) -> some View {
         let mobs = index.mobs(in: d.name)
         let runs = report.runs[d.name] ?? 0
         let dropped = Set(mobs.flatMap { (report.copies[$0] ?? [:]).keys })
@@ -584,7 +584,7 @@ extension DropRatesView {
     }
     private var chevron: some View { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
 
-    /// The bosses and the minions killed here, each in their own row; the Realm's by tier and biome, in RealmEye's sections
+    /// The mobs killed or listed here in their sections (issue #86), each a row; the Realm's by tier and biome, in RealmEye's sections
     /// (issue #69). Clicking one opens its page on the right; clicking it again, the breadcrumb or Esc closes it.
     @ViewBuilder func mobStrip(_ mobs: [DropReport.Mob]) -> some View {
         if mobs.first?.dungeon == DropReport.realm && !report.biomes.isEmpty {
@@ -601,10 +601,8 @@ extension DropRatesView {
                 }
             }
         } else {
-            let bosses = mobs.filter { report.bosses.contains($0.type) }, minions = mobs.filter { !report.bosses.contains($0.type) }
             VStack(alignment: .leading, spacing: 6) {
-                if !bosses.isEmpty { mobRow("BOSSES", bosses) }
-                if !minions.isEmpty { mobRow("MINIONS", minions) }
+                ForEach(report.mobSections(in: mobs.first?.dungeon ?? ""), id: \.section) { mobRow($0.section.rawValue, $0.mobs) }
             }
         }
     }

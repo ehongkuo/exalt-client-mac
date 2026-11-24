@@ -263,6 +263,62 @@ enum DropRateTests {
         check(GameNames.objects(inXML: "<Object type=\"0x071b\" id=\"Abyss of Demons Portal\"><Class>Portal</Class><DungeonName>Abyss of Demons</DungeonName></Object>")
               .first?.dungeon == "Abyss of Demons", "a portal's dungeon")
 
+        // Mob sections (issue #86): special spawns from the XML, then the sorting rules on fixture rows.
+        let spawnXML = folder.appendingPathComponent("special")
+        try! FileManager.default.createDirectory(at: spawnXML, withIntermediateDirectories: true)
+        try! """
+            <Objects>
+              <Object type="0x0a10" id="Dungeon Mob"><Class>Character</Class>
+                <SpecialSpawn category="Mercenary_B">Mercenary B Dungeon</SpecialSpawn>
+                <SpecialSpawn category="Swarm_Spirit_Snake_Spawner">Swarm Spirit Snake Spawner</SpecialSpawn>
+                <SpecialSpawn category="Wanderer_Boss">Wander Portal Easy</SpecialSpawn>
+                <SpecialSpawn category="Key_Fairy" perPlayer="true">Key Fairy Easy</SpecialSpawn>
+                <SpecialSpawn category="Bis">Bishop Portal</SpecialSpawn></Object>
+              <Object type="0x0a11" id="Mercenary B Dungeon"><Class>Character</Class></Object>
+              <Object type="0x0a12" id="Swarm Spirit Snake"><Class>Character</Class></Object>
+              <Object type="0x0a13" id="Swarm Spirit Snake Spawner"><Class>GameObject</Class></Object>
+              <Object type="0x0a14" id="Wanderer Boss Easy"><Class>Character</Class></Object>
+              <Object type="0x0a15" id="Key Fairy Easy"><Class>Character</Class></Object>
+              <Object type="0x0a16" id="Bishop Guard"><Class>Character</Class></Object>
+            </Objects>
+            """.write(to: spawnXML.appendingPathComponent("dungeon.xml"), atomically: false, encoding: .utf8)
+        let spawnStore = DropRateStore(path: folder.appendingPathComponent("special.db").path)!
+        var specials: [Int] = []
+        _ = GameNames.refreshCatalog(spawnStore, folder: spawnXML)
+        spawnStore.run("SELECT type FROM special_spawns ORDER BY type") { specials.append(Int(sqlite3_column_int64($0, 0))) }
+        check(specials == [0x0a11, 0x0a12, 0x0a14, 0x0a15],
+              "special spawns: named, a named spawner's mob, a category's boss (Wanderer_Boss); not a one-word category's look-alike")
+
+        let cave = DropRateStore(path: folder.appendingPathComponent("sections.db").path)!
+        check(cave.exec("""
+            INSERT INTO objects(type, name, display_name, boss, drop_source, labels) VALUES
+                (10, 'mc', 'Crystal Entity', 1, 1, ',BOSS,BOSSFIGHT,'), (11, 'Pulse Lock', 'Crystal Entity', 1, 1, ',BOSSFIGHT,BOSS_SPAWNED,'),
+                (12, 'Fish', NULL, 1, 1, ',MINIBOSS,BOSSFIGHT,'), (13, 'Shade 1', 'Shade', 1, 1, ',BOSS,BOSSFIGHT,'),
+                (14, 'Shade 2', 'Shade', 1, 1, ',BOSS,BOSSFIGHT,'), (15, 'GC Child', 'Worm Child', 1, 1, ',BOSSFIGHT,BOSS_SPAWNED,'),
+                (16, 'CC Child', 'Worm Child', 0, 1, ',MINION,'), (17, 'Bat', NULL, 0, 1, ',MINION,'),
+                (18, 'Mercenary B Dungeon', 'Izel', 1, 1, ',BOSS,BOSSFIGHT,'), (19, 'OT Thessal', NULL, 1, 1, ',BOSS,BOSSFIGHT,'),
+                (20, 'Lonely Spawn', NULL, 1, 1, ',BOSSFIGHT,BOSS_SPAWNED,');
+            INSERT INTO special_spawns(type) VALUES (18);
+            INSERT INTO catalog_mobs(dungeon, mob) VALUES ('Cave', 10), ('Cave', 11), ('Cave', 12), ('Cave', 13), ('Cave', 14), ('Cave', 15),
+                ('Cave', 16), ('Cave', 17), ('Cave', 20), ('Interregnum', 18);
+            -- The catalog goes by name, so the phase (11) and the fight's worm (15) share the real ones' drops.
+            INSERT INTO catalog_drops(mob, item) VALUES (10, 588), (11, 588), (12, 588), (15, 588), (18, 588);
+            INSERT INTO maps(id, session, generation, name) VALUES (1, 1, 1, 'Cave');
+            INSERT INTO kills(map, time, mob_type, damage_projectile, damage_projectile_alt, damage_ability, landed_by, since_hit_ms) VALUES
+                (1, 1, 11, 9, 0, 0, 'removed', 100), (1, 2, 11, 9, 0, 0, 'removed', 100), (1, 3, 10, 9, 0, 0, 'removed', 100),
+                (1, 4, 18, 9, 0, 0, 'removed', 100), (1, 5, 19, 9, 0, 0, 'removed', 100), (1, 6, 17, 9, 0, 0, 'removed', 100),
+                (1, 7, 17, 9, 0, 0, 'removed', 100), (1, 8, 14, 9, 0, 0, 'removed', 100);
+            """), "section rows")
+        let sections = DropReport.load(cave).mobSections(in: "Cave")
+        check(sections.map(\.section) == [.bosses, .minions, .events, .spawns], "sections in order, empty ones left out")
+        check(sections.map { $0.mobs.map(\.type) } == [[10, 19, 12], [17, 16], [18], [14, 20]],
+              "bosses drop loot (a type missing from the catalog list counts) and aren't fight spawns, shown by the qualifying type though a phase has more kills; " +
+              "a name's types share one chip, in the first section any qualifies for (the minion worm over the fight's); special spawns are events; " +
+              "bosses with no loot are fight spawns, by their most-killed type")
+        check(DropReport.load(cave).mobSections(in: "Interregnum").map { [$0.section.rawValue] + $0.mobs.map { String($0.type) } } == [["BOSSES", "18"]],
+              "a special spawn the dungeon's catalog list has is no event there")
+        check(DropReport.load(cave).mobSections(in: "Nowhere").isEmpty, "no mobs, no sections")
+
         // Tiles and sources (issue #45): shinies fold into their base, a tier and slot family share a tile, and any-of
         // counts a run once. Run 1 drops the sword, its shiny and the dagger; run 2 the dagger.
         check(rates.exec("""

@@ -156,6 +156,9 @@ final class DropRateStore {
         CREATE TABLE IF NOT EXISTS catalog_portal_drops(dungeon TEXT NOT NULL, mob INTEGER NOT NULL);
         -- Each forge blueprint and the items it unlocks (<Activate id="a,b">UnlockForgeBlueprint</Activate>), by type.
         CREATE TABLE IF NOT EXISTS blueprints(blueprint INTEGER NOT NULL, item INTEGER NOT NULL);
+        -- Mobs a dungeon modifier or event brings (issue #86): what some <SpecialSpawn> names (Izel, Key Fairy), see
+        -- GameNames.refreshCatalog.
+        CREATE TABLE IF NOT EXISTS special_spawns(type INTEGER PRIMARY KEY);
         CREATE INDEX IF NOT EXISTS kills_mob ON kills(mob_type);
         CREATE INDEX IF NOT EXISTS kills_map_time ON kills(map, time);
         CREATE INDEX IF NOT EXISTS bags_kill ON bags(kill);
@@ -202,6 +205,9 @@ final class DropRateStore {
         }
         if version < 8 {   // the blueprints table (issue #51)
             guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 8", nil, nil, nil) == SQLITE_OK else { return nil }
+        }
+        if version < 9 {   // the special_spawns table (issue #86)
+            guard sqlite3_exec(db, "DELETE FROM catalog_source; PRAGMA user_version = 9", nil, nil, nil) == SQLITE_OK else { return nil }
         }
     }
     deinit { sqlite3_close(db) }
@@ -582,6 +588,7 @@ struct DropReport: Equatable {
     var catalogMobs: [String: Set<Int>] = [:]
     var mobTiers: [Int: Set<Group>] = [:], mobDrops: [Int: Set<Int>] = [:]
     var bosses: Set<Int> = []
+    var special: Set<Int> = []                      // mobs a dungeon modifier or event brings (issue #86)
     var labels: [Int: Set<String>] = [:]             // mob type → its XML labels (BOSS, MINION, …)
     /// Base rates (issue #58): each mob's kills, each counted as its loot multiplier (LootState.multiplier).
     var weight: [Mob: Double] = [:]
@@ -726,6 +733,7 @@ struct DropReport: Equatable {
             JOIN maps m ON m.id = k.map WHERE \(died) AND (p.x - k.x) * (p.x - k.x) + (p.y - k.y) * (p.y - k.y) <= \(portalSpot) GROUP BY 1, 2, 3
             """) { r.portals[Mob(type: int($0, 0), dungeon: text($0, 1)), default: [:]][int($0, 2)] = int($0, 3) }
         store.run("SELECT mob, item FROM catalog_drops") { r.mobDrops[int($0, 0), default: []].insert(int($0, 1)) }
+        store.run("SELECT type FROM special_spawns") { r.special.insert(int($0, 0)) }
         let row = { (stmt: OpaquePointer) in
             let type = int(stmt, 0)
             r.names[type] = text(stmt, 1)
@@ -1127,6 +1135,38 @@ struct DropReport: Equatable {
         Set(kills.keys.filter { $0.dungeon == dungeon }).union((catalogMobs[dungeon] ?? []).map { Mob(type: $0, dungeon: dungeon) })
             .sorted { (bosses.contains($0.type) ? 1 : 0, kills[$0] ?? 0, $1.type) > (bosses.contains($1.type) ? 1 : 0, kills[$1] ?? 0, $0.type) }
     }
+
+    /// A dungeon page's mob sections (issue #86), in this order.
+    enum MobSection: String, CaseIterable { case bosses = "BOSSES", minions = "MINIONS", events = "EVENTS AND MODIFIERS", spawns = "FIGHT SPAWNS" }
+    /// A dungeon's mobs by section, one chip per name: the types sharing a name (a boss's phases, a worm's segments)
+    /// show as one, and the first section any of them qualifies for takes the name, shown by its most-killed type there:
+    /// - events: a mob a dungeon modifier or event brings (Izel, Key Fairy, Swarm Spirit Snake), unless the dungeon's
+    ///   catalog list has it (Izel is a boss of the Hidden Interregnum).
+    /// - bosses: a boss (<Quest/> or BOSSFIGHT) that drops loot, not one spawned in a boss fight (BOSS_SPAWNED). Loot is
+    ///   the drop catalog's (which goes by name, so a phase shares its boss's) or a drop seen; a mob missing from the
+    ///   dungeon's catalog list counts as dropping, as nothing says it doesn't.
+    /// - minions: not a boss.
+    /// - spawns: the rest, bosses spawned in a fight or dropping nothing (the Shatters' Shades of the King).
+    func mobSections(in dungeon: String) -> [(section: MobSection, mobs: [Mob])] {
+        let listed = catalogMobs[dungeon] ?? []
+        func loot(_ m: Mob) -> Bool { !listed.contains(m.type) || mobDrops[m.type] != nil || mobTiers[m.type] != nil || copies[m] != nil }
+        let rules: [(MobSection, (Mob) -> Bool)] = [
+            (.events, { special.contains($0.type) && !listed.contains($0.type) }),
+            (.bosses, { bosses.contains($0.type) && labels[$0.type]?.contains("BOSS_SPAWNED") != true && loot($0) }),
+            (.minions, { !bosses.contains($0.type) }),
+            (.spawns, { _ in true })]
+        let all = mobs(in: dungeon)
+        let byName = Dictionary(grouping: all) { name($0.type) }
+        var out: [MobSection: [Mob]] = [:]
+        for variants in byName.values {
+            for (section, rule) in rules {
+                if let m = variants.filter(rule).max(by: { (kills[$0] ?? 0, $1.type) < (kills[$1] ?? 0, $0.type) }) { out[section, default: []].append(m); break }
+            }
+        }
+        return MobSection.allCases.compactMap { s in
+            out[s].map { (s, $0.sorted { (kills[$0] ?? 0, $1.type) > (kills[$1] ?? 0, $0.type) }) }
+        }
+    }
 }
 
 extension DropBag {
@@ -1152,6 +1192,7 @@ enum GameNames {
         var texture: GameTexture? = nil
         var dungeon: String? = nil   // a portal's <DungeonName>
         var unlocks: [String] = []   // a blueprint's <Activate id="a,b">UnlockForgeBlueprint</Activate>: the items' XML ids
+        var spawns: [String] = [], spawnCategories: [String] = []   // its <SpecialSpawn category="c">id</SpecialSpawn>s
     }
 
     static func objects(inXML text: String) -> [Object] {
@@ -1181,6 +1222,13 @@ enum GameNames {
             func element(_ name: String) -> String? { value("<\(name)>", "</\(name)>", close, end) }
             func flag(_ name: String) -> Bool { find("<\(name) />", close, end) != nil || find("<\(name)/>", close, end) != nil }
             let display = element("DisplayId")
+            var spawns: [String] = [], categories: [String] = []
+            var at = find("<SpecialSpawn", close, end)
+            while let a = at, let gt = find(">", a, end), let lt = find("</SpecialSpawn>", gt, end) {
+                spawns.append(String(decoding: xml[(gt + 1)..<lt], as: UTF8.self).trimmingCharacters(in: .whitespaces))
+                if let c = value("category=\"", "\"", a, gt) { categories.append(c) }
+                at = find("<SpecialSpawn", lt, end)
+            }
             // <Texture>, or the first frame of <AnimatedTexture>, either with attributes (xOffset=); Index is hex
             // (0xa7) or decimal.
             let texture = ["Texture", "AnimatedTexture"].lazy.compactMap { tag -> GameTexture? in
@@ -1198,7 +1246,8 @@ enum GameNames {
                 quest: flag("Quest"), item: flag("Item"),
                 bagType: element("BagType").flatMap { Int($0) }, slotType: element("SlotType").flatMap { Int($0) },
                 tier: element("Tier").flatMap { Int($0) }, texture: texture, dungeon: element("DungeonName"),
-                unlocks: value("<Activate id=\"", "\">UnlockForgeBlueprint</Activate>", close, end).map { $0.contains("\"") ? [] : $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } } ?? []))
+                unlocks: value("<Activate id=\"", "\">UnlockForgeBlueprint</Activate>", close, end).map { $0.contains("\"") ? [] : $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } } ?? [],
+                spawns: spawns, spawnCategories: categories))
         }
         return objects
     }
@@ -1235,7 +1284,7 @@ enum GameNames {
         }
         guard store.exec("BEGIN IMMEDIATE") else { store.failed = false; return false }
         store.failed = false
-        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM blueprints; DELETE FROM catalog_source")
+        store.exec("DELETE FROM objects; DELETE FROM items; DELETE FROM dungeons; DELETE FROM blueprints; DELETE FROM special_spawns; DELETE FROM catalog_source")
         // A dungeon's portal: the lowest type whose <DungeonName> it is.
         var portals: [String: Object] = [:]
         for o in objects.values.sorted(by: { $0.type < $1.type }) where o.objectClass == "Portal" {
@@ -1263,6 +1312,15 @@ enum GameNames {
                     """, [o.type, o.name, o.displayName, o.objectClass, o.group, o.quest || o.labels.contains("BOSSFIGHT") ? 1 : 0,
                           minion.map(String.init), o.objectClass == "Character" ? 1 : 0, labels, o.texture?.file, o.texture?.index])
             }
+        }
+        // Special spawns (issue #86): a mob some <SpecialSpawn> names (Izel, Key Fairy), or that a named spawner brings
+        // (Swarm Spirit Snake Spawner → Swarm Spirit Snake). shortcut: a portal's boss is matched by its category's
+        // words (Wanderer_Boss → Wanderer Boss Easy), as the portal's map isn't in the XML; check new categories' matches.
+        let targets = Set(objects.values.flatMap(\.spawns))
+        let prefixes = Set(objects.values.flatMap(\.spawnCategories).filter { $0.contains("_") }.map { $0.replacingOccurrences(of: "_", with: " ") + " " })
+        for o in objects.values where o.objectClass == "Character" && ([o.name, o.name + " Spawner", o.name + " Summoner"].contains(where: targets.contains)
+                                                                       || prefixes.contains(where: o.name.hasPrefix)) {
+            store.run("INSERT INTO special_spawns(type) VALUES (?)", [o.type])
         }
         let itemByID = Dictionary(objects.values.filter(\.item).map { ($0.name, $0.type) }) { a, b in min(a, b) }
         for o in objects.values { for item in o.unlocks.compactMap({ itemByID[$0] }) {
